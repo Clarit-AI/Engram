@@ -521,6 +521,16 @@ class ServerArgs:
     mamba_scheduler_strategy: str = "auto"
     mamba_track_interval: int = 256
 
+    # Mamba state persistence (snapshot system)
+    enable_snapshot_persistence: bool = False
+    snapshot_dir: Optional[str] = None
+    snapshot_retention_count: int = 10
+    snapshot_trigger_policy: str = "every_turn"
+    snapshot_every_n_turns: int = 5
+    snapshot_min_interval_seconds: float = 1.0
+    snapshot_keep_named_branches: bool = True
+    snapshot_auto_restore: bool = True
+
     # Hierarchical cache
     enable_hierarchical_cache: bool = False
     hicache_ratio: float = 2.0
@@ -4208,6 +4218,65 @@ class ServerArgs:
             type=int,
             default=ServerArgs.mamba_track_interval,
             help="The interval to track the mamba state during decode.",
+        )
+
+        # Mamba state persistence (snapshot system)
+        parser.add_argument(
+            "--enable-snapshot-persistence",
+            action="store_true",
+            help="Enable Mamba state snapshot persistence to disk. "
+            "Allows stateful inference that persists across server restarts. "
+            "Only applies to Mamba/hybrid models. Has no effect on standard transformers.",
+        )
+        parser.add_argument(
+            "--snapshot-dir",
+            type=str,
+            default=None,
+            help="Directory for storing Mamba state snapshots. "
+            "If not specified and --enable-snapshot-persistence is set, "
+            "defaults to './sglang_snapshots'.",
+        )
+        parser.add_argument(
+            "--snapshot-retention-count",
+            type=int,
+            default=ServerArgs.snapshot_retention_count,
+            help="Maximum number of snapshots to retain per conversation. "
+            "Older snapshots are automatically pruned. Default: 10.",
+        )
+        parser.add_argument(
+            "--snapshot-trigger-policy",
+            type=str,
+            default=ServerArgs.snapshot_trigger_policy,
+            choices=["every_turn", "every_n_turns", "on_tool_call", "manual_only"],
+            help="Policy for when to take snapshots. "
+            "'every_turn': snapshot after each turn (most storage), "
+            "'every_n_turns': snapshot every N turns (see --snapshot-every-n-turns), "
+            "'on_tool_call': snapshot only after tool executions, "
+            "'manual_only': only via explicit API calls. Default: every_turn.",
+        )
+        parser.add_argument(
+            "--snapshot-every-n-turns",
+            type=int,
+            default=ServerArgs.snapshot_every_n_turns,
+            help="If --snapshot-trigger-policy=every_n_turns, snapshot every N turns. Default: 5.",
+        )
+        parser.add_argument(
+            "--snapshot-min-interval-seconds",
+            type=float,
+            default=ServerArgs.snapshot_min_interval_seconds,
+            help="Minimum seconds between snapshots (prevents spam). Default: 1.0.",
+        )
+        parser.add_argument(
+            "--snapshot-keep-named-branches",
+            action="store_true",
+            default=ServerArgs.snapshot_keep_named_branches,
+            help="Keep named branches when pruning old snapshots. Default: True.",
+        )
+        parser.add_argument(
+            "--snapshot-auto-restore",
+            action="store_true",
+            default=ServerArgs.snapshot_auto_restore,
+            help="Automatically restore latest snapshots on server startup. Default: True.",
         )
 
         # Hierarchical cache

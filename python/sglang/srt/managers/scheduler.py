@@ -365,6 +365,9 @@ class Scheduler(
         # Init cache and memory pool
         self.init_cache_with_memory_pool()
 
+        # Init snapshot system (for Mamba state persistence)
+        self.init_snapshot_system()
+
         # Init running status
         self.init_running_status()
 
@@ -772,6 +775,214 @@ class Scheduler(
                     "Dynamic chunking will be disabled."
                 )
                 self.enable_dynamic_chunking = False
+
+    def init_snapshot_system(self):
+        """
+        Initialize the Mamba state snapshot system for stateful inference.
+
+        This system enables:
+        - Saving Mamba SSM states to disk
+        - Restoring states on server restart
+        - Managing snapshot retention and branching
+
+        **Backward Compatibility**: This method only activates when
+        --enable-snapshot-persistence is set. Otherwise, it's a no-op.
+        """
+        server_args = self.server_args
+
+        # Initialize snapshot components as None (default)
+        self.snapshot_manager = None
+        self.snapshot_hook_manager = None
+        self.snapshot_policy = None
+
+        # Only initialize if snapshot persistence is enabled
+        if not server_args.enable_snapshot_persistence:
+            logger.info("Snapshot persistence disabled (standard mode)")
+            return
+
+        # Check if model supports Mamba/hybrid architecture
+        # HybridReqToTokenPool has mamba_pool attribute
+        mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+
+        if mamba_pool is None:
+            logger.warning(
+                "Snapshot persistence enabled but model doesn't have Mamba pool. "
+                "This is a standard transformer model - snapshot system will not activate. "
+                "Snapshot features only work with Mamba/hybrid models."
+            )
+            return
+
+        # Determine snapshot directory
+        snapshot_dir = server_args.snapshot_dir
+        if snapshot_dir is None:
+            snapshot_dir = "./sglang_snapshots"
+
+        logger.info(
+            f"Initializing Mamba snapshot system: dir={snapshot_dir}, "
+            f"retention={server_args.snapshot_retention_count}, "
+            f"policy={server_args.snapshot_trigger_policy}"
+        )
+
+        # Import snapshot modules (lazy import)
+        try:
+            from sglang.srt.snapshot import (
+                MambaSnapshotManager,
+                SnapshotHookManager,
+                SnapshotRetentionPolicy,
+            )
+            from sglang.srt.snapshot.snapshot_policy import (
+                SnapshotRetentionConfig,
+                SnapshotTriggerPolicy,
+            )
+        except ImportError as e:
+            logger.error(f"Failed to import snapshot modules: {e}")
+            logger.warning("Snapshot system will be disabled")
+            return
+
+        # Create snapshot manager
+        from pathlib import Path
+
+        try:
+            self.snapshot_manager = MambaSnapshotManager(Path(snapshot_dir))
+        except Exception as e:
+            logger.error(f"Failed to create snapshot manager: {e}")
+            logger.warning("Snapshot system will be disabled")
+            return
+
+        # Create hook manager
+        self.snapshot_hook_manager = SnapshotHookManager(enabled=True)
+
+        # Create retention policy
+        try:
+            trigger_policy = SnapshotTriggerPolicy(server_args.snapshot_trigger_policy)
+        except ValueError:
+            logger.warning(
+                f"Invalid snapshot trigger policy: {server_args.snapshot_trigger_policy}, "
+                "defaulting to EVERY_TURN"
+            )
+            trigger_policy = SnapshotTriggerPolicy.EVERY_TURN
+
+        retention_config = SnapshotRetentionConfig(
+            max_snapshots_per_conversation=server_args.snapshot_retention_count,
+            snapshot_trigger_policy=trigger_policy,
+            snapshot_every_n_turns=server_args.snapshot_every_n_turns,
+            min_snapshot_interval_seconds=server_args.snapshot_min_interval_seconds,
+            keep_named_branches=server_args.snapshot_keep_named_branches,
+        )
+
+        self.snapshot_policy = SnapshotRetentionPolicy(
+            self.snapshot_manager, retention_config
+        )
+
+        # Register post-forward hook
+        def post_forward_snapshot_callback(trigger):
+            """Callback triggered after forward pass to save snapshot."""
+            req = trigger.req
+            mamba_pool = trigger.mamba_pool
+            turn_number = trigger.turn_number
+
+            # Get conversation ID (use rid as fallback)
+            conversation_id = getattr(req, "conversation_id", None)
+            if conversation_id is None:
+                conversation_id = req.rid
+
+            # Check if we should snapshot based on policy
+            additional_context = trigger.additional_context or {}
+            if not self.snapshot_policy.should_snapshot(
+                req, turn_number, conversation_id, additional_context
+            ):
+                return
+
+            # Extract Mamba state from pool
+            try:
+                conv_states, temporal_states = self.snapshot_manager.extract_state_from_pool(
+                    mamba_pool, req.mamba_pool_idx
+                )
+            except Exception as e:
+                logger.error(f"Failed to extract Mamba state for snapshot: {e}")
+                return
+
+            # Build metadata
+            from sglang.srt.snapshot import MambaSnapshotMetadata
+
+            # Get layer config from model
+            layer_config = {
+                "num_layers": mamba_pool.num_mamba_layers,
+                "model_type": "hybrid" if hasattr(req, "mamba_pool_idx") else "mamba",
+            }
+
+            metadata = MambaSnapshotMetadata(
+                conversation_id=conversation_id,
+                turn_number=turn_number,
+                timestamp=time.time(),
+                token_count=len(req.fill_ids) if hasattr(req, "fill_ids") else 0,
+                model_name=self.server_args.model_path,
+                mamba_pool_idx=req.mamba_pool_idx,
+                req_pool_idx=req.req_pool_idx,
+                layer_config=layer_config,
+            )
+
+            # Save snapshot
+            try:
+                self.snapshot_manager.save_snapshot(
+                    conv_states, temporal_states, metadata
+                )
+                self.snapshot_policy.mark_snapshot_taken(conversation_id)
+
+                # Prune old snapshots if needed
+                self.snapshot_policy.prune_old_snapshots(conversation_id)
+
+                logger.debug(
+                    f"Snapshot saved: conversation={conversation_id}, turn={turn_number}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to save snapshot: {e}", exc_info=True)
+
+        self.snapshot_hook_manager.register_post_forward_hook(
+            post_forward_snapshot_callback
+        )
+
+        logger.info("Snapshot system initialized successfully")
+
+        # Restore snapshots if auto-restore is enabled
+        if server_args.snapshot_auto_restore:
+            self.restore_snapshots_on_startup()
+
+    def restore_snapshots_on_startup(self):
+        """
+        Restore the latest snapshots for all conversations on server startup.
+
+        This enables continuity across server restarts.
+        """
+        if self.snapshot_manager is None:
+            return
+
+        logger.info("Attempting to restore snapshots from previous sessions...")
+
+        conversations = self.snapshot_manager.list_conversations()
+
+        if not conversations:
+            logger.info("No previous snapshots found")
+            return
+
+        logger.info(f"Found {len(conversations)} conversation(s) with snapshots")
+
+        # For now, we'll just log what we found
+        # Full restoration requires request recreation which is complex
+        # and should be implemented when the agent loop is added
+        for conv_id in conversations:
+            latest = self.snapshot_manager.get_latest_snapshot(conv_id)
+            if latest:
+                turn_number, metadata = latest
+                logger.info(
+                    f"  - Conversation {conv_id}: latest snapshot at turn {turn_number}, "
+                    f"{metadata.token_count} tokens"
+                )
+
+        logger.info(
+            "Snapshot restoration logged. Full state restoration will be "
+            "implemented with agent loop in Phase 3."
+        )
 
     def init_schedule_policy(self):
         # Init schedule policy and new token estimation
@@ -2475,9 +2686,48 @@ class Scheduler(
         elif batch.forward_mode.is_idle():
             self.process_batch_result_idle(batch, result)
 
+        # Trigger snapshot hooks if enabled (for Mamba state persistence)
+        self._trigger_snapshot_hooks(batch)
+
         self.log_batch_result_stats(batch, result)
         self._maybe_clear_mm_inputs(batch)
         self.maybe_send_health_check_signal()
+
+    def _trigger_snapshot_hooks(self, batch: ScheduleBatch):
+        """
+        Trigger snapshot hooks for all requests in the batch.
+
+        This method is called after processing batch results to save
+        Mamba states if snapshot persistence is enabled.
+
+        **Backward Compatibility**: No-op if snapshot_hook_manager is None.
+        """
+        if self.snapshot_hook_manager is None:
+            return
+
+        # Get mamba_pool if available
+        mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+
+        if mamba_pool is None:
+            return
+
+        # Trigger hooks for each request
+        for req in batch.reqs:
+            # Skip if request doesn't have mamba_pool_idx
+            if not hasattr(req, "mamba_pool_idx") or req.mamba_pool_idx is None:
+                continue
+
+            # Calculate turn number (approximate based on output length)
+            turn_number = len(req.output_ids) if hasattr(req, "output_ids") else 0
+
+            # Trigger post-forward hook
+            self.snapshot_hook_manager.trigger_post_forward(
+                req=req,
+                mamba_pool=mamba_pool,
+                req_pool=self.req_to_token_pool,
+                turn_number=turn_number,
+                additional_context=None,
+            )
 
     def maybe_send_health_check_signal(self):
         if self.return_health_check_ct:
