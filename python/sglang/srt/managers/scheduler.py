@@ -795,6 +795,11 @@ class Scheduler(
         self.snapshot_hook_manager = None
         self.snapshot_policy = None
 
+        # Initialize tier management components as None (default)
+        self.host_pool = None
+        self.conversation_tracker = None
+        self.tier_manager = None
+
         # Only initialize if snapshot persistence is enabled
         if not server_args.enable_snapshot_persistence:
             logger.info("Snapshot persistence disabled (standard mode)")
@@ -874,6 +879,52 @@ class Scheduler(
             self.snapshot_manager, retention_config
         )
 
+        # Initialize tier management system (Phase 2.5)
+        if server_args.enable_memory_tiers:
+            try:
+                from sglang.srt.snapshot import (
+                    MambaHostPool,
+                    ConversationTracker,
+                    TierManager,
+                )
+
+                # Create host memory pool
+                self.host_pool = MambaHostPool(
+                    max_conversations=server_args.max_warm_conversations,
+                    max_memory_gb=server_args.max_warm_memory_gb,
+                    enable_cross_session_refs=server_args.enable_cross_session_refs,
+                )
+
+                # Create conversation tracker
+                self.conversation_tracker = ConversationTracker(
+                    active_timeout=server_args.conversation_active_timeout,
+                    warm_timeout=server_args.conversation_warm_timeout,
+                    cold_retention=server_args.conversation_cold_retention,
+                )
+
+                # Create tier manager
+                self.tier_manager = TierManager(
+                    conversation_tracker=self.conversation_tracker,
+                    host_pool=self.host_pool,
+                    snapshot_manager=self.snapshot_manager,
+                    enable_background_cleanup=server_args.enable_tier_background_cleanup,
+                    cleanup_interval=server_args.tier_cleanup_interval,
+                )
+
+                logger.info(
+                    "Memory tier system initialized: "
+                    f"max_warm={server_args.max_warm_conversations}, "
+                    f"max_warm_memory={server_args.max_warm_memory_gb}GB, "
+                    f"cross_session_refs={server_args.enable_cross_session_refs}"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to initialize tier management: {e}", exc_info=True)
+                logger.warning("Tier management disabled, falling back to disk-only snapshots")
+                self.host_pool = None
+                self.conversation_tracker = None
+                self.tier_manager = None
+
         # Register post-forward hook
         def post_forward_snapshot_callback(trigger):
             """Callback triggered after forward pass to save snapshot."""
@@ -922,19 +973,48 @@ class Scheduler(
                 layer_config=layer_config,
             )
 
-            # Save snapshot
+            # Save snapshot (use tier manager if available, else direct to disk)
             try:
-                self.snapshot_manager.save_snapshot(
-                    conv_states, temporal_states, metadata
-                )
-                self.snapshot_policy.mark_snapshot_taken(conversation_id)
+                if self.tier_manager is not None:
+                    # Save to warm tier (host RAM)
+                    success = self.tier_manager.save_to_warm_tier(
+                        conversation_id,
+                        conv_states,
+                        temporal_states,
+                        metadata.to_dict(),
+                    )
+
+                    if success:
+                        self.snapshot_policy.mark_snapshot_taken(conversation_id)
+                        logger.debug(
+                            f"Snapshot saved to WARM tier: conversation={conversation_id}, "
+                            f"turn={turn_number}"
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to save to WARM tier, falling back to COLD: {conversation_id}"
+                        )
+                        # Fall back to saving directly to disk
+                        self.snapshot_manager.save_snapshot(
+                            conv_states, temporal_states, metadata
+                        )
+                        self.snapshot_policy.mark_snapshot_taken(conversation_id)
+
+                else:
+                    # No tier manager, save directly to disk
+                    self.snapshot_manager.save_snapshot(
+                        conv_states, temporal_states, metadata
+                    )
+                    self.snapshot_policy.mark_snapshot_taken(conversation_id)
+
+                    logger.debug(
+                        f"Snapshot saved to COLD tier (disk): conversation={conversation_id}, "
+                        f"turn={turn_number}"
+                    )
 
                 # Prune old snapshots if needed
                 self.snapshot_policy.prune_old_snapshots(conversation_id)
 
-                logger.debug(
-                    f"Snapshot saved: conversation={conversation_id}, turn={turn_number}"
-                )
             except Exception as e:
                 logger.error(f"Failed to save snapshot: {e}", exc_info=True)
 
@@ -983,6 +1063,71 @@ class Scheduler(
             "Snapshot restoration logged. Full state restoration will be "
             "implemented with agent loop in Phase 3."
         )
+
+    def handle_mamba_state_eviction(
+        self,
+        conversation_id: str,
+        mamba_pool_idx: int,
+        req_pool_idx: int,
+        metadata: Optional[dict] = None,
+    ):
+        """
+        Handle Mamba state eviction from VRAM.
+
+        This method is called when Mamba state is evicted from the GPU pool.
+        It saves the state to the warm tier (host RAM) if tier management
+        is enabled, otherwise it saves directly to cold tier (disk).
+
+        Args:
+            conversation_id: Conversation identifier
+            mamba_pool_idx: Index in MambaPool being evicted
+            req_pool_idx: Index in ReqToTokenPool
+            metadata: Optional metadata dict
+
+        Note:
+            This is a helper method that should be called from eviction code
+            paths (e.g., when MambaRadixCache evicts a node).
+        """
+        if self.tier_manager is None:
+            # No tier management, just log
+            logger.debug(
+                f"Mamba state evicted from VRAM (no tier management): {conversation_id}"
+            )
+            return
+
+        # Get mamba pool
+        mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+        if mamba_pool is None:
+            return
+
+        try:
+            # Extract state from pool before it's evicted
+            conv_states, temporal_states = self.snapshot_manager.extract_state_from_pool(
+                mamba_pool, mamba_pool_idx
+            )
+
+            # Save to warm tier
+            success = self.tier_manager.save_to_warm_tier(
+                conversation_id,
+                conv_states,
+                temporal_states,
+                metadata or {},
+            )
+
+            if success:
+                logger.info(
+                    f"State saved to WARM tier on eviction: {conversation_id}, "
+                    f"host_pool_size={len(self.host_pool)}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to save to WARM tier on eviction: {conversation_id}"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Error handling Mamba state eviction: {e}", exc_info=True
+            )
 
     def init_schedule_policy(self):
         # Init schedule policy and new token estimation

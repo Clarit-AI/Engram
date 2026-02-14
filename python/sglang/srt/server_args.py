@@ -531,6 +531,17 @@ class ServerArgs:
     snapshot_keep_named_branches: bool = True
     snapshot_auto_restore: bool = True
 
+    # Mamba memory tier management (Phase 2.5)
+    enable_memory_tiers: bool = True
+    max_warm_conversations: int = 100
+    max_warm_memory_gb: float = 10.0
+    conversation_active_timeout: float = 300.0  # 5 minutes
+    conversation_warm_timeout: float = 1800.0  # 30 minutes
+    conversation_cold_retention: float = 604800.0  # 7 days
+    enable_cross_session_refs: bool = True
+    enable_tier_background_cleanup: bool = True
+    tier_cleanup_interval: float = 60.0  # 60 seconds
+
     # Hierarchical cache
     enable_hierarchical_cache: bool = False
     hicache_ratio: float = 2.0
@@ -4277,6 +4288,64 @@ class ServerArgs:
             action="store_true",
             default=ServerArgs.snapshot_auto_restore,
             help="Automatically restore latest snapshots on server startup. Default: True.",
+        )
+
+        # Mamba memory tier management (Phase 2.5)
+        parser.add_argument(
+            "--enable-memory-tiers",
+            action="store_true",
+            default=ServerArgs.enable_memory_tiers,
+            help="Enable 3-tier memory management (VRAM→Host RAM→Disk) for Mamba states. "
+            "Provides fast restoration from host memory tier. Default: True when snapshots enabled.",
+        )
+        parser.add_argument(
+            "--max-warm-conversations",
+            type=int,
+            default=ServerArgs.max_warm_conversations,
+            help="Maximum number of conversations to keep in host RAM (warm tier). Default: 100.",
+        )
+        parser.add_argument(
+            "--max-warm-memory-gb",
+            type=float,
+            default=ServerArgs.max_warm_memory_gb,
+            help="Maximum host RAM usage for warm tier in GB. Default: 10.0.",
+        )
+        parser.add_argument(
+            "--conversation-active-timeout",
+            type=float,
+            default=ServerArgs.conversation_active_timeout,
+            help="Seconds of inactivity before ACTIVE (VRAM) → WARM (host RAM) transition. Default: 300 (5 min).",
+        )
+        parser.add_argument(
+            "--conversation-warm-timeout",
+            type=float,
+            default=ServerArgs.conversation_warm_timeout,
+            help="Seconds of inactivity before WARM (host RAM) → COLD (disk) transition. Default: 1800 (30 min).",
+        )
+        parser.add_argument(
+            "--conversation-cold-retention",
+            type=float,
+            default=ServerArgs.conversation_cold_retention,
+            help="Seconds before COLD (disk) conversations are archived/deleted. Default: 604800 (7 days).",
+        )
+        parser.add_argument(
+            "--enable-cross-session-refs",
+            action="store_true",
+            default=ServerArgs.enable_cross_session_refs,
+            help="Allow loading state from other conversations (cross-session references). "
+            "Enables agents to reference previous conversation contexts. Default: True.",
+        )
+        parser.add_argument(
+            "--enable-tier-background-cleanup",
+            action="store_true",
+            default=ServerArgs.enable_tier_background_cleanup,
+            help="Run background thread for automatic tier transitions. Default: True.",
+        )
+        parser.add_argument(
+            "--tier-cleanup-interval",
+            type=float,
+            default=ServerArgs.tier_cleanup_interval,
+            help="Seconds between tier cleanup checks. Default: 60.0.",
         )
 
         # Hierarchical cache
