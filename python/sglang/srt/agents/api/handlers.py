@@ -129,35 +129,48 @@ class AgentAPIHandler:
     # ========================================================================
 
     async def health(self) -> HealthResponse:
-        """Health check endpoint."""
+        """
+        Health check endpoint.
+
+        Returns system health based on enabled features and component availability.
+        Components that are disabled are not considered unhealthy.
+        """
         server_args = self.scheduler.server_args
 
+        agent_enabled = getattr(server_args, "enable_agent_tools", False)
+        tiers_enabled = getattr(server_args, "enable_memory_tiers", False)
+
+        # Component availability (True/False/None for not applicable)
         components = {
             "tool_registry": self.tool_registry is not None,
             "tool_executor": self.tool_executor is not None,
             "tool_parser": self.tool_parser is not None,
-            "tier_manager": self.tier_manager is not None,
-            "conversation_tracker": self.conversation_tracker is not None,
-            "host_pool": self.host_pool is not None,
+            "tier_manager": self.tier_manager is not None if tiers_enabled else None,
+            "conversation_tracker": self.conversation_tracker is not None if tiers_enabled else None,
+            "host_pool": self.host_pool is not None if tiers_enabled else None,
         }
 
-        # Determine overall health
-        agent_enabled = getattr(server_args, "enable_agent_tools", False)
-        core_healthy = all(
-            [self.tool_registry, self.tool_executor, self.tool_parser]
-        )
+        # Determine overall health based on what SHOULD be available
+        if agent_enabled:
+            # Agent tools enabled: require core components
+            core_healthy = all([
+                self.tool_registry is not None,
+                self.tool_executor is not None,
+                self.tool_parser is not None,
+            ])
 
-        if agent_enabled and core_healthy:
-            health_status = "healthy"
-        elif agent_enabled and not core_healthy:
-            health_status = "degraded"
+            if core_healthy:
+                health_status = "healthy"
+            else:
+                health_status = "degraded"
         else:
-            health_status = "healthy"  # Not enabled = healthy (expected state)
+            # Agent tools disabled: always healthy (expected state)
+            health_status = "healthy"
 
         return HealthResponse(
             status=health_status,
             agent_tools_enabled=agent_enabled,
-            memory_tiers_enabled=getattr(server_args, "enable_memory_tiers", False),
+            memory_tiers_enabled=tiers_enabled,
             snapshot_persistence_enabled=getattr(
                 server_args, "enable_snapshot_persistence", False
             ),
@@ -552,7 +565,8 @@ class AgentAPIHandler:
             )
 
         try:
-            transitions = self.tier_manager.run_cleanup_cycle()
+            # Pass force flag to cleanup cycle
+            transitions = self.tier_manager.run_cleanup_cycle(force=request.force)
 
             return TierCleanupResponse(status="success", transitions=transitions)
 

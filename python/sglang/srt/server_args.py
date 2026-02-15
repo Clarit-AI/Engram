@@ -4300,10 +4300,16 @@ class ServerArgs:
         parser.add_argument(
             "--enable-memory-tiers",
             action="store_true",
-            default=ServerArgs.enable_memory_tiers,
             help="Enable 3-tier memory management (VRAM→Host RAM→Disk) for Mamba states. "
-            "Provides fast restoration from host memory tier. Default: True when snapshots enabled.",
+            "Provides fast restoration from host memory tier. Default: %(default)s.",
         )
+        parser.add_argument(
+            "--no-enable-memory-tiers",
+            dest="enable_memory_tiers",
+            action="store_false",
+            help="Disable memory tiers (keep all state in VRAM only).",
+        )
+        parser.set_defaults(enable_memory_tiers=ServerArgs.enable_memory_tiers)
         parser.add_argument(
             "--max-warm-conversations",
             type=int,
@@ -4358,9 +4364,15 @@ class ServerArgs:
         parser.add_argument(
             "--enable-agent-tools",
             action="store_true",
-            default=ServerArgs.enable_agent_tools,
-            help="Enable agent tool-calling framework. Allows models to call tools (memory, calculator, etc.). Default: False.",
+            help="Enable agent tool-calling framework. Allows models to call tools (memory, calculator, etc.). Default: %(default)s.",
         )
+        parser.add_argument(
+            "--no-enable-agent-tools",
+            dest="enable_agent_tools",
+            action="store_false",
+            help="Disable agent tools (standard inference mode).",
+        )
+        parser.set_defaults(enable_agent_tools=ServerArgs.enable_agent_tools)
         parser.add_argument(
             "--agent-tool-timeout",
             type=float,
