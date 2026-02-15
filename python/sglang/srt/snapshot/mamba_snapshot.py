@@ -102,13 +102,77 @@ class MambaSnapshotManager:
         Args:
             base_dir: Root directory for all snapshot storage
         """
-        self.base_dir = Path(base_dir)
+        self.base_dir = Path(base_dir).resolve()  # Resolve to absolute path
         self.base_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"MambaSnapshotManager initialized at {self.base_dir}")
 
+    @staticmethod
+    def _sanitize_path_component(component: str, name: str = "component") -> str:
+        """
+        Sanitize a path component to prevent path traversal attacks.
+
+        Args:
+            component: Path component to sanitize (e.g., conversation_id, branch_name)
+            name: Name of component for error messages
+
+        Returns:
+            Sanitized path component
+
+        Raises:
+            ValueError: If component contains invalid characters
+        """
+        if not component:
+            raise ValueError(f"{name} cannot be empty")
+
+        # Only allow alphanumeric, underscore, hyphen, and period
+        import re
+        if not re.match(r'^[a-zA-Z0-9_.-]+$', component):
+            raise ValueError(
+                f"{name} contains invalid characters. "
+                f"Only alphanumeric, underscore, hyphen, and period are allowed. "
+                f"Got: {component}"
+            )
+
+        # Prevent path traversal attempts
+        if '..' in component or component.startswith(('/', '\\')):
+            raise ValueError(
+                f"{name} contains path traversal sequences. Got: {component}"
+            )
+
+        # Additional safety: ensure reasonable length
+        if len(component) > 255:
+            raise ValueError(f"{name} exceeds maximum length of 255 characters")
+
+        return component
+
     def _get_conversation_dir(self, conversation_id: str) -> Path:
-        """Get directory for a specific conversation."""
-        conv_dir = self.base_dir / f"conversation_{conversation_id}"
+        """
+        Get directory for a specific conversation.
+
+        Args:
+            conversation_id: Conversation identifier
+
+        Returns:
+            Path to conversation directory
+
+        Raises:
+            ValueError: If conversation_id is invalid or contains path traversal sequences
+        """
+        # Sanitize conversation_id to prevent path traversal
+        safe_id = self._sanitize_path_component(conversation_id, "conversation_id")
+
+        conv_dir = self.base_dir / f"conversation_{safe_id}"
+
+        # Verify the resulting path is still under base_dir
+        try:
+            conv_dir_resolved = conv_dir.resolve()
+            if not str(conv_dir_resolved).startswith(str(self.base_dir)):
+                raise ValueError(
+                    f"conversation_id '{conversation_id}' results in path outside base directory"
+                )
+        except (OSError, RuntimeError) as e:
+            raise ValueError(f"Invalid conversation_id '{conversation_id}': {e}")
+
         conv_dir.mkdir(parents=True, exist_ok=True)
         return conv_dir
 
@@ -128,15 +192,30 @@ class MambaSnapshotManager:
 
         Returns:
             Tuple of (metadata_path, state_path)
+
+        Raises:
+            ValueError: If conversation_id or branch_name contains invalid characters
         """
         conv_dir = self._get_conversation_dir(conversation_id)
 
         if branch_name:
+            # Sanitize branch_name to prevent path traversal
+            safe_branch = self._sanitize_path_component(branch_name, "branch_name")
+
             branch_dir = conv_dir / "branches"
             branch_dir.mkdir(parents=True, exist_ok=True)
-            metadata_path = branch_dir / f"{branch_name}_metadata.json"
-            state_path = branch_dir / f"{branch_name}_state.safetensors"
+            metadata_path = branch_dir / f"{safe_branch}_metadata.json"
+            state_path = branch_dir / f"{safe_branch}_state.safetensors"
+
+            # Verify paths are still under branch_dir
+            if not str(metadata_path.resolve()).startswith(str(branch_dir.resolve())):
+                raise ValueError(f"branch_name '{branch_name}' results in invalid path")
+
         elif turn_number is not None:
+            # Validate turn_number is non-negative
+            if turn_number < 0:
+                raise ValueError(f"turn_number must be non-negative, got {turn_number}")
+
             metadata_path = conv_dir / f"turn_{turn_number}_metadata.json"
             state_path = conv_dir / f"turn_{turn_number}_state.safetensors"
         else:

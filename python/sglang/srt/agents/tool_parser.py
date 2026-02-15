@@ -16,6 +16,14 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
+# Attempt to import defusedxml for safe XML parsing
+try:
+    import defusedxml.ElementTree as DefusedET
+    DEFUSEDXML_AVAILABLE = True
+except ImportError:
+    DEFUSEDXML_AVAILABLE = False
+    # Note: Will warn when XML parsing is attempted
+
 logger = logging.getLogger(__name__)
 
 
@@ -265,7 +273,27 @@ class ToolCallParser:
             try:
                 # Wrap in root element for parsing
                 xml_text = f"<tool_call>{match}</tool_call>"
-                root = ET.fromstring(xml_text)
+
+                # Use defusedxml if available to prevent XXE attacks
+                if DEFUSEDXML_AVAILABLE:
+                    root = DefusedET.fromstring(xml_text)
+                else:
+                    # Fallback to standard parser with warning
+                    # Note: This is vulnerable to XXE attacks
+                    # Users should install defusedxml: pip install defusedxml
+                    if not hasattr(self, "_xxe_warned"):
+                        logger.warning(
+                            "Using unsafe XML parser. Install defusedxml for security: "
+                            "pip install defusedxml"
+                        )
+                        self._xxe_warned = True
+
+                    # Basic safety: limit input size
+                    if len(xml_text) > 10000:  # 10KB limit
+                        logger.warning(f"XML input too large ({len(xml_text)} bytes), skipping")
+                        continue
+
+                    root = ET.fromstring(xml_text)
 
                 # Extract name
                 name_elem = root.find("name")
