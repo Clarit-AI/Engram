@@ -6,7 +6,6 @@ memory, and tier management.
 """
 
 import logging
-import time
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
