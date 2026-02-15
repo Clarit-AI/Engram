@@ -368,6 +368,9 @@ class Scheduler(
         # Init snapshot system (for Mamba state persistence)
         self.init_snapshot_system()
 
+        # Init agent system (for tool-calling framework)
+        self.init_agent_system()
+
         # Init running status
         self.init_running_status()
 
