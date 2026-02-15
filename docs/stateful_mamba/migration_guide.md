@@ -40,9 +40,12 @@ The snapshot system is **fully backward compatible**. Existing code continues to
 import sglang
 print(f"SGLang version: {sglang.__version__}")
 
-# Check if snapshots are available
-from sglang.snapshot import SNAPSHOT_AVAILABLE
-print(f"Snapshots available: {SNAPSHOT_AVAILABLE}")
+# Check if snapshot modules are available
+try:
+    from sglang.srt.snapshot import MambaSnapshotManager
+    print("Snapshots available: True")
+except ImportError:
+    print("Snapshots available: False")
 ```
 
 ### Memory Requirements
@@ -527,7 +530,7 @@ def safe_function(s):
 
 ```bash
 # Remove stored snapshots from disk
-rm -rf ./snapshots/*.snapshot
+rm -f ./snapshots/*.snapshot
 ```
 
 ## Migration Checklist
