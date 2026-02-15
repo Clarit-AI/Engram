@@ -7,6 +7,7 @@ and execution tracking.
 
 import asyncio
 import logging
+import threading
 import time
 import traceback
 from dataclasses import dataclass
@@ -101,7 +102,8 @@ class ToolExecutionEngine:
         self.default_timeout = default_timeout
         self.enable_sandboxing = enable_sandboxing
 
-        # Metrics
+        # Metrics (protected by lock for thread-safety)
+        self._stats_lock = threading.Lock()
         self._total_executions = 0
         self._successful_executions = 0
         self._failed_executions = 0
@@ -133,13 +135,17 @@ class ToolExecutionEngine:
             ToolExecutionResult
         """
         start_time = time.time()
-        self._total_executions += 1
+
+        # Increment total executions atomically
+        with self._stats_lock:
+            self._total_executions += 1
 
         # Get tool from registry
         tool = self.tool_registry.get(tool_name)
 
         if tool is None:
-            self._failed_executions += 1
+            with self._stats_lock:
+                self._failed_executions += 1
             return ToolExecutionResult(
                 tool_name=tool_name,
                 status=ToolExecutionStatus.ERROR,
@@ -149,7 +155,8 @@ class ToolExecutionEngine:
 
         # Validate parameters
         if not tool.validate_parameters(parameters):
-            self._failed_executions += 1
+            with self._stats_lock:
+                self._failed_executions += 1
             return ToolExecutionResult(
                 tool_name=tool_name,
                 status=ToolExecutionStatus.VALIDATION_ERROR,
@@ -179,8 +186,11 @@ class ToolExecutionEngine:
                 )
 
             execution_time_ms = (time.time() - start_time) * 1000
-            self._successful_executions += 1
-            self._total_execution_time_ms += execution_time_ms
+
+            # Update success counters atomically
+            with self._stats_lock:
+                self._successful_executions += 1
+                self._total_execution_time_ms += execution_time_ms
 
             return ToolExecutionResult(
                 tool_name=tool_name,
@@ -190,8 +200,11 @@ class ToolExecutionEngine:
             )
 
         except TimeoutError:
-            self._failed_executions += 1
             execution_time_ms = (time.time() - start_time) * 1000
+
+            # Update failure counter atomically
+            with self._stats_lock:
+                self._failed_executions += 1
 
             logger.error(f"Tool '{tool_name}' execution timeout")
 
@@ -203,8 +216,11 @@ class ToolExecutionEngine:
             )
 
         except Exception as e:
-            self._failed_executions += 1
             execution_time_ms = (time.time() - start_time) * 1000
+
+            # Update failure counter atomically
+            with self._stats_lock:
+                self._failed_executions += 1
 
             error_msg = f"{type(e).__name__}: {str(e)}"
             logger.error(
@@ -322,31 +338,38 @@ class ToolExecutionEngine:
         return results
 
     def get_stats(self) -> dict:
-        """Get execution statistics."""
-        success_rate = 0.0
-        if self._total_executions > 0:
-            success_rate = self._successful_executions / self._total_executions
+        """
+        Get execution statistics (thread-safe).
 
-        avg_execution_time_ms = 0.0
-        if self._successful_executions > 0:
-            avg_execution_time_ms = (
-                self._total_execution_time_ms / self._successful_executions
-            )
+        Returns:
+            Dictionary with execution statistics
+        """
+        with self._stats_lock:
+            success_rate = 0.0
+            if self._total_executions > 0:
+                success_rate = self._successful_executions / self._total_executions
 
-        return {
-            "total_executions": self._total_executions,
-            "successful_executions": self._successful_executions,
-            "failed_executions": self._failed_executions,
-            "success_rate": success_rate,
-            "avg_execution_time_ms": avg_execution_time_ms,
-            "total_execution_time_ms": self._total_execution_time_ms,
-        }
+            avg_execution_time_ms = 0.0
+            if self._successful_executions > 0:
+                avg_execution_time_ms = (
+                    self._total_execution_time_ms / self._successful_executions
+                )
+
+            return {
+                "total_executions": self._total_executions,
+                "successful_executions": self._successful_executions,
+                "failed_executions": self._failed_executions,
+                "success_rate": success_rate,
+                "avg_execution_time_ms": avg_execution_time_ms,
+                "total_execution_time_ms": self._total_execution_time_ms,
+            }
 
     def reset_stats(self):
-        """Reset execution statistics."""
-        self._total_executions = 0
-        self._successful_executions = 0
-        self._failed_executions = 0
-        self._total_execution_time_ms = 0.0
+        """Reset execution statistics (thread-safe)."""
+        with self._stats_lock:
+            self._total_executions = 0
+            self._successful_executions = 0
+            self._failed_executions = 0
+            self._total_execution_time_ms = 0.0
 
         logger.info("Tool execution statistics reset")
