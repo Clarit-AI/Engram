@@ -32,6 +32,11 @@ try:
         register_agent_api_routes,
         AgentAPIHandler,
     )
+    from sglang.srt.agents.api.websocket import (
+        register_websocket_routes,
+        WebSocketManager,
+        StreamingToolExecutor,
+    )
 except ImportError:
     # Allow partial imports during development
     pass
@@ -47,4 +52,8 @@ __all__ = [
     # Handlers
     "register_agent_api_routes",
     "AgentAPIHandler",
+    # WebSocket
+    "register_websocket_routes",
+    "WebSocketManager",
+    "StreamingToolExecutor",
 ]

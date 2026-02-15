@@ -333,17 +333,19 @@ async def lifespan(fast_api_app: FastAPI):
         )
         logger.info("Warmup ended")
 
-    # Register agent API routes if enabled (Phase 3)
+    # Register agent API routes if enabled (Phase 4 + 4.5)
     if getattr(server_args, "enable_agent_tools", False):
         try:
             from sglang.srt.agents.api.handlers import register_agent_api_routes
+            from sglang.srt.agents.api.websocket import register_websocket_routes
 
             # Note: Agent API registration requires scheduler components
             # In distributed mode, this may need RPC to access scheduler
             # For now, this works in single-node deployments
             if hasattr(_global_state, "scheduler_proxy"):
                 register_agent_api_routes(app, _global_state.scheduler_proxy)
-                logger.info("Agent API routes registered successfully")
+                register_websocket_routes(app, _global_state.scheduler_proxy)
+                logger.info("Agent API routes (REST + WebSocket) registered successfully")
             else:
                 logger.warning(
                     "Agent tools enabled but scheduler proxy not available. "
