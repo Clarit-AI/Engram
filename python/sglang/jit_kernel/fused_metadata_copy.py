@@ -154,6 +154,14 @@ def fused_metadata_copy_cuda(
     has_real_page_table = real_page_table_src is not None
     has_flashmla = flashmla_num_splits_src is not None
 
+    # Validate mode-dependent required tensors early (forward_mode 1=TARGET_VERIFY, 2=DRAFT_EXTEND)
+    if forward_mode in (1, 2):
+        if seqlens_expanded_src is None or seqlens_expanded_dst is None:
+            raise ValueError(
+                f"seqlens_expanded_src and seqlens_expanded_dst are required "
+                f"for forward_mode={forward_mode} (TARGET_VERIFY/DRAFT_EXTEND)"
+            )
+
     # Get JIT-compiled module for this configuration (cached after first use)
     module = _jit_fused_metadata_copy_module(
         forward_mode, has_real_page_table, has_flashmla

@@ -101,7 +101,7 @@ This includes:
 ### Negative
 
 ❌ **Verbose:** `server_args` is longer than `config` (mitigated by clarity)
-❌ **None:** No significant drawbacks identified
+✅ **None:** No significant drawbacks identified
 
 ### Risks
 
@@ -113,7 +113,7 @@ This includes:
 **Risk 2: Confusion with `ServerArgs` vs `ModelConfig`**
 - **Mitigation:** Clear documentation of parameter purposes
 - **Detection:** Unit tests will fail if wrong config passed
-- **Impact:** Low (compile-time type safety)
+- **Impact:** Low (static analysis via mypy/pyright catches type mismatches; runtime errors on wrong type)
 
 ---
 

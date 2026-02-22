@@ -139,15 +139,19 @@ class AgentAPIHandler:
         agent_enabled = getattr(server_args, "enable_agent_tools", False)
         tiers_enabled = getattr(server_args, "enable_memory_tiers", False)
 
-        # Component availability (True/False/None for not applicable)
-        components = {
+        # Component availability — only include tier components when tiers are enabled,
+        # since HealthResponse.components is typed Dict[str, bool] (no None allowed)
+        components: dict = {
             "tool_registry": self.tool_registry is not None,
             "tool_executor": self.tool_executor is not None,
             "tool_parser": self.tool_parser is not None,
-            "tier_manager": self.tier_manager is not None if tiers_enabled else None,
-            "conversation_tracker": self.conversation_tracker is not None if tiers_enabled else None,
-            "host_pool": self.host_pool is not None if tiers_enabled else None,
         }
+        if tiers_enabled:
+            components.update({
+                "tier_manager": self.tier_manager is not None,
+                "conversation_tracker": self.conversation_tracker is not None,
+                "host_pool": self.host_pool is not None,
+            })
 
         # Determine overall health based on what SHOULD be available
         if agent_enabled:
@@ -278,7 +282,7 @@ class AgentAPIHandler:
             result=result.result,
             error=result.error,
             execution_time_ms=result.execution_time_ms,
-            metadata=result.metadata,
+            metadata=result.metadata or {},
         )
 
     # ========================================================================

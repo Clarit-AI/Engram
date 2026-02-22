@@ -87,7 +87,7 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 ### **Team 1: Oversight & Coordination Agent** 🎯
 
 **Agent ID:** `oversight-coordinator`
-**Resume Context:** Check `/home/user/sglang-mamba/phase3/oversight/state.json`
+**Resume Context:** Check `phase3/oversight/state.json`
 
 **Role:** Strategic planning, team coordination, quality gates
 
@@ -107,7 +107,7 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 
 **Agent Instructions for Resumption:**
 ```
-1. Read /home/user/sglang-mamba/PHASE_3_PLAN.md
+1. Read PHASE_3_PLAN.md
 2. Check "Current Progress Tracker" section for last completed phase
 3. Review validation status of most recent phase
 4. If validation failed, coordinate fixes before proceeding
@@ -116,15 +116,15 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 ```
 
 **State Files:**
-- `/home/user/sglang-mamba/phase3/oversight/state.json` - Current phase state
-- `/home/user/sglang-mamba/phase3/oversight/validation_reports/` - All validation reports
+- `phase3/oversight/state.json` - Current phase state
+- `phase3/oversight/validation_reports/` - All validation reports
 
 ---
 
 ### **Team 2: Documentation Agent** 📚
 
 **Agent ID:** `documentation-specialist`
-**Resume Context:** Check `/home/user/sglang-mamba/phase3/docs/state.json`
+**Resume Context:** Check `phase3/docs/state.json`
 
 **Role:** Knowledge management, documentation accuracy
 
@@ -160,16 +160,16 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 ```
 
 **State Files:**
-- `/home/user/sglang-mamba/phase3/docs/state.json` - Documentation progress
-- `/home/user/sglang-mamba/phase3/docs/pending_updates.json` - Uncommitted changes
-- `/home/user/sglang-mamba/phase3/docs/adr/` - Architecture decision records
+- `phase3/docs/state.json` - Documentation progress
+- `phase3/docs/pending_updates.json` - Uncommitted changes
+- `phase3/docs/adr/` - Architecture decision records
 
 ---
 
 ### **Team 3: Engine Parameter Refactoring Agent** 🔧
 
 **Agent ID:** `engine-refactoring-specialist`
-**Resume Context:** Check `/home/user/sglang-mamba/phase3/engine/state.json`
+**Resume Context:** Check `phase3/engine/state.json`
 
 **Role:** Fix naming inconsistencies, update engine integration
 
@@ -197,7 +197,7 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 - [ ] Identify inconsistencies and conflicts
 - [ ] Create refactoring map: old_name → new_name
 
-**Output:** `/home/user/sglang-mamba/phase3/engine/audit_report.md`
+**Output:** `phase3/engine/audit_report.md`
 
 #### Step 2: Design Phase ✅/❌
 **Status:** Not Started
@@ -207,7 +207,7 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 - [ ] Create migration plan for each file
 - [ ] Identify risk areas (breaking changes)
 
-**Output:** `/home/user/sglang-mamba/phase3/docs/adr/001-engine-parameter-naming.md`
+**Output:** `phase3/docs/adr/001-engine-parameter-naming.md`
 
 #### Step 3: Implementation Phase ✅/❌
 **Status:** Not Started
@@ -235,7 +235,7 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 
 **Agent Instructions for Resumption:**
 ```
-1. Read /home/user/sglang-mamba/phase3/engine/state.json
+1. Read phase3/engine/state.json
 2. Check which refactoring step was last completed
 3. Review /phase3/engine/audit_report.md for findings
 4. Check ADR 001 for approved naming standard
@@ -244,16 +244,16 @@ Phase X.Y → Validation Gate X.Y → [PASS/FAIL] → Phase X.(Y+1)
 ```
 
 **State Files:**
-- `/home/user/sglang-mamba/phase3/engine/state.json` - Progress state
-- `/home/user/sglang-mamba/phase3/engine/audit_report.md` - Audit findings
-- `/home/user/sglang-mamba/phase3/engine/refactoring_map.json` - Name mappings
+- `phase3/engine/state.json` - Progress state
+- `phase3/engine/audit_report.md` - Audit findings
+- `phase3/engine/refactoring_map.json` - Name mappings
 
 ---
 
 ### **Team 4: Prefill Feature Implementation Agent** ⚡
 
 **Agent ID:** `prefill-implementation-specialist`
-**Resume Context:** Check `/home/user/sglang-mamba/phase3/prefill/state.json`
+**Resume Context:** Check `phase3/prefill/state.json`
 
 **Role:** Implement prefill caching and chunked prefill for Mamba
 
@@ -379,7 +379,7 @@ def chunked_prefill_mamba(self, input_ids: torch.Tensor,
 
 **Agent Instructions for Resumption:**
 ```
-1. Read /home/user/sglang-mamba/phase3/prefill/state.json
+1. Read phase3/prefill/state.json
 2. Check which task (4.1, 4.2, or 4.3) was last in progress
 3. Review /phase3/prefill/design_notes.md for decisions
 4. Check if engine refactoring dependency is satisfied
@@ -389,16 +389,16 @@ def chunked_prefill_mamba(self, input_ids: torch.Tensor,
 ```
 
 **State Files:**
-- `/home/user/sglang-mamba/phase3/prefill/state.json` - Task progress
-- `/home/user/sglang-mamba/phase3/prefill/design_notes.md` - Design decisions
-- `/home/user/sglang-mamba/phase3/prefill/test_results.json` - Test outcomes
+- `phase3/prefill/state.json` - Task progress
+- `phase3/prefill/design_notes.md` - Design decisions
+- `phase3/prefill/test_results.json` - Test outcomes
 
 ---
 
 ### **Team 5: Performance Optimization Agent** 🚀
 
 **Agent ID:** `performance-optimization-specialist`
-**Resume Context:** Check `/home/user/sglang-mamba/phase3/perf/state.json`
+**Resume Context:** Check `phase3/perf/state.json`
 
 **Role:** Optimize memory usage and batch processing
 
@@ -440,7 +440,7 @@ python -c "import torch.profiler; ..."
 # Save results to /phase3/perf/baseline_profile.json
 ```
 
-**Output:** `/home/user/sglang-mamba/phase3/perf/baseline_profile.json`
+**Output:** `phase3/perf/baseline_profile.json`
 
 #### Task 5.2: Tensor Operation Optimization ✅/❌
 **Status:** Not Started
@@ -480,7 +480,7 @@ python -c "import torch.profiler; ..."
 
 **Agent Instructions for Resumption:**
 ```
-1. Read /home/user/sglang-mamba/phase3/perf/state.json
+1. Read phase3/perf/state.json
 2. Check last completed optimization task
 3. Review baseline_profile.json for benchmark data
 4. Compare current metrics with baseline
@@ -490,17 +490,17 @@ python -c "import torch.profiler; ..."
 ```
 
 **State Files:**
-- `/home/user/sglang-mamba/phase3/perf/state.json` - Optimization progress
-- `/home/user/sglang-mamba/phase3/perf/baseline_profile.json` - Baseline metrics
-- `/home/user/sglang-mamba/phase3/perf/optimizations.md` - Applied optimizations
-- `/home/user/sglang-mamba/phase3/perf/benchmarks/` - All benchmark results
+- `phase3/perf/state.json` - Optimization progress
+- `phase3/perf/baseline_profile.json` - Baseline metrics
+- `phase3/perf/optimizations.md` - Applied optimizations
+- `phase3/perf/benchmarks/` - All benchmark results
 
 ---
 
 ### **Team 6: Testing & Validation Agent** 🧪
 
 **Agent ID:** `testing-validation-specialist`
-**Resume Context:** Check `/home/user/sglang-mamba/phase3/test/state.json`
+**Resume Context:** Check `phase3/test/state.json`
 
 **Role:** Comprehensive testing across all changes
 
@@ -609,7 +609,7 @@ def test_mamba_with_prefill_cache():
 
 **Agent Instructions for Resumption:**
 ```
-1. Read /home/user/sglang-mamba/phase3/test/state.json
+1. Read phase3/test/state.json
 2. Check which test categories are complete
 3. Review test_results.json for last test run outcomes
 4. Identify failed tests and root causes
@@ -620,16 +620,16 @@ def test_mamba_with_prefill_cache():
 ```
 
 **State Files:**
-- `/home/user/sglang-mamba/phase3/test/state.json` - Test progress
-- `/home/user/sglang-mamba/phase3/test/test_results.json` - Test outcomes
-- `/home/user/sglang-mamba/phase3/test/coverage.html` - Coverage report
+- `phase3/test/state.json` - Test progress
+- `phase3/test/test_results.json` - Test outcomes
+- `phase3/test/coverage.html` - Coverage report
 
 ---
 
 ### **Team 7: Audit & Quality Assurance Agent** 🔍
 
 **Agent ID:** `audit-qa-specialist`
-**Resume Context:** Check `/home/user/sglang-mamba/phase3/audit/state.json`
+**Resume Context:** Check `phase3/audit/state.json`
 
 **Role:** Final validation, code review, regression prevention
 
@@ -698,7 +698,7 @@ def test_mamba_with_prefill_cache():
 
 **Agent Instructions for Resumption:**
 ```
-1. Read /home/user/sglang-mamba/phase3/audit/state.json
+1. Read phase3/audit/state.json
 2. Check which phases have been validated
 3. Review pending validation gates
 4. Run comprehensive audit checklist for current phase
@@ -710,9 +710,9 @@ def test_mamba_with_prefill_cache():
 ```
 
 **State Files:**
-- `/home/user/sglang-mamba/phase3/audit/state.json` - Audit progress
-- `/home/user/sglang-mamba/phase3/audit/validation_reports/` - All validation reports
-- `/home/user/sglang-mamba/phase3/audit/issues.json` - Tracked issues
+- `phase3/audit/state.json` - Audit progress
+- `phase3/audit/validation_reports/` - All validation reports
+- `phase3/audit/issues.json` - Tracked issues
 
 ---
 
@@ -833,7 +833,7 @@ mkdir -p phase3/{oversight,engine,prefill,perf,test,audit}/reports
 - [ ] User approves naming standard
 - [ ] User authorizes Phase 3.2 to proceed
 
-**Validation Report:** `/home/user/sglang-mamba/phase3/audit/validation_reports/phase_3.1_validation.md`
+**Validation Report:** `phase3/audit/validation_reports/phase_3.1_validation.md`
 
 **Validation Outcome:** ⬜ Pending
 
@@ -965,7 +965,7 @@ mkdir -p phase3/{oversight,engine,prefill,perf,test,audit}/reports
 - [ ] User approves to proceed
 - [ ] Any concerns addressed
 
-**Validation Report:** `/home/user/sglang-mamba/phase3/audit/validation_reports/phase_3.2_validation.md`
+**Validation Report:** `phase3/audit/validation_reports/phase_3.2_validation.md`
 
 **Validation Outcome:** ⬜ Pending
 
@@ -1115,7 +1115,7 @@ mkdir -p phase3/{oversight,engine,prefill,perf,test,audit}/reports
 - [ ] User approves performance improvements
 - [ ] User authorizes final audit
 
-**Validation Report:** `/home/user/sglang-mamba/phase3/audit/validation_reports/phase_3.3_validation.md`
+**Validation Report:** `phase3/audit/validation_reports/phase_3.3_validation.md`
 
 **Validation Outcome:** ⬜ Pending
 
@@ -1268,7 +1268,7 @@ mkdir -p phase3/{oversight,engine,prefill,perf,test,audit}/reports
 - [ ] User approves Phase 3 completion
 - [ ] User authorizes merge/deployment
 
-**Final Validation Report:** `/home/user/sglang-mamba/phase3/audit/validation_reports/phase_3.4_final_validation.md`
+**Final Validation Report:** `phase3/audit/validation_reports/phase_3.4_final_validation.md`
 
 **Validation Outcome:** ⬜ Pending
 
@@ -1295,7 +1295,7 @@ mkdir -p phase3/{oversight,engine,prefill,perf,test,audit}/reports
 4. **Validation Failures** → Audit Agent → Issue tracking → Resolution → Re-validation
 
 ### Artifact Sharing
-**Shared Knowledge Base:** `/home/user/sglang-mamba/phase3/`
+**Shared Knowledge Base:** `phase3/`
 
 ```
 phase3/
@@ -1351,7 +1351,7 @@ phase3/
    - Find your agent's last known state
 
 2. **Load your agent state**
-   - Read `/home/user/sglang-mamba/phase3/<your-agent>/state.json`
+   - Read `phase3/<your-agent>/state.json`
    - Review last completed tasks
    - Check for pending validations
 

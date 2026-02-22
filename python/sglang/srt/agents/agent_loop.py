@@ -255,7 +255,10 @@ class AgentLoop:
                 f"Maximum iterations ({self.config.max_iterations}) reached. "
                 "Unable to complete request."
             )
-            logger.warning("Agent loop reached max iterations")
+            logger.error(
+                "Agent loop exhausted max iterations (%d) without producing a final response",
+                self.config.max_iterations,
+            )
 
         # Add final assistant message
         self.messages.append(

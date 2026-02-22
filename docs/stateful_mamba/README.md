@@ -2,8 +2,8 @@
 
 > **⚠️ Implementation Status:** Phase 1 (Snapshot Saving) is complete. Phase 2 (State Restoration) is in development.
 >
-> **Available Now:** `save_snapshot()`, `list_snapshots()`, `get_snapshot_info()`
-> **Coming Soon:** `restore_snapshot()`, `SnapshotManager` wrapper
+> **Available Now:** `save_snapshot()`, `list_snapshots()`
+> **Coming Soon:** `restore_snapshot()`, `get_snapshot_info()`, `SnapshotManager` wrapper
 
 ## Overview
 
@@ -108,9 +108,9 @@ The snapshot system integrates with SGLang's existing Mamba infrastructure:
 ```
 ┌─────────────────────────────────────────────────────┐
 │              Frontend (Language API)                 │
-│  Phase 1: save_snapshot(), list_snapshots(),        │
-│           get_snapshot_info()                        │
-│  Phase 2: restore_snapshot() (coming soon)          │
+│  Phase 1: save_snapshot(), list_snapshots()         │
+│  Phase 2: restore_snapshot(), get_snapshot_info()   │
+│           (coming soon)                             │
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
