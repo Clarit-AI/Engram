@@ -2,8 +2,8 @@
 
 > **⚠️ Implementation Status:** Phase 1 (Snapshot Saving) is complete. Phase 2 (State Restoration) is in development.
 >
-> **Available Now:** `save_snapshot()`, `list_snapshots()`, `get_snapshot_info()`
-> **Coming Soon:** `restore_snapshot()`, `SnapshotManager` wrapper
+> **Available Now:** `save_snapshot()`, `list_snapshots()`, `SnapshotManager` class (for restore/get_info)
+> **Coming Soon:** Direct state object methods `s.restore_snapshot()`, `s.get_snapshot_info()`
 
 This guide helps you enable and integrate snapshot features into existing SGLang applications.
 
@@ -127,12 +127,12 @@ def my_function(s, prompt):
     snapshots = s.list_snapshots()
     print(f"Total snapshots: {len(snapshots)}")
 
-    # Get snapshot info
-    info = s.get_snapshot_info(
-        conversation_id=s.stream_executor.sid,
-        turn_number=0
-    )
-    print(f"Snapshot metadata: {info}")
+    # Get snapshot info (Phase 2 - use SnapshotManager for now)
+    # NOTE: s.get_snapshot_info() is not yet available as a direct method
+    # Use SnapshotManager instead:
+    # sm = sgl.SnapshotManager(runtime.endpoint)
+    # info = sm.get_info(conversation_id=s.stream_executor.sid, turn_number=0)
+    # print(f"Snapshot metadata: {info}")
 
     return s
 
@@ -323,19 +323,27 @@ def chat_with_restoration(s):
     s += "\nUser: Tell me more\n"
     s += "Assistant: " + gen("response2", max_tokens=100)
 
-    # Restore to first turn (Phase 2 feature)
-    s.restore_snapshot(snap_id)
+    # Restore to first turn (Phase 2 feature - not yet available as direct method)
+    # NOTE: s.restore_snapshot() is not yet available
+    # Use SnapshotManager instead (see below)
 
-    # Continue from restored state
+    # Continue from restored state (without actual restore in Phase 1)
     s += "\nUser: Actually, tell me something else\n"
     s += "Assistant: " + gen("response3", max_tokens=100)
 
     return s
 
-# SnapshotManager class (Phase 2)
-manager = SnapshotManager(runtime)
-snapshots = manager.list()
-manager.restore(snapshot_id)
+# SnapshotManager class (Available Now!)
+from sglang import SnapshotManager
+manager = SnapshotManager(runtime.endpoint)
+# List snapshots for a conversation
+snapshots = manager.list_conversation(conversation_id="conv_123")
+# Get snapshot metadata
+info = manager.get_info(conversation_id="conv_123", turn_number=5)
+# Restore a snapshot
+manager.restore(rid="req_123", conversation_id="conv_123", turn_number=5)
+# Delete a snapshot
+manager.delete(conversation_id="conv_123", turn_number=5)
 ```
 
 ## Breaking Changes

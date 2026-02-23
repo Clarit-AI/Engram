@@ -1598,6 +1598,211 @@ Phase 3 is considered **COMPLETE** when:
 
 ---
 
+## 📋 State File Schemas
+
+All agent state files (`phase3/*/state.json`) follow standardized JSON schemas for consistency and resumption.
+
+### Base State Schema
+
+All state files share this common structure:
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["agent_id", "current_phase", "last_updated", "status"],
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "description": "Unique agent identifier"
+    },
+    "current_phase": {
+      "type": "string",
+      "pattern": "^3\\.[1-4]$",
+      "description": "Current phase (3.1, 3.2, 3.3, or 3.4)"
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of last update"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["not_started", "in_progress", "blocked", "complete"],
+      "description": "Current execution status"
+    },
+    "completed_tasks": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "List of completed task IDs"
+    },
+    "current_task": {
+      "type": ["string", "null"],
+      "description": "Currently executing task ID or null"
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "task_id": {"type": "string"},
+          "reason": {"type": "string"},
+          "depends_on": {"type": "string"}
+        }
+      },
+      "description": "List of blocking issues with dependencies"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Agent notes for next session resumption"
+    }
+  }
+}
+```
+
+### Agent-Specific Extensions
+
+Each agent extends the base schema with specialized fields:
+
+#### Oversight Agent (`phase3/oversight/state.json`)
+```json
+{
+  "validation_pending": {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "Phase IDs awaiting validation (e.g., ['3.1', '3.2'])"
+  },
+  "go_no_go_decisions": {
+    "type": "object",
+    "description": "Phase approval decisions with timestamps",
+    "patternProperties": {
+      "^3\\.[1-4]$": {
+        "type": "object",
+        "properties": {
+          "decision": {"enum": ["GO", "NO-GO", "PENDING"]},
+          "timestamp": {"type": "string", "format": "date-time"},
+          "rationale": {"type": "string"}
+        }
+      }
+    }
+  }
+}
+```
+
+#### Implementation Agent (`phase3/implementation/state.json`)
+```json
+{
+  "files_modified": {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "List of file paths modified in this phase"
+  },
+  "tests_added": {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "List of test file paths added"
+  },
+  "code_coverage": {
+    "type": "number",
+    "description": "Percentage code coverage achieved"
+  }
+}
+```
+
+#### Integration Agent (`phase3/integration/state.json`)
+```json
+{
+  "endpoints_tested": {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "List of API endpoints tested"
+  },
+  "performance_benchmarks": {
+    "type": "object",
+    "description": "Performance metrics recorded",
+    "properties": {
+      "latency_p50_ms": {"type": "number"},
+      "latency_p95_ms": {"type": "number"},
+      "throughput_rps": {"type": "number"}
+    }
+  },
+  "integration_issues": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "issue_id": {"type": "string"},
+        "severity": {"enum": ["low", "medium", "high", "critical"]},
+        "resolution": {"type": "string"}
+      }
+    }
+  }
+}
+```
+
+#### Audit Agent (`phase3/audit/state.json`)
+```json
+{
+  "validation_reports_generated": {
+    "type": "array",
+    "items": {"type": "string"},
+    "description": "List of validation report file paths"
+  },
+  "issues_found": {
+    "type": "integer",
+    "description": "Total number of issues identified"
+  },
+  "issues_resolved": {
+    "type": "integer",
+    "description": "Number of issues resolved"
+  },
+  "quality_score": {
+    "type": "number",
+    "minimum": 0,
+    "maximum": 100,
+    "description": "Overall quality score (0-100)"
+  }
+}
+```
+
+### Usage for Resumption
+
+When resuming a session, agents should:
+
+1. **Read state file** - Parse JSON and validate against schema
+2. **Check status** - Determine if phase is complete, in-progress, or blocked
+3. **Load context** - Review completed_tasks, current_task, and notes
+4. **Resume execution** - Continue from current_task or next pending task
+5. **Update state** - Write back to state file after each significant action
+
+### Example State File
+
+```json
+{
+  "agent_id": "implementation_agent_001",
+  "current_phase": "3.2",
+  "last_updated": "2026-02-16T14:30:00Z",
+  "status": "in_progress",
+  "completed_tasks": [
+    "3.2.1_create_base_classes",
+    "3.2.2_implement_tool_registry"
+  ],
+  "current_task": "3.2.3_add_execution_engine",
+  "blockers": [],
+  "notes": "Tool registry tests passing. Moving to execution engine next.",
+  "files_modified": [
+    "python/sglang/srt/agents/tool_registry.py",
+    "python/sglang/srt/agents/tool_execution.py"
+  ],
+  "tests_added": [
+    "test/sglang/agents/test_tool_registry.py"
+  ],
+  "code_coverage": 85.2
+}
+```
+
+---
+
 **End of Phase 3 Plan**
 **Version:** 2.0
 **Last Updated:** 2026-02-16

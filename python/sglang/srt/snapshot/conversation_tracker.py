@@ -236,6 +236,16 @@ class ConversationTracker:
         with self._lock:
             return self._conversations.get(conversation_id)
 
+    def get_conversation_ids(self) -> list[str]:
+        """
+        Get all active conversation IDs.
+
+        Returns:
+            List of conversation IDs
+        """
+        with self._lock:
+            return list(self._conversations.keys())
+
     def get_tier(self, conversation_id: str) -> Optional[ConversationTier]:
         """Get current tier for conversation."""
         with self._lock:

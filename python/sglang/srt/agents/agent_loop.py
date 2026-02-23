@@ -250,7 +250,7 @@ class AgentLoop:
             )
 
         # If we hit max iterations without final response
-        if not final_response:
+        if final_response is None:
             final_response = (
                 f"Maximum iterations ({self.config.max_iterations}) reached. "
                 "Unable to complete request."

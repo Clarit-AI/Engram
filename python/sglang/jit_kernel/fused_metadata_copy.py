@@ -176,6 +176,13 @@ def fused_metadata_copy_cuda(
     if seqlens_expanded_src is not None:
         seqlens_expanded_src = seqlens_expanded_src.contiguous()
     nsa_cu_seqlens_k_src = nsa_cu_seqlens_k_src.contiguous()
+    # Ensure optional tensors are contiguous if provided
+    if real_page_table_src is not None:
+        real_page_table_src = real_page_table_src.contiguous()
+    if flashmla_num_splits_src is not None:
+        flashmla_num_splits_src = flashmla_num_splits_src.contiguous()
+    if flashmla_metadata_src is not None:
+        flashmla_metadata_src = flashmla_metadata_src.contiguous()
 
     # Call JIT-compiled kernel (None values are passed as Optional with no value)
     module.fused_metadata_copy(
@@ -283,6 +290,13 @@ def fused_metadata_copy_multi_cuda(
     page_indices_src = page_indices_src.contiguous()
     nsa_cache_seqlens_src = nsa_cache_seqlens_src.contiguous()
     nsa_cu_seqlens_k_src = nsa_cu_seqlens_k_src.contiguous()
+    # Ensure optional tensors are contiguous if provided
+    if real_page_table_src is not None:
+        real_page_table_src = real_page_table_src.contiguous()
+    if flashmla_num_splits_src is not None:
+        flashmla_num_splits_src = flashmla_num_splits_src.contiguous()
+    if flashmla_metadata_src is not None:
+        flashmla_metadata_src = flashmla_metadata_src.contiguous()
 
     # Call JIT-compiled kernel (None values are passed as Optional with no value)
     module.fused_metadata_copy_multi(

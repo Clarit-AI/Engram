@@ -5,6 +5,7 @@ Implements FastAPI route handlers for tool, conversation,
 memory, and tier management.
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -268,8 +269,9 @@ class AgentAPIHandler:
         if request.conversation_id:
             conversation_context = {"conversation_id": request.conversation_id}
 
-        # Execute tool
-        result = self.tool_executor.execute(
+        # Execute tool (use asyncio.to_thread to avoid blocking event loop)
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name=request.tool_name,
             parameters=request.parameters,
             conversation_context=conversation_context,
@@ -297,8 +299,9 @@ class AgentAPIHandler:
                 detail="Tool executor not available",
             )
 
-        # Execute memory_store tool
-        result = self.tool_executor.execute(
+        # Execute memory_store tool (use asyncio.to_thread to avoid blocking event loop)
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name="memory_store",
             parameters={
                 "key": request.key,
@@ -338,7 +341,8 @@ class AgentAPIHandler:
         if request.category:
             params["category"] = request.category
 
-        result = self.tool_executor.execute(
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name="memory_recall",
             parameters=params,
             conversation_context={"conversation_id": request.conversation_id},
@@ -371,7 +375,8 @@ class AgentAPIHandler:
         if request.category:
             params["category"] = request.category
 
-        result = self.tool_executor.execute(
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name="memory_search",
             parameters=params,
             conversation_context={"conversation_id": request.conversation_id},
@@ -425,7 +430,7 @@ class AgentAPIHandler:
             # Get all conversations
             conversations_list = [
                 self.conversation_tracker.get_state(conv_id)
-                for conv_id in self.conversation_tracker._conversations.keys()
+                for conv_id in self.conversation_tracker.get_conversation_ids()
             ]
 
         conversation_infos = [

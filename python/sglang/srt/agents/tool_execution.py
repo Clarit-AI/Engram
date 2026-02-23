@@ -7,6 +7,7 @@ and execution tracking.
 
 import asyncio
 import logging
+import re
 import threading
 import time
 import traceback
@@ -67,6 +68,29 @@ class ToolExecutionResult:
     def is_success(self) -> bool:
         """Check if execution was successful."""
         return self.status == ToolExecutionStatus.SUCCESS
+
+
+def _sanitize_traceback(tb: str) -> str:
+    """
+    Remove sensitive paths from traceback to prevent information leakage.
+
+    Args:
+        tb: Raw traceback string
+
+    Returns:
+        Sanitized traceback with redacted paths and limited stack depth
+    """
+    # Replace absolute paths with generic placeholders
+    tb = re.sub(r'/home/[^/]+/', '~/', tb)
+    tb = re.sub(r'/opt/[^/]+/', '/opt/<redacted>/', tb)
+    tb = re.sub(r'/usr/local/[^/]+/', '/usr/local/<redacted>/', tb)
+
+    # Limit stack depth to prevent excessive output
+    lines = tb.split('\n')
+    if len(lines) > 20:
+        lines = lines[:5] + ['  ... (frames redacted) ...'] + lines[-15:]
+
+    return '\n'.join(lines)
 
 
 class ToolExecutionEngine:
@@ -234,7 +258,7 @@ class ToolExecutionEngine:
                 status=ToolExecutionStatus.ERROR,
                 error=error_msg,
                 execution_time_ms=execution_time_ms,
-                metadata={"traceback": traceback.format_exc()},
+                metadata={"traceback": _sanitize_traceback(traceback.format_exc())},
             )
 
     def _execute_sync(
@@ -255,12 +279,15 @@ class ToolExecutionEngine:
             TimeoutError: If execution exceeds timeout
             Exception: Any exception raised by tool
         """
-        # Note: Python doesn't have built-in sync timeout without threads
-        # For production, consider using signal.alarm on Unix or
-        # concurrent.futures.ThreadPoolExecutor with timeout
-
         logger.debug(f"Executing sync tool: {tool.name}")
-        return tool.function(**parameters)
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(tool.function, **parameters)
+            try:
+                return future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError(f"Tool '{tool.name}' execution exceeded timeout of {timeout}s")
 
     def _execute_async(
         self, tool: Tool, parameters: Dict[str, Any], timeout: float
@@ -282,17 +309,28 @@ class ToolExecutionEngine:
         """
         logger.debug(f"Executing async tool: {tool.name}")
 
-        # Get or create event loop
         try:
-            loop = asyncio.get_event_loop()
+            # Check if we're already in an event loop
+            loop = asyncio.get_running_loop()
+            # Already in async context - must use thread pool to avoid RuntimeError
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    lambda: asyncio.run(
+                        asyncio.wait_for(tool.function(**parameters), timeout=timeout)
+                    )
+                )
+                return future.result(timeout=timeout)
         except RuntimeError:
+            # No running loop - safe to create and use one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-
-        # Execute with timeout
-        return loop.run_until_complete(
-            asyncio.wait_for(tool.function(**parameters), timeout=timeout)
-        )
+            try:
+                return loop.run_until_complete(
+                    asyncio.wait_for(tool.function(**parameters), timeout=timeout)
+                )
+            finally:
+                loop.close()
 
     def execute_batch(
         self,

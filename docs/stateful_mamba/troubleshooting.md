@@ -2,8 +2,8 @@
 
 > **⚠️ Implementation Status:** Phase 1 (Snapshot Saving) is complete. Phase 2 (State Restoration) is in development.
 >
-> **Available Now:** `save_snapshot()`, `list_snapshots()`
-> **Coming Soon:** `restore_snapshot()`, `get_snapshot_info()`, `SnapshotManager` wrapper
+> **Available Now:** `save_snapshot()`, `list_snapshots()`, `SnapshotManager` class (for restore/get_info)
+> **Coming Soon:** Direct state object methods `s.restore_snapshot()`, `s.get_snapshot_info()`
 
 Common issues and solutions for the snapshot system.
 
@@ -20,14 +20,14 @@ Common issues and solutions for the snapshot system.
 The current implementation (Phase 1) provides snapshot **saving and inspection only**.
 
 **What works:**
-- ✅ `s.save_snapshot()` - Save current state
-- ✅ `s.list_snapshots()` - List saved snapshots
+- ✅ `s.save_snapshot()` - Save current state (direct method)
+- ✅ `s.list_snapshots()` - List saved snapshots (via endpoint)
+- ✅ `SnapshotManager` class - Use `sm.restore()`, `sm.get_info()`, `sm.delete()` for full API
 
-**What doesn't work yet (Phase 2):**
-- ❌ `s.restore_snapshot()` - State restoration
-- ❌ `s.get_snapshot_info()` - Snapshot metadata lookup
-- ❌ `SnapshotManager` class - High-level API
-- ❌ Programmatic snapshot management
+**What doesn't work yet (Phase 2 - direct state object methods):**
+- ❌ `s.restore_snapshot()` - Use `SnapshotManager.restore()` instead
+- ❌ `s.get_snapshot_info()` - Use `SnapshotManager.get_info()` instead
+- ❌ Automatic snapshot management (retention policies, hooks)
 
 ## Common Issues
 
