@@ -27,8 +27,6 @@ Snapshot operations use two API surfaces: direct state methods for save/list, an
 - ✅ `SnapshotManager(runtime.endpoint).delete(snapshot_id)` - Delete a snapshot
 
 **What doesn't work yet:**
-- ❌ `s.restore_snapshot()` - Direct state method not yet implemented (use `SnapshotManager` instead)
-- ❌ `s.get_snapshot_info()` - Direct state method not yet implemented (use `SnapshotManager` instead)
 - ❌ Automatic snapshot management (retention policies, lifecycle hooks)
 
 ## Common Issues
