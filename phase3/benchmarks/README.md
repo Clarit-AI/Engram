@@ -4,7 +4,7 @@ This directory contains performance benchmarking tools for MambaRadixCache and r
 
 ## 📁 Directory Structure
 
-```
+```text
 benchmarks/
 ├── README.md                           # This file
 ├── mamba_radix_cache_benchmark.py      # Main benchmark suite
@@ -107,8 +107,8 @@ Throughput:     XX,XXX.XX ops/sec
 ## 📚 Additional Documentation
 
 - **PERFORMANCE_BASELINE.md**: Detailed baseline metrics and targets
-- **../docs/performance_analysis.md**: In-depth performance analysis (to be created)
-- **../docs/optimization_guide.md**: Optimization recommendations (Phase 3.3)
+- **../PERFORMANCE_ANALYSIS.md**: In-depth performance analysis
+- **Optimization guide**: Optimization recommendations (planned for Phase 3.3)
 
 ## ✅ Next Steps
 

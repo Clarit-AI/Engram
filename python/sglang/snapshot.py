@@ -36,7 +36,7 @@ class SnapshotManager:
         # Initialize runtime
         runtime = sgl.Runtime(
             model_path="state-spaces/mamba-2.8b",
-            enable_mamba_snapshots=True,
+            enable_snapshot_persistence=True,
         )
 
         # Create snapshot manager
@@ -76,7 +76,7 @@ class SnapshotManager:
         if not hasattr(endpoint, 'list_snapshots'):
             raise RuntimeError(
                 "RuntimeEndpoint does not support snapshots. "
-                "Start the server with --enable-mamba-snapshots flag."
+                "Start the server with --enable-snapshot-persistence flag."
             )
 
         self.endpoint = endpoint

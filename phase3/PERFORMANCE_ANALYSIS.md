@@ -494,7 +494,7 @@ def inc_lock_ref_batch(self, nodes: List[TreeNode]):
 ### Current Memory Footprint
 
 **Per TreeNode (estimated):**
-```
+```text
 children (defaultdict)    : 64 bytes (dict overhead)
 parent pointer           : 8 bytes
 key (RadixKey)           : 24 bytes (list + metadata)
@@ -512,7 +512,7 @@ TOTAL                    : ~304 bytes per node (!)
 ```
 
 **With `__slots__` optimization:**
-```
+```text
 TOTAL (with slots)       : ~80 bytes per node (73% reduction)
 ```
 
@@ -520,7 +520,7 @@ TOTAL (with slots)       : ~80 bytes per node (73% reduction)
 
 1. **HIGH PRIORITY**: Add `__slots__` to TreeNode
 2. **MEDIUM PRIORITY**: Use int pools for lock_ref (avoid Python int objects)
-3. **MEDIUM PRIORITY**: Consider bit-packing flags (evicted, backuped, etc.)
+3. **MEDIUM PRIORITY**: Consider bit-packing flags (evicted, backed up, etc.)
 
 ---
 

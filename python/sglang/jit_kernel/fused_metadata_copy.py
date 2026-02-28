@@ -154,6 +154,18 @@ def fused_metadata_copy_cuda(
     has_real_page_table = real_page_table_src is not None
     has_flashmla = flashmla_num_splits_src is not None
 
+    # Validate that when src flag is set, corresponding dst tensor is provided
+    if has_real_page_table and real_page_table_dst is None:
+        raise ValueError(
+            "real_page_table_dst must be provided when real_page_table_src is not None "
+            "(kernel requires matching src/dst pairs to avoid null dereferences)"
+        )
+    if has_flashmla and flashmla_num_splits_dst is None:
+        raise ValueError(
+            "flashmla_num_splits_dst must be provided when flashmla_num_splits_src is not None "
+            "(kernel requires matching src/dst pairs to avoid null dereferences)"
+        )
+
     # Validate mode-dependent required tensors early (forward_mode 1=TARGET_VERIFY, 2=DRAFT_EXTEND)
     if forward_mode in (1, 2):
         if seqlens_expanded_src is None or seqlens_expanded_dst is None:
