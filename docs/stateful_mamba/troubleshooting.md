@@ -2,9 +2,8 @@
 
 > **⚠️ Implementation Status:** Two API surfaces are available for snapshot operations.
 >
-> **Direct state methods (available now):** `s.save_snapshot()`, `s.list_snapshots()`
+> **Direct state methods (available now):** `s.save_snapshot()`, `s.list_snapshots()`, `s.restore_snapshot()`, `s.get_snapshot_info()`
 > **SnapshotManager methods (available now):** `SnapshotManager.restore()`, `SnapshotManager.get_info()`, `SnapshotManager.delete()`
-> **Coming soon:** Direct state methods `s.restore_snapshot()`, `s.get_snapshot_info()`
 
 Common issues and solutions for the snapshot system.
 

@@ -30,6 +30,7 @@ from sglang.test.ci.ci_register import register_amd_ci, register_cuda_ci
 register_cuda_ci(est_time=12, suite="stage-b-test-small-1-gpu")
 register_amd_ci(est_time=12, suite="stage-b-test-small-1-gpu-amd")
 
+import itertools
 import unittest
 
 import torch
@@ -76,6 +77,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         self.mamba_cache_size = 20
         self.max_context_len = 128
         self.device = get_device()
+
+        # Request ID counter for unique request IDs
+        self._rid_counter = itertools.count(1)
 
         # Layer configuration
         self.full_attention_layer_ids = [
@@ -144,10 +148,10 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         self.cache = MambaRadixCache(params=params)
 
     def _make_dummy_req(self):
-        """Helper to create a dummy request."""
+        """Helper to create a dummy request with unique ID."""
         sampling_params = SamplingParams(temperature=0, max_new_tokens=1)
         req = Req(
-            rid=0,
+            rid=next(self._rid_counter),
             origin_input_text="",
             origin_input_ids=[],
             sampling_params=sampling_params,
@@ -298,8 +302,36 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
 
         # Try to insert one more - should trigger eviction
         req_new = self._make_dummy_req()
-        # This should fail to alloc because cache is full, but that's expected
-        # The cache should handle this by evicting
+        token_ids_new = [self.mamba_cache_size]  # New unique token
+        kv_indices_new = self.allocator.alloc(1)
+        mamba_value_new = req_new.mamba_pool_idx.unsqueeze(0)
+
+        # Insert new item (should trigger eviction of LRU item)
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids_new),
+                value=kv_indices_new,
+                mamba_value=mamba_value_new,
+            )
+        )
+
+        # Verify eviction occurred: cache size should still be at limit
+        self.assertEqual(
+            self.req_to_token_pool.mamba_pool.available_size(),
+            0,
+            "Cache should remain at capacity after eviction"
+        )
+
+        # Verify new item is present in cache
+        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey(token_ids_new)))
+        self.assertIsNotNone(match_result.value, "New item should be findable in cache")
+
+        # Verify at least one original item was evicted (first item should be LRU)
+        first_item_match = self.cache.match_prefix(MatchPrefixParams(key=RadixKey([0])))
+        self.assertIsNone(
+            first_item_match.value,
+            "Oldest (LRU) item should have been evicted"
+        )
 
     def test_cow_mamba_state(self):
         """Test copy-on-write (COW) for Mamba states."""
@@ -483,7 +515,15 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey(token_ids_2)))
         # mamba_branching_seqlen should be set because there's a tombstone in the path
         # The exact value depends on mamba_cache_chunk_size
-        self.assertIsNotNone(match_result.mamba_branching_seqlen)
+        self.assertIsNotNone(
+            match_result.mamba_branching_seqlen,
+            "mamba_branching_seqlen should be set when tombstone is encountered"
+        )
+        self.assertGreater(
+            match_result.mamba_branching_seqlen,
+            0,
+            "mamba_branching_seqlen should be > 0 when branching occurs"
+        )
 
 if __name__ == "__main__":
     unittest.main()

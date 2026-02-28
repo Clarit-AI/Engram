@@ -1,9 +1,9 @@
 # Stateful Mamba: State Snapshot and Persistence
 
-> **⚠️ Implementation Status:** Phase 1 (Snapshot Saving) is complete. Phase 2 (State Restoration) is in development.
+> **⚠️ Implementation Status:** Snapshot save/restore/list/get/delete are all available.
 >
-> **Available Now:** `save_snapshot()`, `list_snapshots()`
-> **Coming Soon:** `restore_snapshot()`, `get_snapshot_info()`, `SnapshotManager` wrapper
+> **Direct state methods (available now):** `s.save_snapshot()`, `s.list_snapshots()`, `s.restore_snapshot()`, `s.get_snapshot_info()`
+> **SnapshotManager methods (available now):** `SnapshotManager.restore()`, `SnapshotManager.get_info()`, `SnapshotManager.delete()`
 
 ## Overview
 
@@ -52,11 +52,10 @@ def conversation_with_snapshots(s):
     snapshots = s.list_snapshots()
     print(f"Total snapshots: {len(snapshots)}")
 
-    # Get info about the snapshot we just saved
-    info = s.get_snapshot_info(
-        conversation_id=s.stream_executor.sid,
-        turn_number=0
-    )
+    # Get info about the snapshot we just saved (using SnapshotManager)
+    from sglang import SnapshotManager
+    sm = SnapshotManager(runtime.endpoint)
+    info = sm.get_info(snapshot_id)
     print(f"Snapshot info: {info}")
 
     # Continue conversation (state is still in memory)
