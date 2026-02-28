@@ -28,9 +28,12 @@ from typing import List, Tuple
 
 import torch
 
-# Add python directory to path for imports
-sys.path.insert(0, "/home/user/sglang-mamba/python")
+import sys
+from pathlib import Path
 
+# Add repo-local python directory to path for imports
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "python"))
 from sglang.srt.configs.mamba_utils import Mamba2CacheParams, Mamba2StateShape
 from sglang.srt.environ import envs
 from sglang.srt.mem_cache.allocator import TokenToKVPoolAllocator
