@@ -39,7 +39,7 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         ast.Div: operator.truediv,
         ast.FloorDiv: operator.floordiv,
         ast.Mod: operator.mod,
-        ast.Pow: operator.pow,
+        ast.Pow: lambda base, exp: SafeExpressionEvaluator._safe_pow(base, exp),
     }
 
     # Allowed unary operations
