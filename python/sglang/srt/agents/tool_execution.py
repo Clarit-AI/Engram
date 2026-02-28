@@ -282,12 +282,17 @@ class ToolExecutionEngine:
         logger.debug(f"Executing sync tool: {tool.name}")
 
         import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(tool.function, **parameters)
-            try:
-                return future.result(timeout=timeout)
-            except concurrent.futures.TimeoutError:
-                raise TimeoutError(f"Tool '{tool.name}' execution exceeded timeout of {timeout}s")
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(tool.function, **parameters)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            raise TimeoutError(
+                f"Tool '{tool.name}' execution exceeded timeout of {timeout}s"
+            )
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _execute_async(
         self, tool: Tool, parameters: Dict[str, Any], timeout: float

@@ -318,7 +318,7 @@ async def handle_websocket_connection(
             if command == "execute_tool":
                 # Execute tool with streaming
                 tool_name = data.get("tool_name")
-                if not tool_name:
+                if not isinstance(tool_name, str) or not tool_name.strip():
                     await ws_manager.send_to_connection(
                         connection_id,
                         WebSocketEventType.ERROR,
@@ -327,7 +327,7 @@ async def handle_websocket_connection(
                     continue
 
                 # Validate tool exists in registry
-                if tool_name not in tool_executor.tool_registry.tools:
+                if tool_executor.tool_registry.get(tool_name) is None:
                     await ws_manager.send_to_connection(
                         connection_id,
                         WebSocketEventType.ERROR,

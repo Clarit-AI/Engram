@@ -195,7 +195,7 @@ class AgentLoop:
 
         # Main loop
         iteration = 0
-        final_response = ""
+        final_response = None
 
         while iteration < self.config.max_iterations:
             iteration += 1

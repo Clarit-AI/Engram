@@ -191,7 +191,7 @@ result = test_snapshots.run(runtime=runtime)
 | `list_snapshots()` | ✗ | ✓ | ✓ |
 | `get_snapshot_info()` | ✗ | ✓ | ✓ |
 | `restore_snapshot()` | ✗ | ✗ | ✓ |
-| `SnapshotManager` | ✗ | ✗ | ✓ |
+| `SnapshotManager` | ✗ | ✓ | ✓ |
 | Disk persistence | ✗ | ✓ | ✓ |
 
 ## Phase 1 Usage Examples

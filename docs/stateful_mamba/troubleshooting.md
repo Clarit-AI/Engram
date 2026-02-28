@@ -241,7 +241,9 @@ for snap in snapshots:
 # You can upload these files to S3 or other storage
 import boto3
 s3 = boto3.client('s3')
+# Upload both the safetensors artifact and JSON metadata
 s3.upload_file("./snapshots/snapshot_file.safetensors", "my-bucket", "snapshots/snapshot_file.safetensors")
+s3.upload_file("./snapshots/snapshot_file.json", "my-bucket", "snapshots/snapshot_file.json")
 ```
 
 ---
