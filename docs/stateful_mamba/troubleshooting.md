@@ -2,7 +2,8 @@
 
 > **⚠️ Implementation Status:** Two API surfaces are available for snapshot operations.
 >
-> **Direct state methods (available now):** `s.save_snapshot()`, `s.list_snapshots()`, `s.restore_snapshot()`, `s.get_snapshot_info()`
+> **Direct state methods (available now):** `s.save_snapshot()`, `s.list_snapshots()`
+> **Direct state methods (coming soon):** `s.restore_snapshot()`, `s.get_snapshot_info()`
 > **SnapshotManager methods (available now):** `SnapshotManager.restore()`, `SnapshotManager.get_info()`, `SnapshotManager.delete()`
 
 Common issues and solutions for the snapshot system.
@@ -27,6 +28,8 @@ Snapshot operations use two API surfaces: direct state methods for save/list, an
 - ✅ `SnapshotManager(runtime.endpoint).delete(snapshot_id)` - Delete a snapshot
 
 **What doesn't work yet:**
+- ❌ `s.restore_snapshot()` - Direct state method for restoring snapshots (use SnapshotManager.restore() instead)
+- ❌ `s.get_snapshot_info()` - Direct state method for querying snapshot metadata (use SnapshotManager.get_info() instead)
 - ❌ Automatic snapshot management (retention policies, lifecycle hooks)
 
 ## Common Issues
