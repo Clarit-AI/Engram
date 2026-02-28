@@ -983,6 +983,181 @@ class ProgramState:
     def get_meta_info(self, name):
         return self.stream_executor.get_meta_info(name)
 
+    def save_snapshot(
+        self,
+        snapshot_id: Optional[str] = None,
+        conversation_id: Optional[str] = None,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> str:
+        """
+        Save current Mamba state as a snapshot.
+
+        Args:
+            snapshot_id: Optional unique ID (auto-generated if None)
+            conversation_id: Conversation identifier (defaults to session ID)
+            turn_number: Turn number in conversation (auto-incremented if None)
+            branch_name: Optional branch name for branching conversations
+
+        Returns:
+            snapshot_id: The ID of the saved snapshot
+
+        Raises:
+            RuntimeError: If backend doesn't support snapshots
+            ValueError: If snapshot save fails
+        """
+        # Ensure execution is synced
+        self.stream_executor.sync()
+
+        # Generate snapshot_id if not provided
+        if snapshot_id is None:
+            import uuid
+            snapshot_id = f"snap_{uuid.uuid4().hex[:12]}"
+
+        # Use session ID as conversation_id if not provided
+        if conversation_id is None:
+            conversation_id = self.stream_executor.sid
+
+        # Call backend to save snapshot
+        if not hasattr(self.stream_executor.backend, 'save_snapshot'):
+            raise RuntimeError(
+                "Backend does not support snapshots. "
+                "Use RuntimeEndpoint with --enable-snapshot-persistence"
+            )
+
+        return self.stream_executor.backend.save_snapshot(
+            rid=self.stream_executor.sid,
+            snapshot_id=snapshot_id,
+            conversation_id=conversation_id,
+            turn_number=turn_number,
+            branch_name=branch_name
+        )
+
+    def list_snapshots(self, conversation_id: Optional[str] = None) -> List[Dict]:
+        """
+        List all snapshots for this conversation or all conversations.
+
+        Args:
+            conversation_id: Specific conversation to list (None = current session)
+
+        Returns:
+            List of snapshot metadata dicts with keys:
+                - conversation_id
+                - turn_number
+                - timestamp
+                - token_count
+                - branch_name (if applicable)
+        """
+        if conversation_id is None:
+            conversation_id = self.stream_executor.sid
+
+        if not hasattr(self.stream_executor.backend, 'list_snapshots'):
+            raise RuntimeError("Backend does not support snapshots")
+
+        return self.stream_executor.backend.list_snapshots(conversation_id)
+
+    def get_snapshot_info(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> Dict:
+        """
+        Get metadata for a specific snapshot.
+
+        Args:
+            conversation_id: Conversation identifier
+            turn_number: Turn number (for main conversation)
+            branch_name: Branch name (for named branches)
+
+        Returns:
+            Metadata dict with all snapshot information
+
+        Raises:
+            FileNotFoundError: If snapshot doesn't exist
+        """
+        if not hasattr(self.stream_executor.backend, 'get_snapshot_info'):
+            raise RuntimeError("Backend does not support snapshots")
+
+        return self.stream_executor.backend.get_snapshot_info(
+            conversation_id=conversation_id,
+            turn_number=turn_number,
+            branch_name=branch_name,
+        )
+
+    def restore_snapshot(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+        create_new_request: bool = False,
+    ) -> Dict:
+        """
+        Restore Mamba state from a snapshot.
+
+        Args:
+            conversation_id: Conversation identifier
+            turn_number: Turn number (for main conversation)
+            branch_name: Branch name (for named branches)
+            create_new_request: If True, create new request (Phase 3, not implemented)
+
+        Returns:
+            Result dict with success status and token_count
+
+        Raises:
+            RuntimeError: If backend doesn't support snapshots or restore fails
+            FileNotFoundError: If snapshot doesn't exist
+        """
+        # Ensure execution is synced before restoring
+        self.stream_executor.sync()
+
+        if not hasattr(self.stream_executor.backend, 'restore_snapshot'):
+            raise RuntimeError("Backend does not support snapshots")
+
+        result = self.stream_executor.backend.restore_snapshot(
+            rid=self.stream_executor.sid,
+            conversation_id=conversation_id,
+            turn_number=turn_number,
+            branch_name=branch_name,
+            create_new_request=create_new_request,
+        )
+
+        if not result.get('success'):
+            raise RuntimeError(f"Restore failed: {result.get('message')}")
+
+        return result
+
+    def delete_snapshot(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> bool:
+        """
+        Delete a snapshot.
+
+        Args:
+            conversation_id: Conversation identifier
+            turn_number: Turn number (for main conversation)
+            branch_name: Branch name (for named branches)
+
+        Returns:
+            True if deleted successfully, False otherwise
+
+        Raises:
+            RuntimeError: If backend doesn't support snapshots
+        """
+        if not hasattr(self.stream_executor.backend, 'delete_snapshot'):
+            raise RuntimeError("Backend does not support snapshots")
+
+        result = self.stream_executor.backend.delete_snapshot(
+            conversation_id=conversation_id,
+            turn_number=turn_number,
+            branch_name=branch_name,
+        )
+
+        return result.get('success', False)
+
     def __iadd__(self, other):
         if other is None:
             raise ValueError("Tried to append None to state.")

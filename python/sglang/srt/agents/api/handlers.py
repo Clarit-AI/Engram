@@ -5,6 +5,7 @@ Implements FastAPI route handlers for tool, conversation,
 memory, and tier management.
 """
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -139,15 +140,19 @@ class AgentAPIHandler:
         agent_enabled = getattr(server_args, "enable_agent_tools", False)
         tiers_enabled = getattr(server_args, "enable_memory_tiers", False)
 
-        # Component availability (True/False/None for not applicable)
-        components = {
+        # Component availability — only include tier components when tiers are enabled,
+        # since HealthResponse.components is typed Dict[str, bool] (no None allowed)
+        components: dict = {
             "tool_registry": self.tool_registry is not None,
             "tool_executor": self.tool_executor is not None,
             "tool_parser": self.tool_parser is not None,
-            "tier_manager": self.tier_manager is not None if tiers_enabled else None,
-            "conversation_tracker": self.conversation_tracker is not None if tiers_enabled else None,
-            "host_pool": self.host_pool is not None if tiers_enabled else None,
         }
+        if tiers_enabled:
+            components.update({
+                "tier_manager": self.tier_manager is not None,
+                "conversation_tracker": self.conversation_tracker is not None,
+                "host_pool": self.host_pool is not None,
+            })
 
         # Determine overall health based on what SHOULD be available
         if agent_enabled:
@@ -264,8 +269,9 @@ class AgentAPIHandler:
         if request.conversation_id:
             conversation_context = {"conversation_id": request.conversation_id}
 
-        # Execute tool
-        result = self.tool_executor.execute(
+        # Execute tool (use asyncio.to_thread to avoid blocking event loop)
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name=request.tool_name,
             parameters=request.parameters,
             conversation_context=conversation_context,
@@ -278,7 +284,7 @@ class AgentAPIHandler:
             result=result.result,
             error=result.error,
             execution_time_ms=result.execution_time_ms,
-            metadata=result.metadata,
+            metadata=result.metadata or {},
         )
 
     # ========================================================================
@@ -293,8 +299,9 @@ class AgentAPIHandler:
                 detail="Tool executor not available",
             )
 
-        # Execute memory_store tool
-        result = self.tool_executor.execute(
+        # Execute memory_store tool (use asyncio.to_thread to avoid blocking event loop)
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name="memory_store",
             parameters={
                 "key": request.key,
@@ -334,7 +341,8 @@ class AgentAPIHandler:
         if request.category:
             params["category"] = request.category
 
-        result = self.tool_executor.execute(
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name="memory_recall",
             parameters=params,
             conversation_context={"conversation_id": request.conversation_id},
@@ -367,7 +375,8 @@ class AgentAPIHandler:
         if request.category:
             params["category"] = request.category
 
-        result = self.tool_executor.execute(
+        result = await asyncio.to_thread(
+            self.tool_executor.execute,
             tool_name="memory_search",
             parameters=params,
             conversation_context={"conversation_id": request.conversation_id},
@@ -421,7 +430,7 @@ class AgentAPIHandler:
             # Get all conversations
             conversations_list = [
                 self.conversation_tracker.get_state(conv_id)
-                for conv_id in self.conversation_tracker._conversations.keys()
+                for conv_id in self.conversation_tracker.get_conversation_ids()
             ]
 
         conversation_infos = [

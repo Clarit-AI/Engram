@@ -1,31 +1,41 @@
 # Stateful Mamba: State Snapshot and Persistence
 
+> **⚠️ Implementation Status:** Snapshot save/restore/list/get/delete are all available.
+>
+> **Direct state methods (available now):** `s.save_snapshot()`, `s.list_snapshots()`, `s.restore_snapshot()`, `s.get_snapshot_info()`
+> **SnapshotManager methods (available now):** `SnapshotManager.restore()`, `SnapshotManager.get_info()`, `SnapshotManager.delete()`
+
 ## Overview
 
 The Stateful Mamba snapshot system extends SGLang's Mamba support with **opt-in** state persistence capabilities, enabling advanced use cases like multi-turn conversations, checkpoint-based inference, and state reuse across requests.
 
-This is a **Phase 2** enhancement that builds on the existing Mamba implementation in SGLang. All features are **opt-in** and **fully backward compatible** with existing transformer-based and Mamba inference workflows.
+This is an enhancement that builds on the existing Mamba implementation in SGLang. All features are **opt-in** and **fully backward compatible** with existing transformer-based and Mamba inference workflows.
 
 ## Key Features
 
-- **Snapshot API**: Save and restore Mamba hidden states (SSM states) at any point during inference
-- **Multi-turn Conversations**: Efficiently handle long conversations without reprocessing context
-- **State Persistence**: Store and load states from disk for cross-session resumption
-- **State Reuse**: Share snapshots across multiple inference branches
+### Phase 1 (Available Now)
+- **Snapshot Saving**: Save Mamba hidden states (SSM states) at any point during inference
+- **Snapshot Inspection**: List and inspect saved snapshots with metadata
+- **State Persistence**: Store snapshots to disk in safetensors format
 - **Zero Impact**: Existing Mamba and transformer inference workflows are unaffected
+
+### Phase 2 (Coming Soon)
+- **State Restoration**: Restore from saved snapshots to resume conversations
+- **State Reuse**: Share snapshots across multiple inference branches
+- **Multi-turn Conversations**: Efficiently handle long conversations without reprocessing context
 
 ## Quick Start
 
 ### Basic Snapshot Usage
 
 ```python
-from sglang import Engine
-from sglang.lang import function, gen
+from sglang import function, gen, Runtime
 
-# Initialize engine with snapshot support (opt-in)
-engine = Engine(
+# Initialize runtime with snapshot support
+runtime = Runtime(
     model_path="state-spaces/mamba-2.8b",
-    enable_mamba_snapshots=True  # Enable snapshot feature
+    enable_snapshot_persistence=True,  # Enable snapshot feature
+    snapshot_dir="./my_snapshots"
 )
 
 @function
@@ -34,44 +44,55 @@ def conversation_with_snapshots(s):
     s += "User: What is machine learning?\n"
     s += "Assistant: " + gen("response1", max_tokens=100)
 
-    # Save state after first response
+    # Save snapshot after first response
     snapshot_id = s.save_snapshot()
+    print(f"Saved snapshot: {snapshot_id}")
 
-    # Second turn - builds on saved state
+    # List all snapshots for this conversation
+    snapshots = s.list_snapshots()
+    print(f"Total snapshots: {len(snapshots)}")
+
+    # Get info about the snapshot we just saved (using SnapshotManager)
+    from sglang import SnapshotManager
+    sm = SnapshotManager(runtime.endpoint)
+    info = sm.get_info(snapshot_id)
+    print(f"Snapshot info: {info}")
+
+    # Continue conversation (state is still in memory)
     s += "\nUser: Can you give me an example?\n"
     s += "Assistant: " + gen("response2", max_tokens=100)
 
     return s
 
 # Run the conversation
-result = conversation_with_snapshots.run(engine=engine)
+result = conversation_with_snapshots.run(runtime=runtime)
 ```
 
-### Loading and Restoring States
+### Snapshot Persistence
 
-```python
-from sglang.snapshot import SnapshotManager
+Snapshots are automatically persisted to disk when you use:
+- `enable_snapshot_persistence=True` - Enable snapshot system
+- `snapshot_dir="./path"` - Directory for snapshot storage
 
-# Initialize snapshot manager
-manager = SnapshotManager(engine)
+The snapshots are saved in safetensors format with JSON metadata.
 
-# Save snapshot to disk
-snapshot_id = manager.save("conversation_state_1", metadata={"turn": 1})
-
-# Later, restore from disk
-manager.load(snapshot_id)
-state = manager.restore(snapshot_id)
-```
+**Phase 2 (Coming Soon):** State restoration and advanced snapshot management.
 
 ## When to Use Snapshots
 
-### Ideal Use Cases
+### Phase 1 Capabilities (Available Now)
 
-1. **Multi-turn Conversations**: Avoid reprocessing the entire conversation history on each turn
-2. **Branching Scenarios**: Explore multiple conversation paths from a single checkpoint
-3. **Interrupted Inference**: Resume generation from a saved state across sessions
-4. **A/B Testing**: Compare different continuations from the same initial state
-5. **Long Context Efficiency**: Save intermediate states in long documents
+1. **Snapshot Inspection**: Save and inspect conversation state at any point
+2. **Debugging**: Capture state for offline analysis
+3. **State Tracking**: Monitor memory usage and token counts across turns
+4. **Audit Trail**: Keep records of conversation progression
+
+### Phase 2 Capabilities (Coming Soon)
+
+1. **State Restoration**: Resume conversations from saved snapshots
+2. **Branching**: Explore multiple conversation paths from a checkpoint
+3. **A/B Testing**: Compare different continuations from same state
+4. **Multi-turn Conversations**: Avoid reprocessing the entire conversation history on each turn
 
 ### When NOT to Use Snapshots
 
@@ -83,29 +104,31 @@ state = manager.restore(snapshot_id)
 
 The snapshot system integrates with SGLang's existing Mamba infrastructure:
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │              Frontend (Language API)                 │
-│  - save_snapshot() / restore_snapshot()             │
+│  Phase 1: save_snapshot(), list_snapshots()         │
+│  Phase 2: restore_snapshot(), get_snapshot_info()   │
+│           (coming soon)                             │
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
-│           Snapshot Manager                          │
-│  - Snapshot Registry                                │
-│  - State Serialization                              │
-│  - Disk I/O (Optional)                              │
+│           Snapshot Persistence                      │
+│  - State Serialization (safetensors)                │
+│  - Metadata Storage (JSON)                          │
+│  - Disk I/O                                         │
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
 │         Mamba Radix Cache                           │
 │  - Existing tree-based cache                        │
-│  - Modified to support snapshot references          │
+│  - Snapshot references (Phase 1)                    │
 └──────────────────┬──────────────────────────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────┐
 │         Memory Pool (SSM States)                    │
 │  - GPU memory allocation                            │
-│  - Reference counting                               │
+│  - State persistence to disk                        │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -113,7 +136,7 @@ The snapshot system integrates with SGLang's existing Mamba infrastructure:
 
 **Important**: The snapshot system is completely opt-in and maintains 100% backward compatibility:
 
-- **Default Behavior**: Snapshots are disabled by default (`enable_mamba_snapshots=False`)
+- **Default Behavior**: Snapshots are disabled by default (`enable_snapshot_persistence=False`)
 - **Transformer Models**: Unaffected - this feature is Mamba-specific
 - **Existing Mamba Inference**: Works exactly as before when snapshots are disabled
 - **Performance**: Zero overhead when snapshots are not used
@@ -146,10 +169,9 @@ Snapshots store SSM states in GPU memory. Each snapshot consumes:
 
 ### Best Practices
 
-1. **Clean Up Unused Snapshots**: Call `delete_snapshot()` to free memory
-2. **Use Radix Cache**: Snapshots work best with radix cache enabled
-3. **Monitor Memory**: Track snapshot memory usage in production
-4. **Batch Operations**: Save multiple snapshots in a single transaction when possible
+1. **Use Radix Cache**: Snapshots work best with radix cache enabled
+2. **Monitor Memory**: Track snapshot memory usage in production
+3. **Meaningful Metadata**: Include conversation context in snapshot metadata for later inspection
 
 ## System Requirements
 

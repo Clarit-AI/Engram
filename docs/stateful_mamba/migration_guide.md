@@ -1,27 +1,31 @@
 # Migration Guide: Enabling Stateful Mamba Snapshots
 
+> **⚠️ Implementation Status:** Phase 1 (Snapshot Saving) is complete. Phase 2 (State Restoration) is in development.
+>
+> **Available Now:** `save_snapshot()`, `list_snapshots()`, `SnapshotManager` class (for restore/get_info)
+> **Coming Soon:** Direct state object methods `s.restore_snapshot()`, `s.get_snapshot_info()`
+
 This guide helps you enable and integrate snapshot features into existing SGLang applications.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Prerequisites](#prerequisites)
-- [Migration Steps](#migration-steps)
-- [Compatibility Matrix](#compatibility-matrix)
-- [Common Migration Scenarios](#common-migration-scenarios)
+- [Phase 1 Migration](#phase-1-migration)
+- [Phase 1 Usage Examples](#phase-1-usage-examples)
+- [Phase 2 Preview](#phase-2-preview)
 - [Breaking Changes](#breaking-changes)
 - [Performance Impact](#performance-impact)
-- [Rollback Procedure](#rollback-procedure)
 
 ## Overview
 
-The snapshot system is **fully backward compatible**. Existing code continues to work without modification when snapshots are disabled (the default). This guide shows you how to **opt-in** to snapshot features.
+The snapshot system is **fully backward compatible**. Existing code continues to work without modification when snapshots are disabled (the default). This guide shows you how to **opt-in** to Phase 1 snapshot features.
 
 ### Key Points
 
 - **Zero Breaking Changes**: All existing code works unchanged
 - **Opt-in Feature**: Must be explicitly enabled
-- **Gradual Migration**: Can enable snapshots incrementally
+- **Phase 1 Only**: Currently supports snapshot saving and inspection only
 - **No Performance Penalty**: Zero overhead when disabled
 - **Transformer Models Unaffected**: This is Mamba-specific
 
@@ -29,7 +33,7 @@ The snapshot system is **fully backward compatible**. Existing code continues to
 
 ### Version Requirements
 
-- **SGLang**: v0.5.0 or later
+- **SGLang**: Latest version with Phase 1 snapshot support
 - **Python**: 3.8+
 - **Model**: Mamba or Mamba2 architecture
 - **GPU**: CUDA-capable GPU with sufficient memory
@@ -39,32 +43,16 @@ The snapshot system is **fully backward compatible**. Existing code continues to
 ```python
 import sglang
 print(f"SGLang version: {sglang.__version__}")
-
-# Check if snapshots are available
-from sglang.snapshot import SNAPSHOT_AVAILABLE
-print(f"Snapshots available: {SNAPSHOT_AVAILABLE}")
 ```
 
 ### Memory Requirements
 
-Estimate additional memory needed for snapshots:
+Snapshots consume additional disk space for persistence:
+- Typically 50-100 MB per snapshot for Mamba-2.8B
+- Varies by model size and sequence length
+- Snapshots are saved to disk, not held in memory long-term
 
-```python
-from sglang.snapshot import estimate_snapshot_memory
-
-# For a typical Mamba model
-memory_per_snapshot = estimate_snapshot_memory(
-    model_name="state-spaces/mamba-2.8b"
-)
-
-print(f"Memory per snapshot: {memory_per_snapshot / 1e6:.2f} MB")
-
-# If you plan to have 10 concurrent snapshots
-total_memory = memory_per_snapshot * 10
-print(f"Total snapshot memory (10 snapshots): {total_memory / 1e9:.2f} GB")
-```
-
-## Migration Steps
+## Phase 1 Migration
 
 ### Step 1: Update SGLang
 
@@ -78,33 +66,31 @@ cd sglang
 pip install -e "python[all]"
 ```
 
-### Step 2: Enable Snapshots Globally
+### Step 2: Enable Snapshots
 
 #### Before (without snapshots)
 
 ```python
-from sglang import Engine
+from sglang import Runtime
 
-engine = Engine(
-    model_path="state-spaces/mamba-2.8b",
-    mem_fraction_static=0.9
+runtime = Runtime(
+    model_path="state-spaces/mamba-2.8b"
 )
 ```
 
 #### After (with snapshots enabled)
 
 ```python
-from sglang import Engine
+from sglang import Runtime
+import os
 
-engine = Engine(
+# Create snapshot directory
+os.makedirs("./my_snapshots", exist_ok=True)
+
+runtime = Runtime(
     model_path="state-spaces/mamba-2.8b",
-    mem_fraction_static=0.85,  # Leave more memory for snapshots
-    enable_mamba_snapshots=True,  # Enable snapshots
-    snapshot_config={
-        "max_snapshots": 50,
-        "max_snapshot_memory_gb": 5.0,
-        "enable_cow": True,
-    }
+    enable_snapshot_persistence=True,  # Enable snapshots
+    snapshot_dir="./my_snapshots"
 )
 ```
 
@@ -113,7 +99,7 @@ engine = Engine(
 #### Before (standard inference)
 
 ```python
-from sglang.lang import function, gen
+from sglang import function, gen
 
 @function
 def my_function(s, prompt):
@@ -121,13 +107,13 @@ def my_function(s, prompt):
     s += gen("response", max_tokens=100)
     return s
 
-result = my_function.run(prompt="Hello", engine=engine)
+result = my_function.run(prompt="Hello", runtime=runtime)
 ```
 
-#### After (with snapshot support)
+#### After (with snapshot support - Phase 1)
 
 ```python
-from sglang.lang import function, gen
+from sglang import function, gen
 
 @function
 def my_function(s, prompt):
@@ -137,16 +123,20 @@ def my_function(s, prompt):
     # Save snapshot (new feature)
     snapshot_id = s.save_snapshot()
 
-    return s, snapshot_id
+    # List all snapshots
+    snapshots = s.list_snapshots()
+    print(f"Total snapshots: {len(snapshots)}")
 
-result, snap_id = my_function.run(prompt="Hello", engine=engine)
+    # Get snapshot info (Phase 2 - use SnapshotManager for now)
+    # NOTE: s.get_snapshot_info() is not yet available as a direct method
+    # Use SnapshotManager instead:
+    # sm = sgl.SnapshotManager(runtime.endpoint)
+    # info = sm.get_info(conversation_id=s.stream_executor.sid, turn_number=0)
+    # print(f"Snapshot metadata: {info}")
 
-# Can now restore from this snapshot
-@function
-def continue_from_snapshot(s, snapshot_id):
-    s.restore_snapshot(snapshot_id)
-    s += gen("continuation", max_tokens=100)
     return s
+
+result = my_function.run(prompt="Hello", runtime=runtime)
 ```
 
 ### Step 4: Test the Migration
@@ -167,282 +157,228 @@ def test_snapshots(s):
         print(f"✗ Snapshot save failed: {e}")
         return s
 
-    # Restore snapshot
+    # List snapshots
     try:
-        s.restore_snapshot(snap_id)
-        print(f"✓ Snapshot restored: {snap_id}")
+        snapshots = s.list_snapshots()
+        print(f"✓ Found {len(snapshots)} snapshots")
     except Exception as e:
-        print(f"✗ Snapshot restore failed: {e}")
-        return s
+        print(f"✗ List snapshots failed: {e}")
 
-    # Continue generation
-    s += gen("test2", max_tokens=10)
-
-    # Cleanup
-    s.delete_snapshot(snap_id)
-    print("✓ Snapshot deleted")
+    # Get snapshot info
+    try:
+        info = s.get_snapshot_info(
+            conversation_id=s.stream_executor.sid,
+            turn_number=0
+        )
+        print(f"✓ Snapshot info retrieved: {info}")
+    except Exception as e:
+        print(f"✗ Get snapshot info failed: {e}")
 
     return s
 
-result = test_snapshots.run(engine=engine)
+result = test_snapshots.run(runtime=runtime)
 ```
 
 ## Compatibility Matrix
 
-| Feature | Before v0.5.0 | v0.5.0+ (snapshots disabled) | v0.5.0+ (snapshots enabled) |
-|---------|---------------|------------------------------|----------------------------|
+| Feature | Snapshots Disabled | Phase 1 (Current) | Phase 2 (Coming) |
+|---------|-------------------|-------------------|------------------|
 | Standard Mamba inference | ✓ | ✓ | ✓ |
 | Transformer models | ✓ | ✓ | ✓ |
 | Radix cache | ✓ | ✓ | ✓ |
-| Multi-turn conversations | ✓ | ✓ | ✓ (better with snapshots) |
-| `save_snapshot()` | ✗ | ✗ | ✓ |
+| Multi-turn conversations | ✓ | ✓ | ✓ (better) |
+| `save_snapshot()` | ✗ | ✓ | ✓ |
+| `list_snapshots()` | ✗ | ✓ | ✓ |
+| `get_snapshot_info()` | ✗ | ✓ | ✓ |
 | `restore_snapshot()` | ✗ | ✗ | ✓ |
-| Disk persistence | ✗ | ✗ | ✓ |
-| COW optimization | ✗ | ✗ | ✓ |
+| `SnapshotManager` | ✗ | ✓ | ✓ |
+| Disk persistence | ✗ | ✓ | ✓ |
 
-## Common Migration Scenarios
+## Phase 1 Usage Examples
 
-### Scenario 1: Chatbot Application
-
-#### Before
+### Example 1: Basic Snapshot Saving
 
 ```python
-# chatbot_old.py
-from sglang import Engine
-from sglang.lang import function, gen
-
-engine = Engine(model_path="state-spaces/mamba-2.8b")
+from sglang import function, gen, Runtime
 
 @function
-def chat(s, history, new_message):
-    # Reprocess entire history each time (inefficient)
-    for msg in history:
-        s += f"{msg['role']}: {msg['content']}\n"
+def stateful_chat(s):
+    s += "User: " + s["user_input"] + "\n"
+    s += "Assistant: " + gen("response", max_tokens=100)
 
-    s += f"user: {new_message}\n"
-    s += "assistant: " + gen("response", max_tokens=100)
+    # Save snapshot with auto-generated ID
+    snap_id = s.save_snapshot()
+    print(f"Saved snapshot: {snap_id}")
+
+    # Or with custom conversation tracking
+    snap_id = s.save_snapshot(
+        conversation_id="user_123_session",
+        turn_number=1
+    )
 
     return s
 
-# Must reprocess full history on each message
-history = [
-    {"role": "user", "content": "Hello"},
-    {"role": "assistant", "content": "Hi there!"},
-]
-
-result = chat.run(history=history, new_message="How are you?", engine=engine)
-```
-
-#### After (with snapshots)
-
-```python
-# chatbot_new.py
-from sglang import Engine
-from sglang.lang import function, gen
-from sglang.snapshot import SnapshotManager
-
-engine = Engine(
+runtime = Runtime(
     model_path="state-spaces/mamba-2.8b",
-    enable_mamba_snapshots=True
+    enable_snapshot_persistence=True,
+    snapshot_dir="./snapshots"
 )
 
-class ChatSession:
-    def __init__(self, engine):
-        self.engine = engine
-        self.current_snapshot = None
+result = stateful_chat.run(user_input="Hello!", runtime=runtime)
+```
 
-    def send_message(self, message):
-        @function
-        def chat_turn(s, snapshot_id, msg):
-            if snapshot_id:
-                # Restore previous state (efficient - no reprocessing!)
-                s.restore_snapshot(snapshot_id)
+### Example 2: Listing and Inspecting Snapshots
 
-            s += f"user: {msg}\n"
-            s += "assistant: " + gen("response", max_tokens=100)
+```python
+from sglang import function, gen
 
-            # Save updated state
-            new_snapshot = s.save_snapshot()
-            return s, new_snapshot
+@function
+def inspect_snapshots(s):
+    # Generate some content with multiple turns
+    for i in range(3):
+        s += f"Turn {i}: "
+        s += gen(f"response_{i}", max_tokens=50)
+        s.save_snapshot()
 
-        result, self.current_snapshot = chat_turn.run(
-            snapshot_id=self.current_snapshot,
-            msg=message,
-            engine=self.engine
+    # List all snapshots for current conversation
+    snapshots = s.list_snapshots()
+    print(f"Total snapshots: {len(snapshots)}")
+
+    for snap in snapshots:
+        print(f"Turn {snap['turn_number']}: {snap['token_count']} tokens")
+        print(f"Timestamp: {snap['timestamp']}")
+        print(f"Conversation ID: {snap['conversation_id']}")
+
+    # Get detailed info about a specific snapshot
+    if snapshots:
+        info = s.get_snapshot_info(
+            conversation_id=snapshots[0]['conversation_id'],
+            turn_number=snapshots[0]['turn_number']
         )
-
-        return result["response"]
-
-# Usage
-session = ChatSession(engine)
-response1 = session.send_message("Hello")
-response2 = session.send_message("How are you?")  # Efficient - uses snapshot!
-```
-
-### Scenario 2: Document Processing
-
-#### Before
-
-```python
-# document_old.py
-@function
-def process_document(s, document):
-    # Process in one go
-    s += f"Document: {document}\n\n"
-    s += "Summary: " + gen("summary", max_tokens=200)
-    s += "\n\nKey points: " + gen("key_points", max_tokens=150)
-    s += "\n\nQuestions: " + gen("questions", max_tokens=100)
+        print(f"Detailed info: {info}")
 
     return s
 
-# If generation fails partway, must start over
+result = inspect_snapshots.run(runtime=runtime)
 ```
 
-#### After (with checkpoints)
+### Example 3: Tracking Conversation Progress
 
 ```python
-# document_new.py
+from sglang import function, gen
+
 @function
-def process_document(s, document):
-    # Stage 1: Summary
-    s += f"Document: {document}\n\n"
-    s += "Summary: " + gen("summary", max_tokens=200)
-    checkpoint1 = s.save_snapshot(metadata={"stage": "summary"})
+def multi_turn_conversation(s):
+    turns = [
+        "What is machine learning?",
+        "Can you give an example?",
+        "How does it differ from traditional programming?"
+    ]
 
-    # Stage 2: Key points
-    s += "\n\nKey points: " + gen("key_points", max_tokens=150)
-    checkpoint2 = s.save_snapshot(metadata={"stage": "key_points"})
+    for i, user_msg in enumerate(turns):
+        s += f"User: {user_msg}\n"
+        s += "Assistant: " + gen(f"response_{i}", max_tokens=100)
 
-    # Stage 3: Questions
-    s += "\n\nQuestions: " + gen("questions", max_tokens=100)
+        # Save snapshot after each turn
+        snap_id = s.save_snapshot(
+            conversation_id="ml_conversation",
+            turn_number=i
+        )
+        print(f"Saved turn {i} as snapshot {snap_id}")
 
-    return s, checkpoint1, checkpoint2
+    # After conversation, inspect all snapshots
+    all_snapshots = s.list_snapshots()
+    print(f"\nConversation had {len(all_snapshots)} turns")
 
-# If stage 3 fails, can resume from checkpoint2!
+    # Examine growth over time
+    for snap in all_snapshots:
+        info = s.get_snapshot_info(
+            conversation_id=snap['conversation_id'],
+            turn_number=snap['turn_number']
+        )
+        print(f"Turn {snap['turn_number']}: {info['token_count']} tokens")
+
+    return s
+
+result = multi_turn_conversation.run(runtime=runtime)
 ```
 
-### Scenario 3: A/B Testing
+## Phase 2 Preview
 
-#### Before
-
-```python
-# ab_test_old.py
-# Must regenerate from scratch for each variant
-@function
-def variant_a(s, prompt):
-    s += prompt
-    s += gen("response", max_tokens=100, temperature=0.7)
-    return s
-
-@function
-def variant_b(s, prompt):
-    s += prompt  # Redundant processing
-    s += gen("response", max_tokens=100, temperature=1.2)
-    return s
-
-result_a = variant_a.run(prompt="Write a poem", engine=engine)
-result_b = variant_b.run(prompt="Write a poem", engine=engine)
-```
-
-#### After (with snapshots)
+Phase 2 will add state restoration and advanced snapshot management. Here's a preview of what's coming:
 
 ```python
-# ab_test_new.py
-@function
-def setup_ab_test(s, prompt):
-    s += prompt
-    snapshot_id = s.save_snapshot()
-    return snapshot_id
+# Phase 2: Coming Soon
+from sglang import function, gen
+from sglang.snapshot import SnapshotManager
 
 @function
-def run_variant(s, snapshot_id, temperature):
-    s.restore_snapshot(snapshot_id)  # Efficient - reuse base state!
-    s += gen("response", max_tokens=100, temperature=temperature)
+def chat_with_restoration(s):
+    # First turn
+    s += "User: Hello\n"
+    s += "Assistant: " + gen("response1", max_tokens=100)
+    snap_id = s.save_snapshot()
+
+    # Second turn
+    s += "\nUser: Tell me more\n"
+    s += "Assistant: " + gen("response2", max_tokens=100)
+
+    # Restore to first turn (Phase 2 feature - not yet available as direct method)
+    # NOTE: s.restore_snapshot() is not yet available
+    # Use SnapshotManager instead (see below)
+
+    # Continue from restored state (without actual restore in Phase 1)
+    s += "\nUser: Actually, tell me something else\n"
+    s += "Assistant: " + gen("response3", max_tokens=100)
+
     return s
 
-# Setup once
-base_snapshot = setup_ab_test.run(prompt="Write a poem", engine=engine)
-
-# Run variants efficiently
-result_a = run_variant.run(snapshot_id=base_snapshot, temperature=0.7, engine=engine)
-result_b = run_variant.run(snapshot_id=base_snapshot, temperature=1.2, engine=engine)
+# SnapshotManager class (Available Now!)
+from sglang import SnapshotManager
+manager = SnapshotManager(runtime.endpoint)
+# List snapshots for a conversation
+snapshots = manager.list_conversation(conversation_id="conv_123")
+# Get snapshot metadata
+info = manager.get_info(conversation_id="conv_123", turn_number=5)
+# Restore a snapshot
+manager.restore(rid="req_123", conversation_id="conv_123", turn_number=5)
+# Delete a snapshot
+manager.delete(conversation_id="conv_123", turn_number=5)
 ```
 
 ## Breaking Changes
 
 **None.** The snapshot system is fully backward compatible.
 
-However, be aware of these **behavioral changes** when snapshots are enabled:
+### Disk Usage
 
-### Memory Usage
-
-Snapshots consume additional GPU memory:
-
-```python
-# Before: 100% of allocated memory for inference
-# After: ~90% for inference, ~10% for snapshots (configurable)
-```
-
-Configure memory allocation:
-
-```python
-engine = Engine(
-    model_path="state-spaces/mamba-2.8b",
-    mem_fraction_static=0.85,  # Reduce from 0.9 to leave room for snapshots
-    enable_mamba_snapshots=True,
-    snapshot_config={
-        "max_snapshot_memory_gb": 5.0,  # Limit snapshot memory
-    }
-)
-```
-
-### Reference Counting
-
-Radix cache nodes referenced by snapshots won't be evicted:
-
-```python
-# This is usually beneficial, but if you create many snapshots
-# without cleanup, it can reduce cache effectiveness
-
-# Best practice: Clean up unused snapshots
-@function
-def with_cleanup(s):
-    snap_id = s.save_snapshot()
-    # Use snapshot...
-    s.delete_snapshot(snap_id)  # Clean up when done
-    return s
-```
+Snapshots are persisted to disk:
+- Each snapshot: ~50-100 MB for Mamba-2.8B
+- Ensure adequate disk space in snapshot directory
+- Consider cleanup strategies for long-running applications
 
 ## Performance Impact
 
 ### When Snapshots Are Disabled (default)
 
 - **Overhead**: Zero
-- **Memory**: No change
-- **Performance**: Identical to pre-v0.5.0
+- **Disk**: No change
+- **Performance**: Identical to baseline
 
-### When Snapshots Are Enabled But Not Used
+### When Snapshots Are Enabled (Phase 1)
 
-- **Overhead**: Minimal (<1%)
-- **Memory**: Small registry overhead (<1 MB)
-- **Performance**: Negligible impact
-
-### When Actively Using Snapshots
-
-- **Save Operation**: O(1) - very fast (~0.1ms)
-- **Restore Operation**: O(1) without COW, O(S) with COW (where S = state size)
-- **Memory**: Additional ~50-100 MB per snapshot (varies by model)
+- **Save Operation**: Fast I/O operation to write to disk
+- **Overhead**: Minimal during inference
+- **Disk**: ~50-100 MB per snapshot (varies by model)
 
 ### Benchmark Comparison
 
 ```python
-# Benchmark script
 import time
-from sglang import Engine
-from sglang.lang import function, gen
+from sglang import function, gen, Runtime
 
 # Without snapshots
-engine_old = Engine(model_path="state-spaces/mamba-2.8b")
+runtime_baseline = Runtime(model_path="state-spaces/mamba-2.8b")
 
 @function
 def without_snapshots(s):
@@ -451,101 +387,52 @@ def without_snapshots(s):
     return s
 
 start = time.time()
-result = without_snapshots.run(engine=engine_old)
-time_old = time.time() - start
-print(f"Without snapshots: {time_old:.2f}s")
+result = without_snapshots.run(runtime=runtime_baseline)
+time_baseline = time.time() - start
+print(f"Without snapshots: {time_baseline:.2f}s")
 
-# With snapshots (but not using them)
-engine_new = Engine(
+# With snapshots enabled
+runtime_snapshots = Runtime(
     model_path="state-spaces/mamba-2.8b",
-    enable_mamba_snapshots=True
+    enable_snapshot_persistence=True,
+    snapshot_dir="./snapshots"
 )
 
 start = time.time()
-result = without_snapshots.run(engine=engine_new)
-time_new = time.time() - start
-print(f"With snapshots (not used): {time_new:.2f}s")
-print(f"Overhead: {(time_new - time_old) / time_old * 100:.2f}%")
+result = without_snapshots.run(runtime=runtime_snapshots)
+time_enabled = time.time() - start
+print(f"With snapshots (not used): {time_enabled:.2f}s")
+print(f"Overhead: {(time_enabled - time_baseline) / time_baseline * 100:.2f}%")
 
-# With snapshots (actively using)
+# Actively saving snapshots
 @function
 def with_snapshots(s):
-    snapshots = []
     for i in range(10):
         s += gen(f"text_{i}", max_tokens=50)
-        snapshots.append(s.save_snapshot())
-    return s, snapshots
+        s.save_snapshot()
+    return s
 
 start = time.time()
-result, snaps = with_snapshots.run(engine=engine_new)
-time_with_snaps = time.time() - start
-print(f"With snapshots (active): {time_with_snaps:.2f}s")
-print(f"Snapshot overhead: {(time_with_snaps - time_old) / time_old * 100:.2f}%")
-```
-
-## Rollback Procedure
-
-If you need to disable snapshots after enabling them:
-
-### Option 1: Disable Globally
-
-```python
-# Change engine config
-engine = Engine(
-    model_path="state-spaces/mamba-2.8b",
-    enable_mamba_snapshots=False,  # Disable
-)
-```
-
-### Option 2: Disable Per-Request
-
-```python
-@function
-def my_function(s):
-    s.disable_snapshots()  # Disable for this request
-    # snapshot operations will raise SnapshotDisabledError
-    return s
-```
-
-### Option 3: Remove Snapshot Code
-
-Snapshot code gracefully handles disabled snapshots:
-
-```python
-@function
-def safe_function(s):
-    try:
-        snap_id = s.save_snapshot()
-    except SnapshotDisabledError:
-        snap_id = None  # Continue without snapshot
-
-    # Rest of code...
-    return s
-```
-
-### Clean Up Persisted Snapshots
-
-```bash
-# Remove stored snapshots from disk
-rm -rf ./snapshots/*.snapshot
+result = with_snapshots.run(runtime=runtime_snapshots)
+time_with_saves = time.time() - start
+print(f"With snapshot saves: {time_with_saves:.2f}s")
+print(f"Save overhead: {(time_with_saves - time_baseline) / time_baseline * 100:.2f}%")
 ```
 
 ## Migration Checklist
 
 Use this checklist when migrating to snapshot-enabled inference:
 
-- [ ] Upgrade SGLang to v0.5.0+
+- [ ] Upgrade SGLang to latest version with Phase 1 support
 - [ ] Check model compatibility (Mamba/Mamba2 only)
-- [ ] Estimate memory requirements
-- [ ] Adjust `mem_fraction_static` if needed
-- [ ] Enable snapshots in engine config
+- [ ] Create snapshot directory
+- [ ] Ensure adequate disk space
+- [ ] Enable snapshots in runtime config
 - [ ] Update code to use snapshot operations (optional)
-- [ ] Test snapshot save/restore
-- [ ] Monitor memory usage
-- [ ] Set up snapshot cleanup strategy
+- [ ] Test snapshot save/list/info operations
+- [ ] Monitor disk usage
+- [ ] Plan cleanup strategy for old snapshots
 - [ ] Update documentation for your application
-- [ ] Configure disk persistence (if needed)
-- [ ] Set up monitoring/alerts for snapshot memory
 
 ## Getting Help
 

@@ -6,7 +6,10 @@ and execution tracking.
 """
 
 import asyncio
+import concurrent.futures
 import logging
+import multiprocessing
+import re
 import threading
 import time
 import traceback
@@ -17,6 +20,26 @@ from typing import Any, Dict, Optional
 from sglang.srt.agents.tool_registry import Tool, ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_worker(func, parameters, result_queue, exception_queue):
+    """
+    Worker process for executing tools with timeout support.
+
+    Runs in separate process to enable forcible termination on timeout.
+    Communicates results/exceptions back via multiprocessing queues.
+
+    Args:
+        func: Tool function to execute (must be picklable)
+        parameters: Dict of function parameters
+        result_queue: Queue for successful results
+        exception_queue: Queue for exceptions (type_name, message, traceback)
+    """
+    try:
+        result = func(**parameters)
+        result_queue.put(result)
+    except Exception as e:
+        exception_queue.put((type(e).__name__, str(e), traceback.format_exc()))
 
 
 class ToolExecutionStatus(Enum):
@@ -67,6 +90,33 @@ class ToolExecutionResult:
     def is_success(self) -> bool:
         """Check if execution was successful."""
         return self.status == ToolExecutionStatus.SUCCESS
+
+
+def _sanitize_traceback(tb: str) -> str:
+    """
+    Remove sensitive paths from traceback to prevent information leakage.
+
+    Args:
+        tb: Raw traceback string
+
+    Returns:
+        Sanitized traceback with redacted paths and limited stack depth
+    """
+    # Replace absolute paths with generic placeholders (Unix)
+    tb = re.sub(r'/home/[^/]+/', '~/', tb)
+    tb = re.sub(r'/opt/[^/]+/', '/opt/<redacted>/', tb)
+    tb = re.sub(r'/usr/local/[^/]+/', '/usr/local/<redacted>/', tb)
+
+    # Replace absolute paths with generic placeholders (Windows)
+    tb = re.sub(r'[A-Za-z]:\\Users\\[^\\]+\\', r'C:\\Users\\<redacted>\\', tb)
+    tb = re.sub(r'[A-Za-z]:\\Program Files[^\\]*\\', r'C:\\Program Files\\<redacted>\\', tb)
+
+    # Limit stack depth to prevent excessive output
+    lines = tb.split('\n')
+    if len(lines) > 20:
+        lines = lines[:5] + ['  ... (frames redacted) ...'] + lines[-15:]
+
+    return '\n'.join(lines)
 
 
 class ToolExecutionEngine:
@@ -172,7 +222,8 @@ class ToolExecutionEngine:
                 )
                 conversation_context = {}
 
-            parameters["_conversation_context"] = conversation_context
+            # Copy to avoid mutating the caller's dict
+            parameters = {**parameters, "_conversation_context": conversation_context}
 
         # Execute tool
         try:
@@ -233,7 +284,7 @@ class ToolExecutionEngine:
                 status=ToolExecutionStatus.ERROR,
                 error=error_msg,
                 execution_time_ms=execution_time_ms,
-                metadata={"traceback": traceback.format_exc()},
+                metadata={"traceback": _sanitize_traceback(traceback.format_exc())},
             )
 
     def _execute_sync(
@@ -254,12 +305,39 @@ class ToolExecutionEngine:
             TimeoutError: If execution exceeds timeout
             Exception: Any exception raised by tool
         """
-        # Note: Python doesn't have built-in sync timeout without threads
-        # For production, consider using signal.alarm on Unix or
-        # concurrent.futures.ThreadPoolExecutor with timeout
-
         logger.debug(f"Executing sync tool: {tool.name}")
-        return tool.function(**parameters)
+
+        # Use multiprocessing for true timeout enforcement (can terminate stuck tools)
+        # Note: tool.function must be picklable (no lambdas, local functions)
+        result_queue = multiprocessing.Queue()
+        exception_queue = multiprocessing.Queue()
+
+        proc = multiprocessing.Process(
+            target=_tool_worker,
+            args=(tool.function, parameters, result_queue, exception_queue)
+        )
+        proc.start()
+        proc.join(timeout=timeout)
+
+        if proc.is_alive():
+            # Timeout - forcibly terminate stuck process
+            proc.terminate()
+            proc.join()  # Ensure cleanup
+            raise TimeoutError(
+                f"Tool '{tool.name}' execution exceeded timeout of {timeout}s"
+            )
+
+        # Process finished - check for exceptions
+        if not exception_queue.empty():
+            exc_type, exc_msg, exc_tb = exception_queue.get()
+            logger.error(f"Tool '{tool.name}' raised {exc_type}: {exc_msg}\n{exc_tb}")
+            raise RuntimeError(f"{exc_type}: {exc_msg}")
+
+        # Return result
+        if not result_queue.empty():
+            return result_queue.get()
+        else:
+            raise RuntimeError(f"Tool '{tool.name}' completed but produced no result")
 
     def _execute_async(
         self, tool: Tool, parameters: Dict[str, Any], timeout: float
@@ -281,17 +359,43 @@ class ToolExecutionEngine:
         """
         logger.debug(f"Executing async tool: {tool.name}")
 
-        # Get or create event loop
+        # Check if we're already in an event loop (narrow RuntimeError catch)
         try:
-            loop = asyncio.get_event_loop()
+            asyncio.get_running_loop()
+            in_event_loop = True
         except RuntimeError:
+            in_event_loop = False
+
+        if in_event_loop:
+            # Already in async context - must use thread pool to avoid RuntimeError
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                lambda: asyncio.run(tool.function(**parameters))
+            )
+            try:
+                return future.result(timeout=timeout)
+            except (concurrent.futures.TimeoutError, asyncio.TimeoutError):
+                # Python 3.9/3.10: these are distinct types; normalize to built-in
+                raise TimeoutError(
+                    f"Tool '{tool.name}' execution exceeded timeout of {timeout}s"
+                )
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+        else:
+            # No running loop - safe to create and use one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-
-        # Execute with timeout
-        return loop.run_until_complete(
-            asyncio.wait_for(tool.function(**parameters), timeout=timeout)
-        )
+            try:
+                return loop.run_until_complete(
+                    asyncio.wait_for(tool.function(**parameters), timeout=timeout)
+                )
+            except asyncio.TimeoutError:
+                # Python 3.9/3.10: asyncio.TimeoutError is distinct; normalize to built-in
+                raise TimeoutError(
+                    f"Tool '{tool.name}' execution exceeded timeout of {timeout}s"
+                )
+            finally:
+                loop.close()
 
     def execute_batch(
         self,

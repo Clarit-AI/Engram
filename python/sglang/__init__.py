@@ -46,6 +46,9 @@ VertexAI = LazyImport("sglang.lang.backend.vertexai", "VertexAI")
 ServerArgs = LazyImport("sglang.srt.server_args", "ServerArgs")
 Engine = LazyImport("sglang.srt.entrypoints.engine", "Engine")
 
+# Snapshot Management APIs
+SnapshotManager = LazyImport("sglang.snapshot", "SnapshotManager")
+
 __all__ = [
     "Engine",
     "Runtime",
@@ -78,6 +81,7 @@ __all__ = [
     "LiteLLM",
     "OpenAI",
     "VertexAI",
+    "SnapshotManager",
     "global_config",
     "__version__",
 ]

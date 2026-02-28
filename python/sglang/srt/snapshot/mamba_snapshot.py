@@ -445,6 +445,36 @@ class MambaSnapshotManager:
 
         return sorted(branches)
 
+    def load_metadata(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> Optional[MambaSnapshotMetadata]:
+        """
+        Load only metadata for a snapshot without loading tensor data.
+
+        Args:
+            conversation_id: Conversation identifier
+            turn_number: Turn number to load (for main conversation)
+            branch_name: Branch name to load (for named branches)
+
+        Returns:
+            Metadata object or None if not found
+        """
+        metadata_path, _ = self._get_snapshot_paths(
+            conversation_id, turn_number, branch_name
+        )
+
+        if not metadata_path.exists():
+            return None
+
+        try:
+            return MambaSnapshotMetadata.from_json(metadata_path)
+        except Exception as e:
+            logger.warning(f"Failed to load metadata from {metadata_path}: {e}")
+            return None
+
     def get_latest_snapshot(
         self, conversation_id: str
     ) -> Optional[Tuple[int, MambaSnapshotMetadata]]:

@@ -60,10 +60,15 @@ from sglang.srt.managers.io_struct import (
     EmbeddingReqInput,
     FreezeGCReq,
     GenerateReqInput,
+    GetSnapshotInfoReqInput,
+    RestoreSnapshotReqInput,
+    DeleteSnapshotReqInput,
     HealthCheckOutput,
+    ListSnapshotsReqInput,
     LoadLoRAAdapterReqInput,
     OpenSessionReqOutput,
     PauseGenerationReqInput,
+    SaveSnapshotReqInput,
     SessionParams,
     TokenizedEmbeddingReqInput,
     TokenizedGenerateReqInput,
@@ -1345,6 +1350,41 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
             await self.send_to_scheduler.send_pyobj(obj)
             self.is_pause_cond.notify_all()
 
+    async def save_snapshot(self, obj: "SaveSnapshotReqInput"):
+        """Forward snapshot save request to scheduler."""
+        await self.send_to_scheduler.send_pyobj(obj)
+        # Wait for response from scheduler
+        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        return recv_obj
+
+    async def list_snapshots(self, obj: "ListSnapshotsReqInput"):
+        """Forward snapshot list request to scheduler."""
+        await self.send_to_scheduler.send_pyobj(obj)
+        # Wait for response from scheduler
+        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        return recv_obj
+
+    async def get_snapshot_info(self, obj: "GetSnapshotInfoReqInput"):
+        """Forward snapshot info request to scheduler."""
+        await self.send_to_scheduler.send_pyobj(obj)
+        # Wait for response from scheduler
+        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        return recv_obj
+
+    async def restore_snapshot(self, obj: "RestoreSnapshotReqInput"):
+        """Forward snapshot restore request to scheduler."""
+        await self.send_to_scheduler.send_pyobj(obj)
+        # Wait for response from scheduler
+        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        return recv_obj
+
+    async def delete_snapshot(self, obj: "DeleteSnapshotReqInput"):
+        """Forward snapshot delete request to scheduler."""
+        await self.send_to_scheduler.send_pyobj(obj)
+        # Wait for response from scheduler
+        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        return recv_obj
+
     async def update_weights_from_disk(
         self,
         obj: UpdateWeightFromDiskReqInput,
@@ -1451,20 +1491,14 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
         )
         self.event_loop = loop
 
+        # We only add signal handler when the tokenizer manager is in the main thread
+        # due to the CPython limitation.
         if threading.current_thread() is threading.main_thread():
             signal_handler = self.signal_handler_class(self)
             loop.add_signal_handler(signal.SIGTERM, signal_handler.sigterm_handler)
             # Update the signal handler for the process. It overrides the sigquit handler in the launch phase.
             loop.add_signal_handler(
                 signal.SIGQUIT, signal_handler.running_phase_sigquit_handler
-            )
-        else:
-            # We cannot add signal handler when the tokenizer manager is not in
-            # the main thread due to the CPython limitation.
-            logger.warning(
-                "Signal handler is not added because the tokenizer manager is "
-                "not in the main thread. This disables graceful shutdown of the "
-                "tokenizer manager when SIGTERM is received."
             )
 
         self.asyncio_tasks.add(

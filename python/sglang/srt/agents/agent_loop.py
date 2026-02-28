@@ -195,7 +195,7 @@ class AgentLoop:
 
         # Main loop
         iteration = 0
-        final_response = ""
+        final_response = None
 
         while iteration < self.config.max_iterations:
             iteration += 1
@@ -250,12 +250,15 @@ class AgentLoop:
             )
 
         # If we hit max iterations without final response
-        if not final_response:
+        if final_response is None:
             final_response = (
                 f"Maximum iterations ({self.config.max_iterations}) reached. "
                 "Unable to complete request."
             )
-            logger.warning("Agent loop reached max iterations")
+            logger.error(
+                "Agent loop exhausted max iterations (%d) without producing a final response",
+                self.config.max_iterations,
+            )
 
         # Add final assistant message
         self.messages.append(

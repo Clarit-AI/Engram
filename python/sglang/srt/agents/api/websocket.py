@@ -12,6 +12,8 @@ from typing import Any, Dict, Optional
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from sglang.srt.agents.tool_execution import ToolExecutionResult, ToolExecutionStatus
+
 logger = logging.getLogger(__name__)
 
 
@@ -231,8 +233,9 @@ class StreamingToolExecutor:
         )
 
         try:
-            # Execute tool
-            result = self.tool_executor.execute(
+            # Execute tool (use asyncio.to_thread to avoid blocking event loop)
+            result = await asyncio.to_thread(
+                self.tool_executor.execute,
                 tool_name=tool_name,
                 parameters=parameters,
                 conversation_context=conversation_context,
@@ -274,7 +277,13 @@ class StreamingToolExecutor:
                 {"tool_name": tool_name, "error": str(e)},
             )
 
-            raise
+            # Don't raise - return error result to keep connection alive
+            return ToolExecutionResult(
+                tool_name=tool_name,
+                status=ToolExecutionStatus.ERROR,
+                error=str(e),
+                execution_time_ms=0.0
+            )
 
 
 async def handle_websocket_connection(
@@ -309,6 +318,23 @@ async def handle_websocket_connection(
             if command == "execute_tool":
                 # Execute tool with streaming
                 tool_name = data.get("tool_name")
+                if not isinstance(tool_name, str) or not tool_name.strip():
+                    await ws_manager.send_to_connection(
+                        connection_id,
+                        WebSocketEventType.ERROR,
+                        {"error": "tool_name is required for execute_tool command"},
+                    )
+                    continue
+
+                # Validate tool exists in registry
+                if tool_executor.tool_registry.get(tool_name) is None:
+                    await ws_manager.send_to_connection(
+                        connection_id,
+                        WebSocketEventType.ERROR,
+                        {"error": f"Tool '{tool_name}' not found in registry"},
+                    )
+                    continue
+
                 parameters = data.get("parameters", {})
                 conversation_id = data.get("conversation_id")
 

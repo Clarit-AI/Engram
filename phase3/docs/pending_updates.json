@@ -1,0 +1,27 @@
+{
+  "pending_sdp_updates": [
+    {
+      "section": "9. Engine Integration",
+      "updates": [
+        "Add parameter naming convention (server_args: ServerArgs)",
+        "Document Mamba engine initialization flow",
+        "Add Mamba batch scheduling architecture",
+        "Document prefill caching for Mamba states"
+      ],
+      "status": "pending_phase_3.2"
+    }
+  ],
+  "pending_api_docs": [
+    {
+      "module": "sglang.srt.models.mamba",
+      "status": "not_created_yet",
+      "priority": "high"
+    },
+    {
+      "module": "sglang.srt.layers.mamba",
+      "status": "not_created_yet",
+      "priority": "high"
+    }
+  ],
+  "last_updated": "2026-02-16"
+}

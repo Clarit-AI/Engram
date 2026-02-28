@@ -39,7 +39,7 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         ast.Div: operator.truediv,
         ast.FloorDiv: operator.floordiv,
         ast.Mod: operator.mod,
-        ast.Pow: operator.pow,
+        ast.Pow: lambda base, exp: SafeExpressionEvaluator._safe_pow(base, exp),
     }
 
     # Allowed unary operations
@@ -64,7 +64,7 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         "round": round,
         "min": min,
         "max": max,
-        "pow": pow,
+        "pow": lambda base, exp, mod=None: SafeExpressionEvaluator._safe_pow(base, exp, mod),
         "sqrt": math.sqrt,
         "sin": math.sin,
         "cos": math.cos,
@@ -117,6 +117,30 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         # Evaluate AST
         return self.visit(tree.body)
 
+    _MAX_EXPONENT = 1000
+
+    @classmethod
+    def _safe_pow(cls, base, exp, mod=None):
+        """
+        Guarded power function that prevents DoS via huge exponents.
+
+        Args:
+            base: Base value
+            exp: Exponent value
+            mod: Optional modulus for modular exponentiation
+
+        Returns:
+            base ** exp (or pow(base, exp, mod) if mod is provided)
+
+        Raises:
+            ValueError: If exponent magnitude exceeds safety limit
+        """
+        if isinstance(exp, (int, float)) and abs(exp) > cls._MAX_EXPONENT:
+            raise ValueError(f"Exponent magnitude too large (max {cls._MAX_EXPONENT})")
+        if mod is not None:
+            return pow(base, exp, mod)
+        return operator.pow(base, exp)
+
     def visit_BinOp(self, node):
         """Handle binary operations (+, -, *, /, etc.)."""
         op_class = type(node.op)
@@ -125,6 +149,11 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
 
         left = self.visit(node.left)
         right = self.visit(node.right)
+
+        # Guard against DoS via huge exponentiation (route through _safe_pow)
+        if op_class is ast.Pow:
+            return self._safe_pow(left, right)
+
         return self.BINARY_OPS[op_class](left, right)
 
     def visit_UnaryOp(self, node):

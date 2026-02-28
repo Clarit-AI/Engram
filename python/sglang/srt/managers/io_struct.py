@@ -1968,6 +1968,100 @@ class LazyDumpTensorsReqOutput(BaseReq):
     success: bool
 
 
+@dataclass
+class SaveSnapshotReqInput(BaseReq):
+    """Request to save a Mamba state snapshot."""
+
+    snapshot_id: str
+    conversation_id: str
+    turn_number: Optional[int] = None
+    branch_name: Optional[str] = None
+
+
+@dataclass
+class SaveSnapshotReqOutput(BaseReq):
+    """Response from saving a snapshot."""
+
+    success: bool
+    snapshot_id: Optional[str] = None
+    message: Optional[str] = None
+
+
+@dataclass
+class ListSnapshotsReqInput(BaseReq):
+    """Request to list snapshots for a conversation."""
+
+    conversation_id: str
+
+
+@dataclass
+class ListSnapshotsReqOutput(BaseReq):
+    """Response with list of snapshots."""
+
+    success: bool
+    snapshots: Optional[List[Dict[str, Any]]] = None
+    message: Optional[str] = None
+
+
+@dataclass
+class GetSnapshotInfoReqInput(BaseReq):
+    """Request to get metadata for a specific snapshot."""
+
+    conversation_id: str
+    turn_number: Optional[int] = None
+    branch_name: Optional[str] = None
+
+
+@dataclass
+class GetSnapshotInfoReqOutput(BaseReq):
+    """Response with snapshot metadata."""
+
+    success: bool
+    metadata: Optional[Dict[str, Any]] = None
+    message: Optional[str] = None
+
+
+@dataclass
+class RestoreSnapshotReqInput(BaseReq):
+    """Request to restore Mamba state from a snapshot."""
+
+    rid: str
+    conversation_id: str
+    turn_number: Optional[int] = None
+    branch_name: Optional[str] = None
+    create_new_request: bool = False
+
+
+@dataclass
+class RestoreSnapshotReqOutput(BaseReq):
+    """Response from restoring a snapshot.
+
+    Note: Future enhancement could add a 'metadata' field returning full
+    snapshot metadata (timestamp, token_count, model_name, etc.) for verification.
+    """
+
+    success: bool
+    message: Optional[str] = None
+    token_count: Optional[int] = None
+
+
+@dataclass
+class DeleteSnapshotReqInput(BaseReq):
+    """Request to delete a snapshot."""
+
+    conversation_id: str
+    turn_number: Optional[int] = None
+    branch_name: Optional[str] = None
+
+
+@dataclass
+class DeleteSnapshotReqOutput(BaseReq):
+    """Response from deleting a snapshot."""
+
+    success: bool
+    message: Optional[str] = None
+
+
 def _check_all_req_types():
     """A helper function to check all request types are defined in this file."""
     import inspect

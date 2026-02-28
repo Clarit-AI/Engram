@@ -339,6 +339,113 @@ class RuntimeEndpoint(BaseBackend):
             assert len(s.images_) == 1, "Only support one image."
             data["image_data"] = s.images_[0][1]
 
+    def save_snapshot(
+        self,
+        rid: str,
+        snapshot_id: str,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> str:
+        """Save Mamba state snapshot via HTTP API."""
+        res = http_request(
+            self.base_url + "/save_snapshot",
+            json={
+                "rid": rid,
+                "snapshot_id": snapshot_id,
+                "conversation_id": conversation_id,
+                "turn_number": turn_number,
+                "branch_name": branch_name,
+            },
+            api_key=self.api_key,
+            verify=self.verify,
+            method="POST",
+        )
+        self._assert_success(res)
+        result = res.json()
+        return result.get("snapshot_id", snapshot_id)
+
+    def list_snapshots(self, conversation_id: str) -> List[Dict]:
+        """List all snapshots for a conversation via HTTP API."""
+        res = http_request(
+            self.base_url + "/list_snapshots",
+            json={"conversation_id": conversation_id},
+            api_key=self.api_key,
+            verify=self.verify,
+            method="POST",
+        )
+        self._assert_success(res)
+        result = res.json()
+        return result.get("snapshots", [])
+
+    def get_snapshot_info(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> Dict:
+        """Get snapshot metadata via HTTP API."""
+        res = http_request(
+            self.base_url + "/get_snapshot_info",
+            json={
+                "conversation_id": conversation_id,
+                "turn_number": turn_number,
+                "branch_name": branch_name,
+            },
+            api_key=self.api_key,
+            verify=self.verify,
+            method="POST",
+        )
+        self._assert_success(res)
+        result = res.json()
+        return result.get("metadata", {})
+
+    def restore_snapshot(
+        self,
+        rid: str,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+        create_new_request: bool = False,
+    ) -> Dict:
+        """Restore Mamba state from a snapshot via HTTP API."""
+        res = http_request(
+            self.base_url + "/restore_snapshot",
+            json={
+                "rid": rid,
+                "conversation_id": conversation_id,
+                "turn_number": turn_number,
+                "branch_name": branch_name,
+                "create_new_request": create_new_request,
+            },
+            api_key=self.api_key,
+            verify=self.verify,
+            method="POST",
+        )
+        self._assert_success(res)
+        return res.json()
+
+    def delete_snapshot(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> Dict:
+        """Delete a snapshot via HTTP API."""
+        res = http_request(
+            self.base_url + "/delete_snapshot",
+            json={
+                "conversation_id": conversation_id,
+                "turn_number": turn_number,
+                "branch_name": branch_name,
+            },
+            api_key=self.api_key,
+            verify=self.verify,
+            method="POST",
+        )
+        self._assert_success(res)
+        return res.json()
+
     def _assert_success(self, res):
         if res.status_code != 200:
             try:
