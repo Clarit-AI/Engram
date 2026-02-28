@@ -8,6 +8,7 @@ and execution tracking.
 import asyncio
 import concurrent.futures
 import logging
+import multiprocessing
 import re
 import threading
 import time
@@ -19,6 +20,26 @@ from typing import Any, Dict, Optional
 from sglang.srt.agents.tool_registry import Tool, ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _tool_worker(func, parameters, result_queue, exception_queue):
+    """
+    Worker process for executing tools with timeout support.
+
+    Runs in separate process to enable forcible termination on timeout.
+    Communicates results/exceptions back via multiprocessing queues.
+
+    Args:
+        func: Tool function to execute (must be picklable)
+        parameters: Dict of function parameters
+        result_queue: Queue for successful results
+        exception_queue: Queue for exceptions (type_name, message, traceback)
+    """
+    try:
+        result = func(**parameters)
+        result_queue.put(result)
+    except Exception as e:
+        exception_queue.put((type(e).__name__, str(e), traceback.format_exc()))
 
 
 class ToolExecutionStatus(Enum):
@@ -286,17 +307,37 @@ class ToolExecutionEngine:
         """
         logger.debug(f"Executing sync tool: {tool.name}")
 
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(tool.function, **parameters)
-        try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            future.cancel()
+        # Use multiprocessing for true timeout enforcement (can terminate stuck tools)
+        # Note: tool.function must be picklable (no lambdas, local functions)
+        result_queue = multiprocessing.Queue()
+        exception_queue = multiprocessing.Queue()
+
+        proc = multiprocessing.Process(
+            target=_tool_worker,
+            args=(tool.function, parameters, result_queue, exception_queue)
+        )
+        proc.start()
+        proc.join(timeout=timeout)
+
+        if proc.is_alive():
+            # Timeout - forcibly terminate stuck process
+            proc.terminate()
+            proc.join()  # Ensure cleanup
             raise TimeoutError(
                 f"Tool '{tool.name}' execution exceeded timeout of {timeout}s"
             )
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+
+        # Process finished - check for exceptions
+        if not exception_queue.empty():
+            exc_type, exc_msg, exc_tb = exception_queue.get()
+            logger.error(f"Tool '{tool.name}' raised {exc_type}: {exc_msg}\n{exc_tb}")
+            raise RuntimeError(f"{exc_type}: {exc_msg}")
+
+        # Return result
+        if not result_queue.empty():
+            return result_queue.get()
+        else:
+            raise RuntimeError(f"Tool '{tool.name}' completed but produced no result")
 
     def _execute_async(
         self, tool: Tool, parameters: Dict[str, Any], timeout: float
@@ -329,9 +370,7 @@ class ToolExecutionEngine:
             # Already in async context - must use thread pool to avoid RuntimeError
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
             future = executor.submit(
-                lambda: asyncio.run(
-                    asyncio.wait_for(tool.function(**parameters), timeout=timeout)
-                )
+                lambda: asyncio.run(tool.function(**parameters))
             )
             try:
                 return future.result(timeout=timeout)

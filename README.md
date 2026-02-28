@@ -233,7 +233,7 @@ print(response.choices[0].message.content)
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                      Application Layer                       │
 │  (Chatbots, Agents, Multi-turn Conversations)               │
@@ -333,6 +333,7 @@ print(response.choices[0].message.content)
 - **Disk I/O**: <100ms for safetensors serialization
 
 ### Multi-turn Speedup
+
 | Conversation Length | Stateless (Total) | Stateful (Total) | Speedup |
 |---------------------|-------------------|------------------|---------|
 | 5 turns | 8.2s | 0.9s | **9.1x** |
