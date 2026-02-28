@@ -1,9 +1,9 @@
 # Troubleshooting Guide: Stateful Mamba Snapshots
 
-> **⚠️ Implementation Status:** Phase 1 (Snapshot Saving) is complete. Phase 2 (State Restoration) is in development.
+> **⚠️ Implementation Status:** Snapshot save/restore/list/get/delete are all available via `SnapshotManager`.
 >
-> **Available Now:** `save_snapshot()`, `list_snapshots()`, `SnapshotManager` class (for restore/get_info)
-> **Coming Soon:** Direct state object methods `s.restore_snapshot()`, `s.get_snapshot_info()`
+> **Available Now:** `save_snapshot()`, `list_snapshots()`, `SnapshotManager` (with restore/get_info/delete methods)
+> **Coming Soon:** Direct state object methods `s.restore_snapshot()`, `s.get_snapshot_info()` (use `SnapshotManager` instead)
 
 Common issues and solutions for the snapshot system.
 
@@ -15,19 +15,19 @@ Common issues and solutions for the snapshot system.
 - [Memory Problems](#memory-problems)
 - [FAQ](#faq)
 
-## Phase 1 Limitations
+## Current Limitations
 
-The current implementation (Phase 1) provides snapshot **saving and inspection only**.
+All snapshot operations (save/restore/list/get/delete) are available via `SnapshotManager`.
 
 **What works:**
 - ✅ `s.save_snapshot()` - Save current state (direct method)
 - ✅ `s.list_snapshots()` - List saved snapshots (via endpoint)
-- ✅ `SnapshotManager` class - Use `sm.restore()`, `sm.get_info()`, `sm.delete()` for full API
+- ✅ `SnapshotManager` class - Full API: `sm.restore()`, `sm.get_info()`, `sm.delete()`
 
-**What doesn't work yet (Phase 2 - direct state object methods):**
-- ❌ `s.restore_snapshot()` - Use `SnapshotManager.restore()` instead
-- ❌ `s.get_snapshot_info()` - Use `SnapshotManager.get_info()` instead
-- ❌ Automatic snapshot management (retention policies, hooks)
+**What doesn't work yet (direct state object methods):**
+- ❌ `s.restore_snapshot()` - Use `SnapshotManager(runtime, s).restore(snapshot_id)` instead
+- ❌ `s.get_snapshot_info()` - Use `SnapshotManager(runtime, s).get_info(snapshot_id)` instead
+- ❌ Automatic snapshot management (retention policies, lifecycle hooks)
 
 ## Common Issues
 

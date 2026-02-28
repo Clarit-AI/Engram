@@ -64,7 +64,7 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         "round": round,
         "min": min,
         "max": max,
-        "pow": pow,
+        "pow": lambda base, exp: SafeExpressionEvaluator._safe_pow(base, exp),
         "sqrt": math.sqrt,
         "sin": math.sin,
         "cos": math.cos,
@@ -119,6 +119,25 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
 
     _MAX_EXPONENT = 1000
 
+    @classmethod
+    def _safe_pow(cls, base, exp):
+        """
+        Guarded power function that prevents DoS via huge exponents.
+
+        Args:
+            base: Base value
+            exp: Exponent value
+
+        Returns:
+            base ** exp
+
+        Raises:
+            ValueError: If exponent magnitude exceeds safety limit
+        """
+        if isinstance(exp, (int, float)) and abs(exp) > cls._MAX_EXPONENT:
+            raise ValueError(f"Exponent magnitude too large (max {cls._MAX_EXPONENT})")
+        return operator.pow(base, exp)
+
     def visit_BinOp(self, node):
         """Handle binary operations (+, -, *, /, etc.)."""
         op_class = type(node.op)
@@ -128,9 +147,9 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         left = self.visit(node.left)
         right = self.visit(node.right)
 
-        # Guard against DoS via huge exponentiation (e.g. 2**1000000)
-        if op_class is ast.Pow and isinstance(right, (int, float)) and abs(right) > self._MAX_EXPONENT:
-            raise ValueError(f"Exponent magnitude too large (max {self._MAX_EXPONENT})")
+        # Guard against DoS via huge exponentiation (route through _safe_pow)
+        if op_class is ast.Pow:
+            return self._safe_pow(left, right)
 
         return self.BINARY_OPS[op_class](left, right)
 

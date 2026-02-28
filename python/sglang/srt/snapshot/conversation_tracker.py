@@ -238,13 +238,17 @@ class ConversationTracker:
 
     def get_conversation_ids(self) -> list[str]:
         """
-        Get all active conversation IDs.
+        Get all active conversation IDs (excludes archived conversations).
 
         Returns:
-            List of conversation IDs
+            List of active conversation IDs
         """
         with self._lock:
-            return list(self._conversations.keys())
+            return [
+                conversation_id
+                for conversation_id, state in self._conversations.items()
+                if state.tier != ConversationTier.ARCHIVED
+            ]
 
     def get_tier(self, conversation_id: str) -> Optional[ConversationTier]:
         """Get current tier for conversation."""

@@ -80,10 +80,14 @@ def _sanitize_traceback(tb: str) -> str:
     Returns:
         Sanitized traceback with redacted paths and limited stack depth
     """
-    # Replace absolute paths with generic placeholders
+    # Replace absolute paths with generic placeholders (Unix)
     tb = re.sub(r'/home/[^/]+/', '~/', tb)
     tb = re.sub(r'/opt/[^/]+/', '/opt/<redacted>/', tb)
     tb = re.sub(r'/usr/local/[^/]+/', '/usr/local/<redacted>/', tb)
+
+    # Replace absolute paths with generic placeholders (Windows)
+    tb = re.sub(r'[A-Za-z]:\\Users\\[^\\]+\\', r'C:\\Users\\<redacted>\\', tb)
+    tb = re.sub(r'[A-Za-z]:\\Program Files[^\\]*\\', r'C:\\Program Files\\<redacted>\\', tb)
 
     # Limit stack depth to prevent excessive output
     lines = tb.split('\n')
