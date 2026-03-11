@@ -2390,12 +2390,9 @@ class Scheduler(
         now = time.monotonic()
         self.session_controller.maybe_reap(now)
         for recv_req in recv_reqs:
-            # If it is a health check generation request and there are running requests, ignore it.
-            if is_health_check_generate_req(recv_req) and (
-                self.chunked_req is not None
-                or self.dllm_manager.any_staging_reqs()
-                or not self.running_batch.is_empty()
-                or len(self.offload_tags) > 0
+            # Skip health check when server is busy — ongoing requests already carry health info.
+            if is_health_check_generate_req(recv_req) and not self.is_fully_idle(
+                for_health_check=True
             ):
                 self.return_health_check_ct += 1
                 continue
@@ -3550,20 +3547,36 @@ class Scheduler(
             if_success = False
         return ClearHiCacheReqOutput(success=if_success)
 
-    def _is_idle_for_hicache_storage_op(self) -> bool:
-        """Stricter idle check for storage attach/detach.
+    def is_fully_idle(self, for_health_check=False) -> bool:
+        # Batch running status
+        idle = (
+            self.running_batch.is_empty()
+            and self.chunked_req is None
+            and not self.dllm_manager.any_staging_reqs()
+            and (self.last_batch is None or self.last_batch.is_empty())
+            and (self.cur_batch is None or self.cur_batch.is_empty())
+            and (not self.enable_overlap or len(self.result_queue) == 0)
+            and (self.pp_size == 1 or all(x.is_empty() for x in self.running_mbs))
+        )
 
-        We require:
-        - no running batches (including overlap/pp/disagg paths) via `_is_no_request()`
-        - no queued requests in scheduler queues (waiting/grammar/disagg queues)
-        """
-        if not self._is_no_request():
-            return False
-        if len(self.waiting_queue) != 0:
-            return False
-        if len(self.grammar_manager.grammar_queue) != 0:
-            return False
-        return True
+        # Waiting queues: waiting + bootstrapping + preallocation + kv transfer (decode)
+        idle &= len(self.waiting_queue) == 0
+        if self.disaggregation_mode == DisaggregationMode.PREFILL:
+            idle &= len(self.disagg_prefill_bootstrap_queue.queue) == 0
+        if self.disaggregation_mode == DisaggregationMode.DECODE:
+            idle &= (
+                len(self.disagg_decode_prealloc_queue.queue) == 0
+                and len(self.disagg_decode_transfer_queue.queue) == 0
+            )
+
+        if not for_health_check:
+            # Grammar queue and prefill inflight queue may not produce batch results
+            # instantly, but they still indicate the server is not fully idle.
+            idle &= len(self.grammar_manager.grammar_queue) == 0
+            if self.disaggregation_mode == DisaggregationMode.PREFILL:
+                idle &= len(self.disagg_prefill_inflight_queue) == 0
+
+        return idle
 
     def attach_hicache_storage_wrapped(
         self, recv_req: AttachHiCacheStorageReqInput
@@ -3573,7 +3586,7 @@ class Scheduler(
                 success=False, message="Hierarchical cache is not enabled."
             )
 
-        if not self._is_idle_for_hicache_storage_op():
+        if not self.is_fully_idle():
             return AttachHiCacheStorageReqOutput(
                 success=False,
                 message=(
@@ -3626,7 +3639,7 @@ class Scheduler(
                 success=False, message="Hierarchical cache is not enabled."
             )
 
-        if not self._is_idle_for_hicache_storage_op():
+        if not self.is_fully_idle():
             return DetachHiCacheStorageReqOutput(
                 success=False,
                 message=(
@@ -3662,29 +3675,41 @@ class Scheduler(
 
         return DetachHiCacheStorageReqOutput(success=False, message=msg)
 
-    def _is_no_request(self):
-        no_request = (
-            self.running_batch.is_empty()
-            and (self.last_batch is None or self.last_batch.is_empty())
-            and (self.cur_batch is None or self.cur_batch.is_empty())
-            and (not self.enable_overlap or len(self.result_queue) == 0)
-            and (self.pp_size == 1 or all(x.is_empty() for x in self.running_mbs))
+    def pin_prefix_wrapped(self, recv_req: PinPrefixReqInput):
+        if not hasattr(self.tree_cache, "pin_prefix"):
+            return PinPrefixReqOutput(
+                success=False,
+                nodes_pinned=0,
+                message="PIN requires --enable-hierarchical-cache",
+            )
+        if getattr(self.tree_cache, "_max_pinned_tokens", 0) <= 0:
+            return PinPrefixReqOutput(
+                success=False,
+                nodes_pinned=0,
+                message="Pinning is disabled (SGLANG_HICACHE_MAX_PINNED_RATIO is 0)",
+            )
+        nodes_pinned, reject_reason = self.tree_cache.pin_prefix(
+            recv_req.token_ids, recv_req.ttl_seconds
         )
-        if self.disaggregation_mode == DisaggregationMode.PREFILL:
-            no_request &= (
-                len(self.disagg_prefill_bootstrap_queue.queue) == 0
-                and len(self.disagg_prefill_inflight_queue) == 0
+        if nodes_pinned == 0:
+            return PinPrefixReqOutput(
+                success=False,
+                nodes_pinned=0,
+                message=reject_reason or "No matching prefix found in cache to pin",
             )
-        if self.disaggregation_mode == DisaggregationMode.DECODE:
-            no_request &= (
-                len(self.disagg_decode_prealloc_queue.queue) == 0
-                and len(self.disagg_decode_transfer_queue.queue) == 0
-            )
-        return no_request
+        msg = f"Pinned {nodes_pinned} nodes (ttl={recv_req.ttl_seconds}s)"
+        if reject_reason:
+            msg += f"; {reject_reason}"
+        return PinPrefixReqOutput(
+            success=True,
+            nodes_pinned=nodes_pinned,
+            message=msg,
+        )
+>>>>>>> 50953aea8 ([Scheduler] Unify idle checks into `is_fully_idle()` and fix weight update test (#20296))
 
     def flush_cache(self):
         """Flush the memory pool and cache."""
-        if self._is_no_request():
+        if self.is_fully_idle():
             self.cur_batch = None
             self.last_batch = None
             self.tree_cache.reset()
