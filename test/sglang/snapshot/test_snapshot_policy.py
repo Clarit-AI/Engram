@@ -176,7 +176,7 @@ class TestSnapshotRetentionPolicy:
             from sglang.srt.snapshot import MambaSnapshotMetadata
 
             for turn in range(5):
-                conv_states = [torch.randn(4, 64, 3) for _ in range(2)]
+                conv_states = [torch.randn(4, 64, 3) for _ in range(4)]
                 temporal_states = torch.randn(4, 16, 128, 64)
 
                 metadata = MambaSnapshotMetadata(
@@ -218,7 +218,7 @@ class TestSnapshotRetentionPolicy:
             # Create a main snapshot first
             from sglang.srt.snapshot import MambaSnapshotMetadata
 
-            conv_states = [torch.randn(4, 64, 3) for _ in range(2)]
+            conv_states = [torch.randn(4, 64, 3) for _ in range(4)]
             temporal_states = torch.randn(4, 16, 128, 64)
 
             metadata = MambaSnapshotMetadata(
@@ -256,7 +256,7 @@ class TestSnapshotRetentionPolicy:
             # Create snapshot and branch
             from sglang.srt.snapshot import MambaSnapshotMetadata
 
-            conv_states = [torch.randn(4, 64, 3) for _ in range(2)]
+            conv_states = [torch.randn(4, 64, 3) for _ in range(4)]
             temporal_states = torch.randn(4, 16, 128, 64)
 
             metadata = MambaSnapshotMetadata(
@@ -297,7 +297,7 @@ class TestSnapshotRetentionPolicy:
             from sglang.srt.snapshot import MambaSnapshotMetadata
 
             for turn in range(3):
-                conv_states = [torch.randn(4, 64, 3) for _ in range(2)]
+                conv_states = [torch.randn(4, 64, 3) for _ in range(4)]
                 temporal_states = torch.randn(4, 16, 128, 64)
 
                 metadata = MambaSnapshotMetadata(
@@ -332,7 +332,7 @@ class TestSnapshotRetentionPolicy:
             from sglang.srt.snapshot import MambaSnapshotMetadata
 
             for turn in range(3):
-                conv_states = [torch.randn(4, 64, 3) for _ in range(2)]
+                conv_states = [torch.randn(4, 64, 3) for _ in range(4)]
                 temporal_states = torch.randn(4, 16, 128, 64)
 
                 metadata = MambaSnapshotMetadata(

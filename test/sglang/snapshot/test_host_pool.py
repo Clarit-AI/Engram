@@ -22,7 +22,7 @@ class TestMambaHostPool:
         """Create dummy Mamba state tensors for testing."""
         # Conv states
         conv_states = [
-            torch.randn(num_layers, 64, 3, device=device) for _ in range(2)
+            torch.randn(num_layers, 64, 3, device=device) for _ in range(num_layers)
         ]
 
         # Temporal state
@@ -123,23 +123,19 @@ class TestMambaHostPool:
 
     def test_memory_limit_eviction(self):
         """Test eviction based on memory limit."""
-        # Set very small memory limit
-        pool = MambaHostPool(max_conversations=100, max_memory_gb=0.001)  # 1MB
+        # Set memory limit to ~5MB (each entry is ~2MB, so fits ~2 entries)
+        pool = MambaHostPool(max_conversations=100, max_memory_gb=0.005)
 
-        # Add states until memory limit reached
-        states_added = 0
+        # Add states — pool should evict LRU entries to stay within limit
         for i in range(10):
             conv_states, temporal_states = self.create_dummy_state()
-            success = pool.save_state(f"conv_{i}", conv_states, temporal_states)
-            if success:
-                states_added += 1
+            pool.save_state(f"conv_{i}", conv_states, temporal_states)
 
-        # Should have added some but not all (limited by memory)
-        assert states_added > 0
-        assert states_added < 10
-
+        # Pool should have kept some entries (evicting older ones to stay in budget)
         stats = pool.get_stats()
         assert stats["current_memory_bytes"] <= stats["max_memory_bytes"]
+        assert stats["evictions"] > 0  # Should have evicted some entries
+        assert len(pool) > 0  # Should still have at least the last entry
 
     def test_cross_session_reference(self):
         """Test cross-session reference functionality."""

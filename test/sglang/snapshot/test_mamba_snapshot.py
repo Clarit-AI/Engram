@@ -93,7 +93,7 @@ class TestMambaSnapshotManager:
         """Create dummy Mamba state tensors for testing."""
         # Conv states (list of tensors, one per layer)
         conv_states = [
-            torch.randn(num_layers, 64, 3, device=device) for _ in range(2)
+            torch.randn(num_layers, 64, 3, device=device) for _ in range(num_layers)
         ]
 
         # Temporal state
@@ -106,7 +106,7 @@ class TestMambaSnapshotManager:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = MambaSnapshotManager(Path(tmpdir))
 
-            assert manager.base_dir == Path(tmpdir)
+            assert manager.base_dir == Path(tmpdir).resolve()
             assert manager.base_dir.exists()
 
     def test_save_and_load_snapshot(self):
