@@ -201,7 +201,55 @@ Before any test, verify the install is healthy:
 
 **Goal**: Break things under load to find race conditions, memory leaks, and eviction policy failures.
 
-**Tests to
+**Tests to run** (`test/registered/radix_cache/test_mamba_stress.py`):
+
+1. **Sustained high-concurrency request flood** — Send 10k RPS targeting `/v1/chat/completions` for 5 minutes minimum. Monitor throughput stability and error rate.
+   - **Pass criteria**: p95 latency ≤ 2x baseline, p99 ≤ 3x baseline, error rate < 0.1%, no crashes.
+   - **Duration**: 5 minutes minimum
+   - **Tooling**: Locust, wrk, or custom async client with `asyncio`
+   - **Observability**: Prometheus metrics or server logs for latency histograms, request counts, error counts
+
+2. **Memory leak detection via prolonged soak tests** — Run server under moderate load (100 RPS) for 24–72 hours while monitoring RSS/heap growth.
+   - **Pass criteria**: RSS growth < 10% over 24h, no unbounded memory growth detected by `tracemalloc` or `memory_profiler`
+   - **Duration**: 24–72 hours
+   - **Tooling**: `psutil` for RSS monitoring, `tracemalloc` for Python heap, optional `valgrind` for C++ extensions
+   - **Observability**: RSS samples every 5 minutes, heap snapshots every hour
+
+3. **Eviction policy validation under full cache pressure** — Fill Mamba cache to 100% capacity, then send requests that trigger eviction. Verify correct LRU eviction order.
+   - **Pass criteria**: 100% of evictions follow LRU policy (least recently accessed node evicted first), verified by cache access timestamps
+   - **Duration**: 10 minutes
+   - **Tooling**: Custom test script that queries cache state via internal APIs or logs
+   - **Observability**: Cache hit/miss rates, eviction logs with node IDs and timestamps
+
+4. **Race-condition/consistency fuzzing with concurrent reads/writes and conflict injection** — Run 100+ threads performing concurrent cache operations (insert, match, evict) with intentionally overlapping keys.
+   - **Pass criteria**: No data corruption detected, no crashes, all operations return consistent results, `sanity_check()` passes after every operation batch
+   - **Duration**: 30 minutes
+   - **Tooling**: `pytest-xdist` for parallel test execution, custom fuzzer with randomized operation sequences
+   - **Observability**: Operation logs with thread IDs, error counts, `sanity_check()` pass/fail
+
+5. **Chaos injection (network partitions, latency spikes, node restarts)** — Use chaos engineering tools to inject failures while server is under load.
+   - **Pass criteria**: Server recovers gracefully from all injected failures, no data loss, < 1% unrecoverable errors
+   - **Duration**: 2 hours
+   - **Tooling**: `toxiproxy` for network faults, `kill -9` for abrupt shutdowns, `tc` (traffic control) for latency injection
+   - **Observability**: Failure injection timeline, recovery times, error logs
+
+6. **Persistence & recovery under abrupt shutdowns** — Save snapshots, kill server with `kill -9`, restart, and verify all snapshots are recoverable.
+   - **Pass criteria**: 100% of snapshots recoverable after abrupt shutdown, restored state matches pre-shutdown state (verified by deterministic output at `temperature=0`)
+   - **Duration**: 1 hour (multiple shutdown/restart cycles)
+   - **Tooling**: Custom script with `subprocess.Popen`, `kill -9`, snapshot integrity checks
+   - **Observability**: Snapshot file checksums, restore success rate, output equivalence checks
+
+**HITL check**: After automated stress tests pass, manually review server logs for any unexpected warnings or errors. Verify that the server remains responsive and that HITL chat interface still functions correctly.
+
+**Pass criteria summary**: All 6 test categories pass their individual criteria, no server crashes beyond acceptable error rate (< 0.1% for transient failures, 0% for crashes), and HITL verification confirms server health.
+
+**Notes on automation**:
+- All tests should be runnable via `pytest` or standalone Python scripts
+- Results should be machine-readable (JSON or structured logs) for CI integration
+- For 24–72h soak tests, use a separate long-running test suite (not per-commit CI)
+- Recommended observability stack: Prometheus + Grafana for metrics, structured logging with timestamps
+
+---
 
 ### Citations
 

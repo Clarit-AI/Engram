@@ -1366,21 +1366,38 @@ class Scheduler(
                 new_req.mamba_pool_idx = new_pool_idx_scalar
                 new_req.fill_ids = torch.tensor(origin_input_ids, dtype=torch.int64, device='cuda') if origin_input_ids else torch.tensor([], dtype=torch.int64, device='cuda')
 
-                logger.info(
-                    f"Created new request from snapshot: conversation={recv_req.conversation_id}, "
-                    f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}"
-                )
+                # Register the new request in the waiting queue so it can be found by _find_request_by_rid
+                try:
+                    self.waiting_queue.append(new_req)
+                    logger.info(
+                        f"Created new request from snapshot: conversation={recv_req.conversation_id}, "
+                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}"
+                    )
 
-                return RestoreSnapshotReqOutput(
-                    success=True,
-                    message=f"Created new request from snapshot. rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}",
-                    token_count=metadata.token_count if metadata else None,
-                    rid=new_rid,
-                    mamba_pool_idx=new_pool_idx_scalar,
-                )
+                    return RestoreSnapshotReqOutput(
+                        success=True,
+                        message=f"Created new request from snapshot. rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}",
+                        token_count=metadata.token_count if metadata else None,
+                        rid=new_rid,
+                        mamba_pool_idx=new_pool_idx_scalar,
+                    )
+                except Exception as reg_error:
+                    # If registration fails, clean up the allocated mamba pool slot
+                    logger.error(f"Failed to register restored request: {reg_error}", exc_info=True)
+                    try:
+                        mamba_pool.free(torch.tensor([new_pool_idx_scalar], dtype=torch.int64, device='cuda'))
+                    except Exception as cleanup_error:
+                        logger.error(f"Failed to free mamba pool slot during cleanup: {cleanup_error}")
+                    raise
 
             except Exception as e:
                 logger.error(f"Failed to create new request from snapshot: {e}", exc_info=True)
+                # If we allocated a mamba pool slot but failed before registering, try to free it
+                if 'new_pool_idx_scalar' in locals():
+                    try:
+                        mamba_pool.free(torch.tensor([new_pool_idx_scalar], dtype=torch.int64, device='cuda'))
+                    except Exception as cleanup_error:
+                        logger.error(f"Failed to free mamba pool slot during error cleanup: {cleanup_error}")
                 return RestoreSnapshotReqOutput(
                     success=False,
                     message=f"Error creating new request from snapshot: {str(e)}"

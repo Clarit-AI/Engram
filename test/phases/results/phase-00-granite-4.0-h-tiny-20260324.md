@@ -69,7 +69,7 @@ test/registered/radix_cache/test_mamba_radix_cache_comprehensive.py:518: Asserti
 **Root cause**: After evicting a Mamba state to create a tombstone and then re-inserting a longer sequence, `match_prefix` returns a result where `mamba_branching_seqlen` is `None`. The cache's `match_prefix` logic does not set `mamba_branching_seqlen` when a tombstone node is encountered in the matched prefix path. This indicates a missing or broken branch in the Mamba radix cache's tombstone-aware prefix matching logic.
 
 ## CUDA Error Check
-No `CUDA error`, `RuntimeError`, or `Traceback` entries were found in the test logs.
+No CUDA-related errors (e.g., `CUDA error` or CUDA runtime failures) were found in the test logs.
 
 ## Notes
 - The phase document states "expect 10 tests" for the comprehensive suite, but only 9 were collected. The missing test is not a failure of the runner — the suite simply contains 9 test methods.
