@@ -130,6 +130,8 @@ class TestMamba2Metadata(unittest.TestCase):
         self.assertEqual(result.num_prefill_tokens, 15)
         # mixed_metadata may or may not be populated depending on has_initial_states
         # (prefix_lens are all 0, so no initial states expected)
+        self.assertIsNotNone(result.mixed_metadata, "mixed_metadata should be populated (even if empty)")
+        self.assertFalse(result.prep_initial_states, "No initial states should be prepared for prefix_lens=0")
 
     def test_chunk_indices_offsets_correctness(self):
         """Docstring worked example: query_start_loc=[0,5,10], chunk_size=8 → indices=[0,0,1], offsets=[0,5,0]."""

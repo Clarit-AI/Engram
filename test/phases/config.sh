@@ -15,16 +15,16 @@
 # =============================================================================
 
 # --- Primary model (granite-4.0-h-tiny) ---
-export MODEL_PATH=/home/jeanclawdai/models/granite-4.0-h-tiny
-export MODEL_NAME=granite-4.0-h-tiny
+export MODEL_PATH=${MODEL_PATH:-/home/jeanclawdai/models/granite-4.0-h-tiny}
+export MODEL_NAME=${MODEL_NAME:-granite-4.0-h-tiny}
 
 # --- Fallback model (Nemotron 4B FP16 — use if granite OOMs) ---
-export NEMOTRON_MODEL_PATH=/home/jeanclawdai/models/NVIDIA-Nemotron-3-Nano-4B-BF16
-export NEMOTRON_MODEL_NAME=nemotron-4b
+export NEMOTRON_MODEL_PATH=${NEMOTRON_MODEL_PATH:-/home/jeanclawdai/models/NVIDIA-Nemotron-3-Nano-4B-BF16}
+export NEMOTRON_MODEL_NAME=${NEMOTRON_MODEL_NAME:-nemotron-4b}
 
 # --- Quantized comparison model (Granite 4B Q4_K_M GGUF) ---
-export GRANITE_Q4_MODEL_PATH=/home/jeanclawdai/models/granite-4.0-h-tiny-gguf/granite-4.0-h-tiny-Q4_K_M.gguf
-export GRANITE_Q4_MODEL_NAME=granite-4b-q4
+export GRANITE_Q4_MODEL_PATH=${GRANITE_Q4_MODEL_PATH:-/home/jeanclawdai/models/granite-4.0-h-tiny-gguf/granite-4.0-h-tiny-Q4_K_M.gguf}
+export GRANITE_Q4_MODEL_NAME=${GRANITE_Q4_MODEL_NAME:-granite-4b-q4}
 
 # --- Current default (start with primary; change to switch model) ---
 # To use Nemotron: MODEL_PATH=$NEMOTRON_MODEL_PATH MODEL_NAME=$NEMOTRON_MODEL_NAME

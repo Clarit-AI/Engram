@@ -285,8 +285,8 @@ metrics:
 python -m sglang.launch_server \
     --model-path meta-llama/Meta-Llama-3-70B-Instruct \
     --tp 4 \
-    --mem-fraction-static 0.85 \  # Use 85% of GPU memory
-    --max-radix-cache-len 8192    # Limit cache to 8K tokens
+    --mem-fraction-static 0.85 \
+    --max-radix-cache-len 8192
 ```
 
 ### Throughput optimization
@@ -295,9 +295,9 @@ python -m sglang.launch_server \
 # Maximize throughput
 python -m sglang.launch_server \
     --model-path meta-llama/Meta-Llama-3-8B-Instruct \
-    --mem-fraction-static 0.95 \  # More memory for batching
-    --max-radix-cache-len 16384 \ # Larger cache
-    --max-running-requests 256    # More concurrent requests
+    --mem-fraction-static 0.95 \
+    --max-radix-cache-len 16384 \
+    --max-running-requests 256
 ```
 
 ### Latency optimization
@@ -306,8 +306,8 @@ python -m sglang.launch_server \
 # Minimize latency
 python -m sglang.launch_server \
     --model-path meta-llama/Meta-Llama-3-8B-Instruct \
-    --max-running-requests 32 \   # Fewer concurrent (less queueing)
-    --schedule-policy fcfs         # First-come first-served
+    --max-running-requests 32 \
+    --schedule-policy fcfs
 ```
 
 ## Multi-Node Deployment

@@ -469,6 +469,13 @@ def gen_with_cached_grammar(s, desc):
 ### Batch structured generation
 
 ```python
+@sgl.function
+def extract_person(s, text):
+    s += f"Extract name, age, and occupation from: {text}\n"
+    s += "Respond with a JSON object: "
+    s += '{"name": "...", "age": ..., "occupation": "..."}'
+    s += sgl.gen("person", max_tokens=50)
+
 # Generate multiple structured outputs in parallel
 results = sgl.run_batch([
     extract_person.bind(text="Alice, 30, engineer"),

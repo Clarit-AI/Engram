@@ -8,9 +8,10 @@ Investigate and fix the Mamba model configuration bug in this SGLang Mamba
   at `python/sglang/srt/configs/model_config.py` line 149:
   ```python
   if self.hf_config.architectures[0] in mm_disabled_models:
+  ```
 
-  The root cause is that Mamba models have architectures: None in their
-  HuggingFace config, so accessing config.architectures[0] fails.
+  The root cause is that Mamba models have `architectures: None` in their
+  HuggingFace config, so accessing `config.architectures[0]` fails.
 
   Where to Look
 
@@ -50,5 +51,6 @@ Investigate and fix the Mamba model configuration bug in this SGLang Mamba
   ```bash
   gcloud compute ssh --zone "asia-east1-c" "sglang-test-v100-20260325-230245"
   --project "gen-lang-client-0471830999"
+  ```
 
   Then run the investigation from /home/bbrenner/sglang-mamba/.

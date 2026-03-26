@@ -1374,7 +1374,9 @@ class Scheduler(
                 return RestoreSnapshotReqOutput(
                     success=True,
                     message=f"Created new request from snapshot. rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}",
-                    token_count=metadata.token_count if metadata else None
+                    token_count=metadata.token_count if metadata else None,
+                    rid=new_rid,
+                    mamba_pool_idx=new_pool_idx_scalar,
                 )
 
             except Exception as e:
@@ -1433,7 +1435,7 @@ class Scheduler(
 
             # Inject state back into pool
             self.snapshot_manager.inject_state_to_pool(
-                mamba_pool, req.mamba_pool_idx, conv_states, temporal_states
+                conv_states, temporal_states, mamba_pool, req.mamba_pool_idx
             )
 
             # Sync fill_ids from metadata to request
@@ -1451,7 +1453,9 @@ class Scheduler(
             return RestoreSnapshotReqOutput(
                 success=True,
                 message="Snapshot restored successfully",
-                token_count=metadata.token_count if metadata else None
+                token_count=metadata.token_count if metadata else None,
+                rid=recv_req.rid,
+                mamba_pool_idx=req.mamba_pool_idx,
             )
 
         except Exception as e:
@@ -2913,13 +2917,13 @@ class Scheduler(
             self.chunked_req.init_next_round_input()
             self.chunked_req = adder.add_chunked_req(self.chunked_req)
 
-        if self.enable_lora:
+        if self.server_args.enable_lora:
             running_loras = {req.lora_id for req in self.running_batch.reqs}
 
         # Get requests from the waiting queue to a new prefill batch
         for req in self.waiting_queue:
-            if self.enable_lora and req.lora_id not in running_loras:
-                if self.enable_lora_overlap_loading:
+            if self.server_args.enable_lora and req.lora_id not in running_loras:
+                if self.server_args.enable_lora_overlap_loading:
                     # For overlapping loading of LoRA weights with computation, we will load each adapter one at a time,
                     # as opposed to loading them in one batch
                     res = self.lora_overlap_loader.try_overlap_load_lora(
@@ -2937,6 +2941,7 @@ class Scheduler(
             running_bs = len(self.running_batch.reqs)
             if len(adder.can_run_list) >= self.get_num_allocatable_reqs(running_bs):
                 self.running_batch.batch_is_full = True
+
             if self.disaggregation_mode == DisaggregationMode.PREFILL:
                 # In prefill mode, prealloc queue and transfer queue can also take memory,
                 # so we need to check if the available size for the actual available size.
@@ -2966,7 +2971,7 @@ class Scheduler(
                 truncation_align_size=self.truncation_align_size,
             )
 
-            if self.enable_lora:
+            if self.server_args.enable_lora:
                 running_loras.add(req.lora_id)
 
             if res != AddReqResult.CONTINUE:

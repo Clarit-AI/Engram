@@ -151,18 +151,21 @@ Phase plans and validation reports are in `phase3/` directory:
 
 ## GCloud Testing Instance
 
-**Instance:** `sglang-test-v100-20260325-230245`
-**Zone:** `asia-east1-c`
-**Project:** `gen-lang-client-0471830999`
-**GPU:** Tesla V100-SXM2-16GB
+> **Credentials**: See the private runbook for access credentials and instance details.
+
+**Instance:** `<INSTANCE_NAME>`
+**Zone:** `<ZONE>`
+**Project:** `<PROJECT_ID>`
+**GPU:** `<GPU_TYPE>`
 
 Connect via:
 ```bash
-gcloud compute ssh --zone "asia-east1-c" "sglang-test-v100-20260325-230245" --project "gen-lang-client-0471830999"
+# Template — fill in values from runbook
+gcloud compute ssh --zone "<ZONE>" "<INSTANCE_NAME>" --project "<PROJECT_ID>"
 ```
 
-Clone at: `/home/bbrenner/sglang-mamba`
-Cloudflare tunnel: `mamba.clarit.ai` → `localhost:30000`
+Clone at: `<CLONE_PATH>`
+Cloudflare tunnel: `<TUNNEL_HOST>` → `localhost:30000`
 
 ### Available Models
 

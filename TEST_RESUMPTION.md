@@ -55,7 +55,7 @@ source test/phases/config.sh
 ```bash
 cd /home/bbrenner/sglang-mamba
 source test/phases/config.sh
-MODEL_PATH=$NEMOTRON_MODEL_PATH MODEL_NAME=$NEMOTRON_MODEL_NAME
+export MODEL_PATH=$NEMOTRON_MODEL_PATH MODEL_NAME=$NEMOTRON_MODEL_NAME
 ```
 
 ### Run Phase 01

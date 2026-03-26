@@ -22,7 +22,8 @@ Before any test is written or server is launched, verify that the SGLang-Mamba i
 
 ```bash
 # From project root
-cd /home/bbrenner/sglang-mamba
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
 source test/phases/config.sh   # sets MODEL_PATH, RESULTS_DIR, etc.
 
 # 1. Verify the package is installed
@@ -44,7 +45,7 @@ ls $MODEL_PATH   # expect: config.json, model-*.safetensors, tokenizer.json
 ### Task 1: Run existing unit tests
 
 ```bash
-cd /home/bbrenner/sglang-mamba
+cd "$REPO_ROOT"
 
 python -m pytest test/registered/radix_cache/test_mamba_unittest.py -v 2>&1 | tee /tmp/phase0_unittest.log
 ```

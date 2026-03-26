@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Verify the SGLang-Mamba server boots and serves correct outputs **without activating `MambaRadixCache`, `MambaPool`, or snapshot machinery**. By passing `--disable-radix-cache`, the radix cache code path is bypassed entirely while `HybridReqToTokenPool` is still active (you should see `HybridReqToTokenPool` log lines confirming the Mamba-aware memory pool is live). This gives a known-good inference baseline to diff against in all later phases.
+Verify the SGLang-Mamba server boots and serves correct outputs **without activating `MambaRadixCache` or snapshot machinery**. The `--disable-radix-cache` flag bypasses the `MambaRadixCache` prefix-avoidance code path, but `HybridReqToTokenPool` (the Mamba-aware memory pool) remains active and will emit its log lines on startup.
 
 ## Prerequisites
 
