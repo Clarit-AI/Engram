@@ -19,7 +19,9 @@ Verify that the metadata constructed during each forward pass is correct for dec
 ## Environment Setup
 
 ```bash
-cd /home/bbrenner/sglang-mamba
+# Navigate to repository root (use REPO_ROOT env var or git discovery)
+REPO_ROOT=${REPO_ROOT:-$(git rev-parse --show-toplevel)}
+cd "$REPO_ROOT"
 source test/phases/config.sh
 pip install -e python/ --quiet
 
@@ -128,8 +130,8 @@ class TestMamba2Metadata(unittest.TestCase):
         self.assertEqual(result.num_prefills, N)
         self.assertEqual(result.num_decodes, 0)
         self.assertEqual(result.num_prefill_tokens, 15)
-        # mixed_metadata may or may not be populated depending on has_initial_states
-        # (prefix_lens are all 0, so no initial states expected)
+        # mixed_metadata is always populated by prepare_mixed (possibly empty)
+        # prefix_lens are all 0, so prep_initial_states should be False
         self.assertIsNotNone(result.mixed_metadata, "mixed_metadata should be populated (even if empty)")
         self.assertFalse(result.mixed_metadata.prep_initial_states, "No initial states should be prepared for prefix_lens=0")
 

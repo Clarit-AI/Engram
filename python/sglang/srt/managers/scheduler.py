@@ -1403,7 +1403,7 @@ class Scheduler(
             except Exception as e:
                 logger.error(f"Failed to create new request from snapshot: {e}", exc_info=True)
                 # If we allocated a mamba pool slot but failed before registering, try to free it
-                if 'new_pool_idx_scalar' in locals() and not pool_freed:
+                if 'new_pool_idx' in locals() and not pool_freed:
                     try:
                         mamba_pool.free(new_pool_idx)
                     except Exception as cleanup_error:
@@ -1475,8 +1475,8 @@ class Scheduler(
                         "Re-run the original conversation to create a compatible snapshot."
                     ),
                 )
-            req.fill_ids = torch.tensor(metadata.fill_ids, dtype=torch.int64, device='cuda')
-            req.origin_input_ids = req.fill_ids  # sync origin too
+            req.fill_ids = torch.tensor(metadata.fill_ids, dtype=torch.int64, device=self.device)
+            req.origin_input_ids = metadata.fill_ids  # keep as list for downstream code
             logger.info(f"Synced fill_ids after restore, len={len(metadata.fill_ids)}")
 
             logger.info(

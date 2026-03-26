@@ -19,6 +19,7 @@ The model config bug (`architectures: None` crash) was fixed. All phase plans an
 ## Phase Execution Order
 
 ### Already Completed
+
 | Phase | Result | Notes |
 |-------|--------|-------|
 | 00 | FAIL (2 fixture bugs) | 10/12 passed; 2 radix cache fixture bugs remain |
@@ -27,6 +28,7 @@ The model config bug (`architectures: None` crash) was fixed. All phase plans an
 | 05 | PASS | Mamba2Metadata unit tests |
 
 ### Not Yet Run (blocked by model config bug)
+
 | Phase | Type | Notes |
 |-------|------|-------|
 | **01** | Server-based | Stateless inference baseline — **start here** |
