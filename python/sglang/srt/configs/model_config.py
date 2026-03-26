@@ -53,7 +53,7 @@ class ModelImpl(str, Enum):
 
 def is_deepseek_nsa(config: PretrainedConfig) -> bool:
     return (
-        config.architectures is not None
+        config.architectures
         and config.architectures[0]
         in [
             "DeepseekV3ForCausalLM",
@@ -150,7 +150,7 @@ class ModelConfig:
                 "Step3VLForConditionalGeneration",
             ]
             if (
-                self.hf_config.architectures is not None
+                self.hf_config.architectures
                 and self.hf_config.architectures[0] in mm_disabled_models
             ):
                 enable_multimodal = False
