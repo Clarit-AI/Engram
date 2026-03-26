@@ -7,14 +7,14 @@
 - sglang version: 0.0.0.dev9771+g02d060d36
 - CUDA device: Tesla V100-SXM2-16GB (CUDA 12.2 driver, 16 GB VRAM)
 - Python: 3.11.2
-- PyTorch: 2.5.1+cu121 (installed system-wide via --break-system-packages; venv was empty)
+- PyTorch: 2.9.1 (final runtime version after sglang install)
 - Model path confirmed: YES (`config.json` + 3 safetensors shards present)
 
 ## Installation Notes
 - The project `.venv` contained only pip/setuptools. `torch` and `sglang` were not pre-installed.
 - The system `/` partition had ~9 GB free. A first pip install attempt failed with `OSError: [Errno 28] No space left on device` while downloading `nvidia-nccl-cu12`.
 - The pip HTTP cache (`/home/bbrenner/.cache/pip`) was consuming 8.7 GB. It was purged (`pip3 cache purge`) to recover ~4 GB, bringing free space to ~14 GB.
-- `torch-2.5.1+cu121` was installed first (PyTorch wheel index), then `sglang` was installed via `pip3 install -e python/ --break-system-packages --no-cache-dir`. The sglang install replaced torch with `torch-2.9.1`.
+- `torch-2.5.1+cu121` was installed first (PyTorch wheel index), then `sglang` was installed via `pip3 install -e python/ --break-system-packages --no-cache-dir`. The sglang install upgraded torch to `torch-2.9.1`.
 - `pytest` was also not present and was installed separately.
 
 ## Test Results

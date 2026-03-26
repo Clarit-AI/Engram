@@ -56,7 +56,7 @@ Before any test, verify the install is healthy:
 
 1. Confirm `pip install -e python/` is complete and `import sglang` succeeds.
 2. Run `python -m pytest test/registered/radix_cache/test_mamba_unittest.py -v` and confirm all 3 existing tests pass (these are CPU/lightweight and require no server).
-3. Run `python -m pytest test/registered/radix_cache/test_mamba_radix_cache_comprehensive.py -v` and confirm all 10 tests pass.
+3. Run `python -m pytest test/registered/radix_cache/test_mamba_radix_cache_comprehensive.py -v` and confirm all collected tests pass.
 4. Report any failures with full tracebacks before proceeding.
 
 ---
