@@ -146,7 +146,7 @@ Key Mamba-specific args:
 - `--mamba-scheduler-strategy {no_buffer,extra_buffer}` — default: `no_buffer`
 - `--disable-radix-cache` — bypasses `MambaRadixCache` entirely
 - `--mamba-cache-chunk-size` — chunk size for `mamba_branching_seqlen` alignment
-- Snapshot flags: inspect `server_args.py` directly for current names (likely `--enable-mamba-snapshots` or `--mamba-snapshot-dir`)
+- Snapshot flags: inspect `server_args.py` directly for current names (flag names may vary — verify in `--help` output)
 
 ---
 

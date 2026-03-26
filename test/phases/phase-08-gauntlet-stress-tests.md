@@ -42,10 +42,11 @@ export SERVER_PID=$!
 
 # Wait for server ready
 python -c "
-import time, requests
+import time, requests, os
+SERVER_PORT = os.environ.get('SERVER_PORT', '30000')
 for i in range(90):
     try:
-        r = requests.get('http://localhost:30000/health')
+        r = requests.get(f'http://localhost:{SERVER_PORT}/health')
         if r.status_code == 200:
             print('Server ready (stress mode)')
             break
@@ -336,7 +337,7 @@ echo "Report written to $REPORT"
 
 ## Reporting
 
-```
+```text
 PHASE 8 RESULT: PASS | FAIL
 Tests run: 6+  Passed: X  Failed: Y
 Server healthy post-stress: YES | NO
