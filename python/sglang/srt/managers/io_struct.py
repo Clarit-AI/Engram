@@ -812,23 +812,8 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
     log_metrics: bool = True
     # The modalities of the image data [image, multi-images, video]
     modalities: Optional[List[str]] = None
-    # Validation step duration
-    validation_time: Optional[float] = None
-    # For cross-encoder requests
-    is_cross_encoder_request: bool = False
-    # Priority for the request
-    priority: Optional[int] = None
-    # Routing key for routing-key schedule policy
-    routing_key: Optional[str] = None
-
-    # For background responses (OpenAI responses API)
-    background: bool = False
-
-    # Propagates trace context via Engine.encode/async_encode
-    external_trace_header: Optional[Dict] = None
-
-    # The number of dimensions the resulting output embeddings should have. It is applicable for Matryoshka Embeddings.
-    dimensions: Optional[int] = None
+    # Session info for continual prompting
+    session_params: Optional[Union[List[Dict], Dict]] = None
 
     # The path to the LoRA adaptors
     lora_path: Optional[Union[List[Optional[str]], Optional[str]]] = None
@@ -1037,7 +1022,7 @@ class BatchTokenIDOutput(
     load: GetLoadReqOutput = None
     # Customized info
     customized_info: Optional[Dict[str, List[Any]]] = None
-    # Detailed breakdown of cached tokens by source (device/host/storage)
+    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
     cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
 
 
@@ -1128,7 +1113,7 @@ class BatchStrOutput(
 
     # Customized info
     customized_info: Optional[Dict[str, List[Any]]] = None
-    # Detailed breakdown of cached tokens by source (device/host/storage)
+    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
     cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
 
 
@@ -1155,7 +1140,7 @@ class BatchMultimodalOutput(BaseBatchReq):
     placeholder_tokens_val: List[Optional[List[int]]]
 
     return_bytes: List[bool]
-    # Detailed breakdown of cached tokens by source (device/host/storage)
+    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
     cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
 
 
@@ -1174,7 +1159,7 @@ class BatchEmbeddingOutput(BaseBatchReq, RequestTimingMetricsMixin):
 
     # Number of times each request was retracted.
     retraction_counts: List[int]
-    # Detailed breakdown of cached tokens by source (device/host/storage)
+    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
     cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
 
 
@@ -1265,7 +1250,7 @@ class PauseGenerationReqInput(BaseReq):
             Note: In 'inplace' mode, flush_cache will fail if there are any requests
             in the running_batch.
 
-    retract: Pause the scheduler's event loop from performing inference;
+    retract: Pause the scheduler's event_loop from performing inference;
             only non-inference requests will be handled, and all currently running
             requests will be retracted back to the waiting_queue.
             Note: The KV cache can be flushed in this mode and will be automatically
@@ -1922,7 +1907,9 @@ class GetLoadsReqOutput(BaseReq):
     max_total_num_tokens: int = field(
         metadata={"metric": ("gauge", "Maximum token capacity")}
     )
-    token_usage: float = field(metadata={"metric": ("gauge", "Token pool usage ratio")})
+    token_usage: float = field(
+        metadata={"metric": ("gauge", "Token pool usage ratio")}
+    )
     gen_throughput: float = field(
         metadata={"metric": ("gauge", "Generation throughput tokens/sec")}
     )
@@ -2043,6 +2030,8 @@ class RestoreSnapshotReqOutput(BaseReq):
     success: bool
     message: Optional[str] = None
     token_count: Optional[int] = None
+    rid: Optional[str] = None
+    mamba_pool_idx: Optional[int] = None
 
 
 @dataclass
