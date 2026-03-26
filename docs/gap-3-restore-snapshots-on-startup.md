@@ -161,7 +161,7 @@ def restore_snapshots_on_startup(self):
         try:
             # Use TierManager.restore_conversation to load from disk (COLD)
             # and auto-promote to WARM
-            result = tier_manager.restore_conversation(conv_id, turn_number=None)
+            result = tier_manager.restore_conversation(conv_id, turn_number=turn_number)
             if result:
                 logger.info(f"  Pre-loaded conv_id={conv_id} turn={turn_number} to WARM tier")
                 restored_count += 1
