@@ -120,11 +120,13 @@ echo "Server stopped"
 from sglang.test.ci.ci_register import register_cuda_ci, register_amd_ci
 
 # Stress tests: longer timeout, same suite (or consider a nightly suite)
-register_cuda_ci(est_time=600, suite="stage-b-test-small-1-gpu")
-register_amd_ci(est_time=600, suite="stage-b-test-small-1-gpu-amd")
+register_cuda_ci(est_time=300, suite="nightly-1-gpu", nightly=True)
+register_amd_ci(est_time=300, suite="nightly-amd-1-gpu", nightly=True)
 
 import concurrent.futures
+import json
 import os
+import re
 import time
 import unittest
 import uuid
@@ -133,6 +135,16 @@ import requests
 
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:30000")
 LONG_SYSTEM = "You are a helpful assistant. " * 60
+
+
+def strip_markdown_json(content: str) -> str:
+    cleaned = content.strip()
+    fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", cleaned, re.DOTALL)
+    if fenced:
+        return fenced.group(1).strip()
+    if cleaned.startswith("`") and cleaned.endswith("`"):
+        return cleaned[1:-1].strip()
+    return cleaned
 
 
 class TestMambaGauntletStress(unittest.TestCase):
@@ -233,9 +245,10 @@ class TestMambaGauntletStress(unittest.TestCase):
             history.append({"role": "user", "content": f"My name is {persona}. Reply with JSON: {{\"name\":\"{persona}\"}}"})
             resp = self._chat(history, max_tokens=60)
             history.append({"role": "assistant", "content": resp["choices"][0]["message"]["content"]})
-            import json
             try:
-                parsed = json.loads(resp["choices"][0]["message"]["content"])
+                parsed = json.loads(
+                    strip_markdown_json(resp["choices"][0]["message"]["content"])
+                )
             except (json.JSONDecodeError, ValueError):
                 return f"FAIL: {persona} gave non-JSON response: {resp['choices'][0]['message']['content']}"
             if parsed.get("name") != persona:
@@ -247,7 +260,7 @@ class TestMambaGauntletStress(unittest.TestCase):
                 content = resp["choices"][0]["message"]["content"]
                 history.append({"role": "assistant", "content": content})
                 try:
-                    parsed = json.loads(content)
+                    parsed = json.loads(strip_markdown_json(content))
                 except (json.JSONDecodeError, ValueError):
                     return f"FAIL: {persona} turn {turn+2} non-JSON: {content}"
                 if parsed.get("name") != persona:

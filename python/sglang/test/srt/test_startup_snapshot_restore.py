@@ -1,7 +1,13 @@
 import logging
+import os
+from unittest.mock import patch
 
 import torch
 
+os.environ.setdefault("HOME", "/tmp")
+os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
+
+from sglang.srt.managers.scheduler import Scheduler
 from sglang.srt.snapshot.conversation_tracker import ConversationTier, ConversationTracker
 from sglang.srt.snapshot.mamba_host_pool import MambaHostPool
 from sglang.srt.snapshot.mamba_snapshot import (
@@ -36,6 +42,14 @@ def _save_snapshot(
     snapshot_manager.save_snapshot(conv_states, temporal_states, metadata)
 
 
+def _build_scheduler(snapshot_manager, tier_manager=None, conversation_tracker=None):
+    scheduler = Scheduler.__new__(Scheduler)
+    scheduler.snapshot_manager = snapshot_manager
+    scheduler.tier_manager = tier_manager
+    scheduler.conversation_tracker = conversation_tracker
+    return scheduler
+
+
 def test_restore_snapshots_on_startup_preloads_latest_snapshots_to_warm_tier(tmp_path):
     snapshot_manager = MambaSnapshotManager(tmp_path / "snapshots")
     conversation_tracker = ConversationTracker()
@@ -61,6 +75,42 @@ def test_restore_snapshots_on_startup_preloads_latest_snapshots_to_warm_tier(tmp
     _, _, conv_a_metadata = host_pool.get_state("conv-a")
     assert conv_a_metadata["turn_number"] == 2
     assert conv_a_metadata["token_count"] == 29
+
+
+def test_scheduler_restore_snapshots_on_startup_guard_and_delegate(tmp_path):
+    snapshot_manager = MambaSnapshotManager(tmp_path / "snapshots")
+    conversation_tracker = ConversationTracker()
+    host_pool = MambaHostPool(max_conversations=10, max_memory_gb=1.0)
+    tier_manager = TierManager(
+        conversation_tracker=conversation_tracker,
+        host_pool=host_pool,
+        snapshot_manager=snapshot_manager,
+        enable_background_cleanup=False,
+    )
+
+    with patch(
+        "sglang.srt.snapshot.tier_manager.restore_latest_snapshots_to_warm_tier"
+    ) as restore_mock:
+        _build_scheduler(snapshot_manager, None, conversation_tracker).restore_snapshots_on_startup()
+        restore_mock.assert_not_called()
+
+    with patch(
+        "sglang.srt.snapshot.tier_manager.restore_latest_snapshots_to_warm_tier"
+    ) as restore_mock:
+        _build_scheduler(snapshot_manager, tier_manager, None).restore_snapshots_on_startup()
+        restore_mock.assert_not_called()
+
+    with patch(
+        "sglang.srt.snapshot.tier_manager.restore_latest_snapshots_to_warm_tier"
+    ) as restore_mock:
+        _build_scheduler(
+            snapshot_manager, tier_manager, conversation_tracker
+        ).restore_snapshots_on_startup()
+        restore_mock.assert_called_once_with(
+            snapshot_manager=snapshot_manager,
+            tier_manager=tier_manager,
+            restore_logger=logging.getLogger("sglang.srt.managers.scheduler"),
+        )
 
 
 def test_restore_snapshots_on_startup_continues_after_failure(tmp_path, caplog):
@@ -109,6 +159,29 @@ def test_save_to_warm_tier_registers_untracked_conversation(tmp_path):
     )
     assert host_pool.has_state("conv-a")
     assert conversation_tracker.get_tier("conv-a") == ConversationTier.WARM
+
+
+def test_save_to_warm_tier_does_not_register_ghost_conversation(tmp_path):
+    snapshot_manager = MambaSnapshotManager(tmp_path / "snapshots")
+    conversation_tracker = ConversationTracker()
+    host_pool = MambaHostPool(max_conversations=10, max_memory_gb=1.0)
+    tier_manager = TierManager(
+        conversation_tracker=conversation_tracker,
+        host_pool=host_pool,
+        snapshot_manager=snapshot_manager,
+        enable_background_cleanup=False,
+    )
+
+    conv_states = [torch.ones((1, 2))]
+    temporal_states = torch.ones((1, 2))
+
+    with patch.object(host_pool, "save_state", return_value=False):
+        assert not tier_manager.save_to_warm_tier(
+            "ghost-conv", conv_states, temporal_states, {}
+        )
+
+    assert not host_pool.has_state("ghost-conv")
+    assert conversation_tracker.get_state("ghost-conv") is None
 
 
 def test_restore_snapshots_on_startup_no_snapshots_logs_cleanly(tmp_path, caplog):

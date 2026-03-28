@@ -975,11 +975,20 @@ class Scheduler(
                 conversation_id=conversation_id,
                 turn_number=turn_number,
                 timestamp=time.time(),
-                token_count=len(req.fill_ids) if hasattr(req, "fill_ids") else 0,
+                token_count=(
+                    len(req.fill_ids)
+                    if hasattr(req, "fill_ids") and req.fill_ids is not None
+                    else 0
+                ),
                 model_name=self.server_args.model_path,
                 mamba_pool_idx=req.mamba_pool_idx,
                 req_pool_idx=req.req_pool_idx,
                 layer_config=layer_config,
+                fill_ids=(
+                    req.fill_ids.tolist()
+                    if hasattr(req, "fill_ids") and req.fill_ids is not None
+                    else None
+                ),
             )
 
             # Save snapshot (use tier manager if available, else direct to disk)
@@ -1311,11 +1320,22 @@ class Scheduler(
                     )
 
                 # Load snapshot from disk
-                conv_states, temporal_states, metadata = self.snapshot_manager.load_snapshot(
+                snapshot = self.snapshot_manager.load_snapshot(
                     recv_req.conversation_id,
                     recv_req.turn_number,
                     recv_req.branch_name
                 )
+
+                if snapshot is None:
+                    return RestoreSnapshotReqOutput(
+                        success=False,
+                        message=(
+                            f"Snapshot not found: conversation={recv_req.conversation_id}, "
+                            f"turn={recv_req.turn_number}, branch={recv_req.branch_name}"
+                        ),
+                    )
+
+                conv_states, temporal_states, metadata = snapshot
 
                 # Allocate a new Mamba pool slot
                 new_pool_idx = mamba_pool.alloc(1)
@@ -1362,6 +1382,7 @@ class Scheduler(
                     origin_input_ids=origin_input_ids,
                     sampling_params=SamplingParams(),
                 )
+                new_req.conversation_id = recv_req.conversation_id or recv_req.rid
                 new_req.mamba_pool_idx = new_pool_idx_scalar
                 new_req.fill_ids = torch.tensor(origin_input_ids, dtype=torch.int64, device=self.device) if origin_input_ids else torch.tensor([], dtype=torch.int64, device=self.device)
 

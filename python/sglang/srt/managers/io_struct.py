@@ -431,7 +431,7 @@ class GenerateReqInput(BaseReq, APIServingTimingMixin):
             self.input_embeds = self.input_embeds * self.parallel_sample_num
 
     def _normalize_lora_paths(self, num):
-        """Normalize LoRA paths for batch processing."""
+        """Normalize LoRA paths and ids for batch processing."""
         if self.lora_path is not None:
             if isinstance(self.lora_path, str):
                 self.lora_path = [self.lora_path] * num
@@ -439,6 +439,13 @@ class GenerateReqInput(BaseReq, APIServingTimingMixin):
                 self.lora_path = self.lora_path * self.parallel_sample_num
             else:
                 raise ValueError("lora_path should be a list or a string.")
+        if self.lora_id is not None:
+            if isinstance(self.lora_id, str):
+                self.lora_id = [self.lora_id] * num
+            elif isinstance(self.lora_id, list):
+                self.lora_id = self.lora_id * self.parallel_sample_num
+            else:
+                raise ValueError("lora_id should be a list or a string.")
 
     def _normalize_image_data(self, num):
         """Normalize image data for batch processing."""
@@ -885,7 +892,7 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
             self._normalize_lora_paths(self.batch_size)
 
     def _normalize_lora_paths(self, num):
-        """Normalize LoRA paths for batch processing."""
+        """Normalize LoRA paths and ids for batch processing."""
         if self.lora_path is not None:
             if isinstance(self.lora_path, str):
                 self.lora_path = [self.lora_path] * num
@@ -896,6 +903,16 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
                     )
             else:
                 raise ValueError("lora_path should be a list or a string.")
+        if self.lora_id is not None:
+            if isinstance(self.lora_id, str):
+                self.lora_id = [self.lora_id] * num
+            elif isinstance(self.lora_id, list):
+                if len(self.lora_id) != num:
+                    raise ValueError(
+                        f"lora_id list length ({len(self.lora_id)}) must match batch size ({num})"
+                    )
+            else:
+                raise ValueError("lora_id should be a list or a string.")
 
     def contains_mm_input(self) -> bool:
         return (
@@ -905,11 +922,17 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
         )
 
     def __getitem__(self, i):
+        session_params = (
+            self.session_params[i]
+            if isinstance(self.session_params, list)
+            else self.session_params
+        )
         if self.is_cross_encoder_request:
             return EmbeddingReqInput(
                 text=[self.text[i]] if self.text is not None else None,
                 sampling_params=self.sampling_params[i],
                 rid=self.rid[i],
+                session_params=session_params,
                 lora_path=self.lora_path[i] if self.lora_path is not None else None,
                 lora_id=self.lora_id[i] if self.lora_id is not None else None,
                 is_cross_encoder_request=True,
@@ -924,6 +947,7 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
             video_data=self.video_data[i] if self.video_data is not None else None,
             sampling_params=self.sampling_params[i],
             rid=self.rid[i],
+            session_params=session_params,
             lora_path=self.lora_path[i] if self.lora_path is not None else None,
             lora_id=self.lora_id[i] if self.lora_id is not None else None,
             external_trace_header=self.external_trace_header,
@@ -1953,7 +1977,7 @@ class SetInjectDumpMetadataReqInput(BaseReq):
 
 @dataclass
 class SetInjectDumpMetadataReqOutput(BaseReq):
-    success: bool
+    success: bool = False
 
 
 @dataclass
@@ -1963,7 +1987,7 @@ class LazyDumpTensorsReqInput(BaseReq):
 
 @dataclass
 class LazyDumpTensorsReqOutput(BaseReq):
-    success: bool
+    success: bool = False
 
 
 @dataclass
@@ -1980,7 +2004,7 @@ class SaveSnapshotReqInput(BaseReq):
 class SaveSnapshotReqOutput(BaseReq):
     """Response from saving a snapshot."""
 
-    success: bool
+    success: bool = False
     snapshot_id: Optional[str] = None
     message: Optional[str] = None
 
@@ -1996,7 +2020,7 @@ class ListSnapshotsReqInput(BaseReq):
 class ListSnapshotsReqOutput(BaseReq):
     """Response with list of snapshots."""
 
-    success: bool
+    success: bool = False
     snapshots: Optional[List[Dict[str, Any]]] = None
     message: Optional[str] = None
 
@@ -2014,7 +2038,7 @@ class GetSnapshotInfoReqInput(BaseReq):
 class GetSnapshotInfoReqOutput(BaseReq):
     """Response with snapshot metadata."""
 
-    success: bool
+    success: bool = False
     metadata: Optional[Dict[str, Any]] = None
     message: Optional[str] = None
 
@@ -2023,8 +2047,8 @@ class GetSnapshotInfoReqOutput(BaseReq):
 class RestoreSnapshotReqInput(BaseReq):
     """Request to restore Mamba state from a snapshot."""
 
-    rid: str
-    conversation_id: str
+    rid: Optional[str] = None
+    conversation_id: Optional[str] = None
     turn_number: Optional[int] = None
     branch_name: Optional[str] = None
     create_new_request: bool = False
@@ -2038,7 +2062,7 @@ class RestoreSnapshotReqOutput(BaseReq):
     snapshot metadata (timestamp, token_count, model_name, etc.) for verification.
     """
 
-    success: bool
+    success: bool = False
     message: Optional[str] = None
     token_count: Optional[int] = None
     rid: Optional[str] = None
@@ -2058,7 +2082,7 @@ class DeleteSnapshotReqInput(BaseReq):
 class DeleteSnapshotReqOutput(BaseReq):
     """Response from deleting a snapshot."""
 
-    success: bool
+    success: bool = False
     message: Optional[str] = None
 
 

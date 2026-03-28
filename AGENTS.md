@@ -1,6 +1,6 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started; use `bd prime` when you need the full workflow context and session-close protocol.
 
 ## Quick Reference
 
@@ -39,7 +39,7 @@ cp -rf source dest          # NOT: cp -r source dest
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+This project uses **bd (beads)** for issue tracking. Run `bd onboard` to get started; use `bd prime` to see the full workflow context and session-close commands.
 
 ### Quick Reference
 
@@ -72,6 +72,15 @@ bd close <id>         # Complete work
    git push
    git status  # MUST show "up to date with origin"
    ```
+   If `bd dolt push` or `git push` fails because no remote is configured or auth is unavailable, capture the failure and hand off safely instead:
+   ```bash
+   git remote -v
+   git config --get remote.origin.url
+   git status
+   git bundle create ../sglang-mamba-session.bundle HEAD
+   git format-patch -1 HEAD
+   ```
+   Then file or update an issue/PR with the push error output and the backup artifact location before closing the session.
 5. **Clean up** - Clear stashes, prune remote branches
 6. **Verify** - All changes committed AND pushed
 7. **Hand off** - Provide context for next session

@@ -18,11 +18,13 @@
 - `pytest` was also not present and was installed separately.
 
 ## Test Results
+
 | Test File | Tests Collected | Passed | Failed |
 |-----------|----------------|--------|--------|
 | test_mamba_unittest.py | 3 | 3 | 0 |
 | test_mamba_radix_cache_comprehensive.py | 9 | 7 | 2 |
 | **Total** | **12** | **10** | **2** |
+
 
 > Note: The comprehensive suite collected **9** tests, not 10 as the phase document expects. One test may have been removed or renamed upstream.
 

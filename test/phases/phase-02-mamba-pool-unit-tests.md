@@ -29,7 +29,7 @@ source test/phases/config.sh
 pip install -e python/ --quiet
 
 # Confirm GPU available
-python -c "import torch; print('WARNING: No CUDA GPU found — tests may skip or fall back to CPU')"
+python -c "import torch; print('GPU available' if torch.cuda.is_available() else 'WARNING: No CUDA GPU found — tests may skip or fall back to CPU')"
 ```
 
 ## Tasks
@@ -275,7 +275,7 @@ echo "Report written to $REPORT"
 
 ## Reporting
 
-```
+```text
 PHASE 2 RESULT: PASS | FAIL
 Regression tests: PASS | FAIL
 New tests run: 5  Passed: X  Failed: Y

@@ -173,27 +173,30 @@ class TierManager:
             True if saved successfully
         """
         with self._lock:
-            if self.conversation_tracker.get_state(conversation_id) is None:
-                self.conversation_tracker.register_conversation(
-                    conversation_id,
-                    tier=ConversationTier.WARM,
-                    metadata=metadata,
-                )
-
             # Save to host pool
             success = self.host_pool.save_state(
                 conversation_id, conv_states, temporal_states, metadata
             )
 
             if success:
-                # Update tracker
-                self.conversation_tracker.transition_tier(
-                    conversation_id, ConversationTier.WARM
-                )
+                if self.conversation_tracker.get_state(conversation_id) is None:
+                    self.conversation_tracker.register_conversation(
+                        conversation_id,
+                        tier=ConversationTier.WARM,
+                        metadata=metadata,
+                    )
+                else:
+                    self.conversation_tracker.transition_tier(
+                        conversation_id, ConversationTier.WARM
+                    )
 
                 logger.info(
                     f"Saved to WARM tier: {conversation_id}, "
                     f"host_pool_size={len(self.host_pool)}"
+                )
+            else:
+                logger.warning(
+                    "Failed to save conversation %s to WARM tier", conversation_id
                 )
 
             return success

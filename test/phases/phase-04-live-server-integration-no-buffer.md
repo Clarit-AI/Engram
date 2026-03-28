@@ -186,8 +186,11 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
             {"role": "user", "content": "What is the capital of Germany?"},
         ])
         self.assertGreater(len(resp_b["choices"][0]["message"]["content"]), 0)
-        # At temperature=0, both answers should be deterministic and non-empty
-        # (Cache hit is confirmed via server logs / metrics, not response content)
+        self.assertGreater(
+            resp_b["usage"]["prompt_tokens_details"]["cached_tokens"],
+            0,
+            f"Expected cached_tokens > 0, got: {resp_b['usage']}",
+        )
 
     def test_cache_miss_fallback(self):
         """Unique prefix (never seen before) generates correct output without corruption."""
@@ -224,15 +227,16 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
         self.assertEqual(len(set(results)), 4, f"Some results were identical: {results}")
 
     def test_multi_turn_conversation_state_continuity(self):
-        """5-turn conversation: each turn builds on previous context, producing coherent continuations."""
-        history = []
+        """5-turn conversation: each turn relies on server-side state, not replayed history."""
+        rid = "continuity-test-rid"
 
         def turn(user_msg):
-            history.append({"role": "user", "content": user_msg})
-            resp = self._chat(history, max_tokens=80)
-            assistant_msg = resp["choices"][0]["message"]["content"]
-            history.append({"role": "assistant", "content": assistant_msg})
-            return assistant_msg
+            resp = self._chat(
+                [{"role": "user", "content": user_msg}],
+                rid=rid,
+                max_tokens=80,
+            )
+            return resp["choices"][0]["message"]["content"]
 
         t1 = turn("My name is Alex and I like the number 42.")
         t2 = turn("What is my name?")
