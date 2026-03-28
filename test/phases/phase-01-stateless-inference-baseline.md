@@ -229,9 +229,9 @@ if __name__ == "__main__":
 
 ```bash
 REPORT="$RESULTS_DIR/phase-01-${MODEL_NAME}-$(date +%Y%m%d-%H%M).md"
-cat > "$REPORT" << 'EOF'
+cat > "$REPORT" << EOF
 # Phase 1 — Stateless Inference Baseline
-**Model**: granite-4.0-h-tiny
+**Model**: ${MODEL_NAME}
 **Date**: <date>
 **Result**: PASS | FAIL
 

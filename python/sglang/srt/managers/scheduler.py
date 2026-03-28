@@ -1336,6 +1336,7 @@ class Scheduler(
 
                 # new_pool_idx is a tensor, get scalar
                 new_pool_idx_scalar = new_pool_idx.item()
+                pool_freed = False  # guard for outer except cleanup
 
                 # Inject state into the new pool slot
                 self.snapshot_manager.inject_state_to_pool(
@@ -1374,7 +1375,6 @@ class Scheduler(
                 new_req.fill_ids = torch.tensor(origin_input_ids, dtype=torch.int64, device=self.device) if origin_input_ids else torch.tensor([], dtype=torch.int64, device=self.device)
 
                 # Register the new request in the waiting queue so it can be found by _find_request_by_rid
-                pool_freed = False
                 try:
                     self.init_req_max_new_tokens(new_req)
                     self._add_request_to_queue(new_req)
@@ -1452,6 +1452,17 @@ class Scheduler(
 
             conv_states, temporal_states, metadata = snapshot
 
+            # Validate fill_ids BEFORE mutating the live request — if missing the
+            # request would be left with new Mamba state but stale token history.
+            if metadata.fill_ids is None:
+                return RestoreSnapshotReqOutput(
+                    success=False,
+                    message=(
+                        "Snapshot is incompatible: fill_ids missing. "
+                        "Re-run the original conversation to create a compatible snapshot."
+                    ),
+                )
+
             # Get mamba_pool from req_to_token_pool
             mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
             if mamba_pool is None:
@@ -1465,16 +1476,7 @@ class Scheduler(
                 conv_states, temporal_states, mamba_pool, req.mamba_pool_idx
             )
 
-            # Sync fill_ids from metadata to request; reject if missing to avoid
-            # silently desyncing the token stream from the injected Mamba state.
-            if metadata.fill_ids is None:
-                return RestoreSnapshotReqOutput(
-                    success=False,
-                    message=(
-                        "Snapshot is incompatible: fill_ids missing. "
-                        "Re-run the original conversation to create a compatible snapshot."
-                    ),
-                )
+            # Sync fill_ids from metadata to request
             req.fill_ids = torch.tensor(metadata.fill_ids, dtype=torch.int64, device=self.device)
             req.origin_input_ids = metadata.fill_ids  # keep as list for downstream code
             logger.info(f"Synced fill_ids after restore, len={len(metadata.fill_ids)}")
