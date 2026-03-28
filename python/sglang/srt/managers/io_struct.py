@@ -2079,6 +2079,13 @@ class RestoreSnapshotReqInput(BaseReq):
     branch_name: Optional[str] = None
     create_new_request: bool = False
 
+    def __post_init__(self):
+        if not (self.rid or self.conversation_id):
+            raise ValueError(
+                "RestoreSnapshotReqInput requires at least one of 'rid' or "
+                "'conversation_id' to be set."
+            )
+
 
 @dataclass
 class RestoreSnapshotReqOutput(BaseReq):
