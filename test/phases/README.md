@@ -4,7 +4,7 @@ Each file in this directory is a self-contained agent prompt for one phase of th
 
 ## Phase Dependency Graph
 
-```
+```text
 Phase 0 (Environment Verification)
   └─► Phase 1 (Stateless Inference Baseline)
         └─► Phase 2 (MambaPool Unit Tests)      ◄─ no server needed
@@ -53,7 +53,7 @@ Each phase writes a detailed markdown report to `test/phases/results/phase-NN-<m
 
 - **CI registration**: All new test files use `register_cuda_ci(est_time=..., suite="stage-b-test-small-1-gpu")` at the top.
 - **Test runner**: `python test/run_suite.py --hw cuda --suite stage-b-test-small-1-gpu`
-- **Project root**: `/home/bbrenner/sglang-mamba/`
+- **Project root**: `$(git rev-parse --show-toplevel)` (repository root)
 - **Registered test dir**: `test/registered/radix_cache/`
 - **HITL interface**: Available for qualitative smoke checks where noted.
 
@@ -61,7 +61,7 @@ Each phase writes a detailed markdown report to `test/phases/results/phase-NN-<m
 
 At the end of each phase session, the executing agent should output:
 
-```
+```text
 PHASE N RESULT: PASS | FAIL
 Tests run: X  Passed: Y  Failed: Z
 HITL: PASS | SKIP | N/A

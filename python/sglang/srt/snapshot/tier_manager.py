@@ -26,6 +26,76 @@ from sglang.srt.snapshot.mamba_snapshot import (
 logger = logging.getLogger(__name__)
 
 
+def restore_latest_snapshots_to_warm_tier(
+    snapshot_manager: MambaSnapshotManager,
+    tier_manager: "TierManager",
+    restore_logger: Optional[logging.Logger] = None,
+) -> int:
+    """
+    Restore the latest snapshot for each conversation into the WARM tier.
+
+    Args:
+        snapshot_manager: Snapshot manager used to enumerate and load snapshots
+        tier_manager: Tier manager used to restore and promote state
+        restore_logger: Optional logger override
+
+    Returns:
+        Number of conversations successfully pre-loaded into the WARM tier
+    """
+    active_logger = restore_logger or logger
+
+    conversations = snapshot_manager.list_conversations()
+
+    if not conversations:
+        active_logger.info("No previous snapshots found")
+        return 0
+
+    active_logger.info(f"Found {len(conversations)} conversation(s) with snapshots")
+
+    restored_count = 0
+    for conv_id in conversations:
+        try:
+            latest = snapshot_manager.get_latest_snapshot(conv_id)
+            if latest is None:
+                active_logger.warning(
+                    "No restorable snapshots found for conversation %s", conv_id
+                )
+                continue
+
+            turn_number, metadata = latest
+            result = tier_manager.restore_conversation(conv_id, turn_number=turn_number)
+
+            if result is None:
+                active_logger.warning(
+                    "Failed to pre-load conversation %s turn %s into WARM tier",
+                    conv_id,
+                    turn_number,
+                )
+                continue
+
+            restored_count += 1
+            active_logger.info(
+                "Pre-loaded conversation %s turn %s into WARM tier (%s tokens)",
+                conv_id,
+                turn_number,
+                metadata.token_count,
+            )
+        except Exception as e:
+            active_logger.error(
+                "Failed to restore conversation %s on startup: %s",
+                conv_id,
+                e,
+                exc_info=True,
+            )
+
+    active_logger.info(
+        "Startup restore complete: %s/%s conversation(s) pre-loaded to WARM tier",
+        restored_count,
+        len(conversations),
+    )
+    return restored_count
+
+
 class TierManager:
     """
     Manages 3-tier memory hierarchy for Mamba states.
@@ -109,14 +179,24 @@ class TierManager:
             )
 
             if success:
-                # Update tracker
-                self.conversation_tracker.transition_tier(
-                    conversation_id, ConversationTier.WARM
-                )
+                if self.conversation_tracker.get_state(conversation_id) is None:
+                    self.conversation_tracker.register_conversation(
+                        conversation_id,
+                        tier=ConversationTier.WARM,
+                        metadata=metadata,
+                    )
+                else:
+                    self.conversation_tracker.transition_tier(
+                        conversation_id, ConversationTier.WARM
+                    )
 
                 logger.info(
                     f"Saved to WARM tier: {conversation_id}, "
                     f"host_pool_size={len(self.host_pool)}"
+                )
+            else:
+                logger.warning(
+                    "Failed to save conversation %s to WARM tier", conversation_id
                 )
 
             return success

@@ -39,16 +39,14 @@ High-performance serving framework for LLMs and VLMs with RadixAttention for aut
 ### Installation
 
 ```bash
-# pip install (recommended)
-pip install "sglang[all]"
-
-# With FlashInfer (faster, CUDA 11.8/12.1)
-pip install sglang[all] flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
-
-# From source
-git clone https://github.com/sgl-project/sglang.git
-cd sglang
+# This fork is required for snapshot and stateful Mamba features.
+# Installing upstream SGLang will NOT include this fork's snapshot capabilities.
+git clone https://github.com/KHAEntertainment/sglang-mamba.git
+cd sglang-mamba
 pip install -e "python[all]"
+
+# Optional: add FlashInfer wheels after installing the fork
+pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
 ```
 
 ### Launch server
@@ -141,7 +139,7 @@ print(state["json_output"])
 
 **Example** (Agent with system prompt):
 
-```
+```text
 Request 1: [SYSTEM_PROMPT] + "What's the weather?"
 → Computes full prompt (1000 tokens)
 
@@ -482,5 +480,4 @@ response = client.chat.completions.create(
 - **Docs**: https://sgl-project.github.io/
 - **Paper**: RadixAttention (arXiv:2312.07104)
 - **Discord**: https://discord.gg/sglang
-
 

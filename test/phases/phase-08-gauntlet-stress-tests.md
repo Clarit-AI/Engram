@@ -25,7 +25,6 @@ Break things under load to surface race conditions, memory leaks, eviction polic
 ## Environment Setup
 
 ```bash
-cd /home/bbrenner/sglang-mamba
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
@@ -43,10 +42,10 @@ export SERVER_PID=$!
 # Wait for server ready
 python -c "
 import time, requests, os
-SERVER_PORT = os.environ.get('SERVER_PORT', '30000')
+server_url = os.environ.get('SERVER_URL', f\"http://localhost:{os.environ.get('SERVER_PORT', '30000')}\")
 for i in range(90):
     try:
-        r = requests.get(f'http://localhost:{SERVER_PORT}/health')
+        r = requests.get(f'{server_url}/health')
         if r.status_code == 200:
             print('Server ready (stress mode)')
             break
@@ -88,7 +87,7 @@ In a separate terminal, poll server health every 30 seconds:
 
 ```bash
 for i in $(seq 1 60); do
-    echo -n "[$i] "; curl -s http://localhost:$SERVER_PORT/health | python -m json.tool --no-indent || echo "UNHEALTHY"
+    echo -n "[$i] "; curl -s "$SERVER_URL/health" | python -m json.tool --no-indent || echo "UNHEALTHY"
     sleep 30
 done
 ```
@@ -101,7 +100,7 @@ grep -i "cuda error\|out of memory\|oom\|assertion\|traceback\|lock_ref\|sanity"
     /tmp/phase8_server.log | head -100
 
 # Check if server is still responsive after stress
-curl -s http://localhost:$SERVER_PORT/health
+curl -s "$SERVER_URL/health"
 ```
 
 ### Task 5: Shut down server
@@ -120,11 +119,13 @@ echo "Server stopped"
 from sglang.test.ci.ci_register import register_cuda_ci, register_amd_ci
 
 # Stress tests: longer timeout, same suite (or consider a nightly suite)
-register_cuda_ci(est_time=600, suite="stage-b-test-small-1-gpu")
-register_amd_ci(est_time=600, suite="stage-b-test-small-1-gpu-amd")
+register_cuda_ci(est_time=300, suite="nightly-1-gpu", nightly=True)
+register_amd_ci(est_time=300, suite="nightly-amd-1-gpu", nightly=True)
 
 import concurrent.futures
+import json
 import os
+import re
 import time
 import unittest
 import uuid
@@ -133,6 +134,16 @@ import requests
 
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:30000")
 LONG_SYSTEM = "You are a helpful assistant. " * 60
+
+
+def strip_markdown_json(content: str) -> str:
+    cleaned = content.strip()
+    fenced = re.match(r"^```(?:json)?\s*(.*?)\s*```$", cleaned, re.DOTALL)
+    if fenced:
+        return fenced.group(1).strip()
+    if cleaned.startswith("`") and cleaned.endswith("`"):
+        return cleaned[1:-1].strip()
+    return cleaned
 
 
 class TestMambaGauntletStress(unittest.TestCase):
@@ -221,7 +232,7 @@ class TestMambaGauntletStress(unittest.TestCase):
 
     def test_server_health_after_stress(self):
         """After all stress tests run, server is still responsive and returns 200 on /health."""
-        r = requests.get(f"http://localhost:{os.environ.get('SERVER_PORT', '30000')}/health", timeout=10)
+        r = requests.get(f"{SERVER_URL}/health", timeout=10)
         self.assertEqual(r.status_code, 200, "Server became unhealthy after stress tests")
 
     def test_concurrent_multi_turn_conversations(self):
@@ -233,9 +244,10 @@ class TestMambaGauntletStress(unittest.TestCase):
             history.append({"role": "user", "content": f"My name is {persona}. Reply with JSON: {{\"name\":\"{persona}\"}}"})
             resp = self._chat(history, max_tokens=60)
             history.append({"role": "assistant", "content": resp["choices"][0]["message"]["content"]})
-            import json
             try:
-                parsed = json.loads(resp["choices"][0]["message"]["content"])
+                parsed = json.loads(
+                    strip_markdown_json(resp["choices"][0]["message"]["content"])
+                )
             except (json.JSONDecodeError, ValueError):
                 return f"FAIL: {persona} gave non-JSON response: {resp['choices'][0]['message']['content']}"
             if parsed.get("name") != persona:
@@ -247,7 +259,7 @@ class TestMambaGauntletStress(unittest.TestCase):
                 content = resp["choices"][0]["message"]["content"]
                 history.append({"role": "assistant", "content": content})
                 try:
-                    parsed = json.loads(content)
+                    parsed = json.loads(strip_markdown_json(content))
                 except (json.JSONDecodeError, ValueError):
                     return f"FAIL: {persona} turn {turn+2} non-JSON: {content}"
                 if parsed.get("name") != persona:
@@ -261,19 +273,8 @@ class TestMambaGauntletStress(unittest.TestCase):
         self.assertEqual(failures, [], f"Conversation coherence failures: {failures}")
 
 
-# [PROMPT TRUNCATED]
-# The original agent prompt was cut off before completing this phase's task list.
-# Additional stress test categories to consider implementing (based on Phase 3 plan and
-# codebase internals):
-#
-# - test_mamba_lock_ref_no_deadlock: concurrent inc/dec_lock_ref from multiple threads
-# - test_eviction_race_condition: evict_mamba and insert called concurrently (if thread-safe)
-# - test_memory_pool_fragmentation: alloc/free in random order for 1000 iterations
-# - test_snapshot_under_load: save/restore while concurrent inference is running
-# - test_long_session_no_leak: single request with 200 decode steps; VRAM does not grow
-# - test_speculative_decode_stress (if enabled): spec-decode with extra_buffer for 50 requests
-#
-# Inspect phase3/test/test_plan.md for any additional planned stress tests and add them here.
+# For any additional finalized gauntlet scenarios, consult phase3/test/test_plan.md
+# and add only the completed test designs here before execution.
 
 
 if __name__ == "__main__":

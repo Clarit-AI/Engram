@@ -345,7 +345,7 @@ print("Sentiment:", state["sentiment"])
 print("Summary:", state["summary"])
 ```
 
-### Form filling workflow
+### Form-filling workflow
 
 ```python
 @sgl.function

@@ -37,10 +37,11 @@ export SERVER_PID=$!
 
 # Wait for server ready
 python -c "
-import time, requests
+import os, time, requests
+server_port = os.environ.get('SERVER_PORT', '30000')
 for i in range(60):
     try:
-        r = requests.get('http://localhost:30000/health')
+        r = requests.get(f'http://localhost:{server_port}/health')
         if r.status_code == 200:
             print('Server ready (extra_buffer mode)')
             break
@@ -225,8 +226,14 @@ class TestMambaExtraBufferServer(unittest.TestCase):
         data = r.json()
         content = data["choices"][0]["message"]["content"]
         self.assertGreater(len(content), 0)
-        # The answer should contain "4" for "2+2"
-        self.assertIn("4", content, f"Unexpected answer: {content}")
+
+        baseline_url = os.environ.get("BASELINE_SERVER_URL", SERVER_URL)
+        baseline = requests.post(
+            f"{baseline_url}/v1/chat/completions", json=payload, timeout=60
+        )
+        self.assertEqual(baseline.status_code, 200)
+        baseline_content = baseline.json()["choices"][0]["message"]["content"]
+        self.assertEqual(content, baseline_content)
 
 
 if __name__ == "__main__":

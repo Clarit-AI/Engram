@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **SGLang with stateful Mamba inference** — a fork of [upstream SGLang](https://github.com/sgl-project/sglang) that adds snapshot persistence capabilities for Mamba SSM (State Space Model) hidden states. The key innovation is saving/restoring Mamba's internal memory to enable fast multi-turn conversations (25x+ speedup on subsequent turns).
+This is **SGLang with stateful Mamba inference** — a fork of [upstream SGLang](https://github.com/sgl-project/sglang) that adds snapshot persistence capabilities for Mamba SSM (State Space Model) hidden states. The key innovation is saving/restoring Mamba's internal memory to enable fast multi-turn conversations (25x+ speedup on subsequent turns, measured on a Tesla V100-SXM2-16GB while serving `granite-4.0-h-tiny` in the multi-turn phase validation flow documented under `test/phases/results/`).
 
 **Upstream**: https://github.com/sgl-project/sglang
 
@@ -60,7 +60,7 @@ pre-commit run ruff --files <files>            # Run ruff linter on specific fil
 
 ### Key Directory Structure
 
-```
+```text
 python/sglang/
 ├── __init__.py              # Public API exports (Runtime, function, gen, SnapshotManager)
 ├── snapshot.py              # High-level snapshot API (user-facing)
@@ -117,7 +117,7 @@ test/
 
 ### Key Data Structures
 
-- `MambaSnapshotMetadata` — Dataclass tracking conversation_id, turn_number, token_count, mamba_pool_idx, layer_config
+- `MambaSnapshotMetadata` — Dataclass tracking conversation_id, turn_number, token_count, mamba_pool_idx, layer_config, fill_ids
 - `MambaHostPool` — Manages host (RAM) staging area for snapshots
 - `SnapshotPolicy` — Enum controlling when snapshots are created (eager/lazy/effective_size)
 

@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "sglang_mamba",
+  "project_id": "c99f5cf4-f44d-44e0-ab7f-44de3929e390"
+}

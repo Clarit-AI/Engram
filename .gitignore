@@ -271,3 +271,8 @@ sgl-kernel/csrc/**/*_musa/
 
 # MUSA core dump files
 *.mudmp
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads/*.db
+.beads-credential-key

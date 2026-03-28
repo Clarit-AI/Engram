@@ -42,10 +42,11 @@ export SERVER_PID=$!
 
 # Wait for server ready
 python -c "
-import time, requests
+import os, time, requests
+base = os.environ.get('SERVER_URL') or f\"http://localhost:{os.environ.get('SERVER_PORT', '30000')}\"
 for i in range(60):
     try:
-        r = requests.get('http://localhost:30000/health')
+        r = requests.get(f'{base}/health')
         if r.status_code == 200:
             print('Server ready (snapshot mode)')
             break
@@ -76,7 +77,7 @@ Restores a previously saved Mamba snapshot. Supports two modes:
 
 #### Request
 
-```
+```http
 POST /restore_snapshot
 Content-Type: application/json
 ```
@@ -162,10 +163,14 @@ python -m pytest test/registered/radix_cache/test_mamba_snapshot_e2e.py -v \
 Run this script which controls exactly what messages are sent at each step:
 
 ```bash
-python3 - << 'PYEOF'
-import requests, json, uuid, time
+python3 - << 'PYEOF' 2>&1 | tee /tmp/phase7_hitl_log.txt
+import json
+import os
+import requests
+import time
+import uuid
 
-BASE = "http://localhost:30000"
+BASE = os.environ.get("SERVER_URL") or f"http://localhost:{os.environ.get('SERVER_PORT', '30000')}"
 rid = f"hitl-snap-{uuid.uuid4().hex[:8]}"
 print(f"Using rid: {rid}\n")
 
@@ -566,7 +571,7 @@ echo "Report written to $REPORT"
 
 ## Reporting
 
-```
+```text
 PHASE 7 RESULT: PASS | FAIL
 Tests run: 6  Passed: X  Failed: Y  Skipped: Z
 State equivalence verified: YES | NO
