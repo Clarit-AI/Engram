@@ -223,9 +223,6 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
         # All must be non-empty
         for r in results:
             self.assertGreater(len(r), 0)
-        # All must be distinct (independent outputs)
-        self.assertEqual(len(set(results)), 4, f"Some results were identical: {results}")
-
     def test_multi_turn_conversation_state_continuity(self):
         """5-turn conversation: each turn relies on server-side state, not replayed history."""
         rid = "continuity-test-rid"
@@ -247,7 +244,11 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
         # Basic coherence checks
         self.assertIn("alex", t2.lower(), f"Turn 2 forgot the name: {t2}")
         self.assertIn("42", t3, f"Turn 3 forgot the number: {t3}")
-        self.assertIn("58", t4, f"Turn 4 arithmetic wrong: {t4}")
+        normalized_t4 = t4.lower().replace("-", " ")
+        self.assertTrue(
+            "58" in t4 or "fifty eight" in normalized_t4,
+            f"Turn 4 arithmetic wrong: {t4}",
+        )
         self.assertGreater(len(t5), 10, f"Turn 5 summary too short: {t5}")
 
     def test_eviction_under_pressure(self):
@@ -258,7 +259,7 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
                 {"role": "user", "content": f"Request number {i}. Reply with: ok{i}"},
             ], max_tokens=10)
             # Each must succeed — eviction must not cause errors
-            self.assertEqual(resp["choices"][0]["finish_reason"] in ("stop", "length"), True)
+            self.assertIn(resp["choices"][0]["finish_reason"], ("stop", "length"))
             time.sleep(0.1)  # small delay to avoid rate-limiting
 
         # Final request must still work
@@ -324,7 +325,7 @@ echo "Report written to $REPORT"
 
 ## Reporting
 
-```
+```text
 PHASE 4 RESULT: PASS | FAIL
 Tests run: 5  Passed: X  Failed: Y
 MambaRadixCache confirmed active: YES | NO

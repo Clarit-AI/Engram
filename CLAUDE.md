@@ -60,7 +60,7 @@ pre-commit run ruff --files <files>            # Run ruff linter on specific fil
 
 ### Key Directory Structure
 
-```
+```text
 python/sglang/
 ├── __init__.py              # Public API exports (Runtime, function, gen, SnapshotManager)
 ├── snapshot.py              # High-level snapshot API (user-facing)

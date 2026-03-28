@@ -436,14 +436,30 @@ class GenerateReqInput(BaseReq, APIServingTimingMixin):
             if isinstance(self.lora_path, str):
                 self.lora_path = [self.lora_path] * num
             elif isinstance(self.lora_path, list):
-                self.lora_path = self.lora_path * self.parallel_sample_num
+                if len(self.lora_path) == 1:
+                    self.lora_path = self.lora_path * num
+                elif len(self.lora_path) == self.batch_size:
+                    self.lora_path = self.lora_path * self.parallel_sample_num
+                else:
+                    raise ValueError(
+                        f"lora_path list length ({len(self.lora_path)}) must match batch size ({self.batch_size}) "
+                        f"or be broadcastable from length 1 in _normalize_lora_paths()"
+                    )
             else:
                 raise ValueError("lora_path should be a list or a string.")
         if self.lora_id is not None:
             if isinstance(self.lora_id, str):
                 self.lora_id = [self.lora_id] * num
             elif isinstance(self.lora_id, list):
-                self.lora_id = self.lora_id * self.parallel_sample_num
+                if len(self.lora_id) == 1:
+                    self.lora_id = self.lora_id * num
+                elif len(self.lora_id) == self.batch_size:
+                    self.lora_id = self.lora_id * self.parallel_sample_num
+                else:
+                    raise ValueError(
+                        f"lora_id list length ({len(self.lora_id)}) must match batch size ({self.batch_size}) "
+                        f"or be broadcastable from length 1 in _normalize_lora_paths()"
+                    )
             else:
                 raise ValueError("lora_id should be a list or a string.")
 
@@ -890,6 +906,7 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
                 self.sampling_params[i]["max_new_tokens"] = 0
 
             self._normalize_lora_paths(self.batch_size)
+            self._normalize_session_params(self.batch_size)
 
     def _normalize_lora_paths(self, num):
         """Normalize LoRA paths and ids for batch processing."""
@@ -914,6 +931,14 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
             else:
                 raise ValueError("lora_id should be a list or a string.")
 
+    def _normalize_session_params(self, num):
+        """Validate embedding session params for batch processing."""
+        if isinstance(self.session_params, list) and len(self.session_params) != num:
+            raise ValueError(
+                f"session_params length ({len(self.session_params)}) must match batch_size ({num}) "
+                "in normalize_batch_and_arguments()"
+            )
+
     def contains_mm_input(self) -> bool:
         return (
             has_valid_data(self.image_data)
@@ -936,6 +961,7 @@ class EmbeddingReqInput(BaseReq, APIServingTimingMixin):
                 lora_path=self.lora_path[i] if self.lora_path is not None else None,
                 lora_id=self.lora_id[i] if self.lora_id is not None else None,
                 is_cross_encoder_request=True,
+                external_trace_header=self.external_trace_header,
                 http_worker_ipc=self.http_worker_ipc,
             )
 

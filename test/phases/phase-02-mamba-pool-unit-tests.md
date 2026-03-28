@@ -151,10 +151,13 @@ class TestMambaPoolExtended(unittest.TestCase):
         for req in reqs:
             req.rid = id(req)
         # Alloc until full
-        for req in reqs[:self.max_num_reqs]:
+        for req in reqs[:self.mamba_cache_size]:
             self.pool.alloc([req])
-        # Verify mamba pool is exhausted or near-exhausted; free everything cleanly
-        for req in reqs[:self.max_num_reqs]:
+        self.assertEqual(self.pool.mamba_pool.available_size(), 0)
+        extra_req = _make_req()
+        self.assertIsNone(self.pool.alloc([extra_req]))
+        # Verify mamba pool is exhausted; free everything cleanly
+        for req in reqs[:self.mamba_cache_size]:
             self.pool.free_mamba_cache(req)
             self.pool.free(req)
 
@@ -171,7 +174,6 @@ class TestMambaPoolExtended(unittest.TestCase):
         self.assertEqual(self.pool.mamba_pool.available_size(), self.initial_mamba_size - 1)
 
         # Re-alloc the same req — the existing mamba slot should be reused
-        req.mamba_pool_idx = None  # reset so alloc tries fresh
         self.pool.alloc([req])
         # Mamba available size must not decrease further (reuse, not new alloc)
         self.assertEqual(self.pool.mamba_pool.available_size(), self.initial_mamba_size - 1)
@@ -182,26 +184,10 @@ class TestMambaPoolExtended(unittest.TestCase):
 
     def test_mamba_state_dtype_override(self):
         """SGLANG_MAMBA_SSM_DTYPE override produces bfloat16 temporal states."""
-        from sglang.srt.configs.mamba_utils import Mamba2CacheParams, Mamba2StateShape
-        num_layers = 48
-        global_interval = 4
-        full_attention_layer_ids = [
-            i for i in range(global_interval - 1, num_layers, global_interval)
-        ]
-        mamba_layers = [i for i in range(num_layers) if i not in full_attention_layer_ids]
-        shape = Mamba2StateShape.create(
-            tp_world_size=1,
-            intermediate_size=4096,
-            n_groups=16,
-            num_heads=32,
-            head_dim=128,
-            state_size=128,
-            conv_kernel=4,
-        )
         with envs.SGLANG_MAMBA_SSM_DTYPE.override("bfloat16"):
-            cache_params = Mamba2CacheParams(shape=shape, layers=mamba_layers)
+            pool = _make_pool()
         # Temporal states should be bfloat16
-        self.assertEqual(cache_params.ssm_state_dtype, torch.bfloat16)
+        self.assertEqual(pool.mamba_pool.cache_params.ssm_state_dtype, torch.bfloat16)
 
     def test_get_mamba_indices_mapping(self):
         """get_mamba_indices returns indices matching req.mamba_pool_idx after alloc."""

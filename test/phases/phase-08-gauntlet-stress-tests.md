@@ -25,7 +25,6 @@ Break things under load to surface race conditions, memory leaks, eviction polic
 ## Environment Setup
 
 ```bash
-cd /home/bbrenner/sglang-mamba
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
@@ -43,10 +42,10 @@ export SERVER_PID=$!
 # Wait for server ready
 python -c "
 import time, requests, os
-SERVER_PORT = os.environ.get('SERVER_PORT', '30000')
+server_url = os.environ.get('SERVER_URL', f\"http://localhost:{os.environ.get('SERVER_PORT', '30000')}\")
 for i in range(90):
     try:
-        r = requests.get(f'http://localhost:{SERVER_PORT}/health')
+        r = requests.get(f'{server_url}/health')
         if r.status_code == 200:
             print('Server ready (stress mode)')
             break
@@ -88,7 +87,7 @@ In a separate terminal, poll server health every 30 seconds:
 
 ```bash
 for i in $(seq 1 60); do
-    echo -n "[$i] "; curl -s http://localhost:$SERVER_PORT/health | python -m json.tool --no-indent || echo "UNHEALTHY"
+    echo -n "[$i] "; curl -s "$SERVER_URL/health" | python -m json.tool --no-indent || echo "UNHEALTHY"
     sleep 30
 done
 ```
@@ -101,7 +100,7 @@ grep -i "cuda error\|out of memory\|oom\|assertion\|traceback\|lock_ref\|sanity"
     /tmp/phase8_server.log | head -100
 
 # Check if server is still responsive after stress
-curl -s http://localhost:$SERVER_PORT/health
+curl -s "$SERVER_URL/health"
 ```
 
 ### Task 5: Shut down server
@@ -233,7 +232,7 @@ class TestMambaGauntletStress(unittest.TestCase):
 
     def test_server_health_after_stress(self):
         """After all stress tests run, server is still responsive and returns 200 on /health."""
-        r = requests.get(f"http://localhost:{os.environ.get('SERVER_PORT', '30000')}/health", timeout=10)
+        r = requests.get(f"{SERVER_URL}/health", timeout=10)
         self.assertEqual(r.status_code, 200, "Server became unhealthy after stress tests")
 
     def test_concurrent_multi_turn_conversations(self):
@@ -274,19 +273,8 @@ class TestMambaGauntletStress(unittest.TestCase):
         self.assertEqual(failures, [], f"Conversation coherence failures: {failures}")
 
 
-# [PROMPT TRUNCATED]
-# The original agent prompt was cut off before completing this phase's task list.
-# Additional stress test categories to consider implementing (based on Phase 3 plan and
-# codebase internals):
-#
-# - test_mamba_lock_ref_no_deadlock: concurrent inc/dec_lock_ref from multiple threads
-# - test_eviction_race_condition: evict_mamba and insert called concurrently (if thread-safe)
-# - test_memory_pool_fragmentation: alloc/free in random order for 1000 iterations
-# - test_snapshot_under_load: save/restore while concurrent inference is running
-# - test_long_session_no_leak: single request with 200 decode steps; VRAM does not grow
-# - test_speculative_decode_stress (if enabled): spec-decode with extra_buffer for 50 requests
-#
-# Inspect phase3/test/test_plan.md for any additional planned stress tests and add them here.
+# For any additional finalized gauntlet scenarios, consult phase3/test/test_plan.md
+# and add only the completed test designs here before execution.
 
 
 if __name__ == "__main__":
