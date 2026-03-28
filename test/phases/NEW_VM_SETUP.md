@@ -158,3 +158,62 @@ If granite OOMs on the new GPU (unlikely with sm75+ since it's the sm70 kernel s
 # In config.sh or as env override:
 MODEL_PATH=$NEMOTRON_MODEL_PATH MODEL_NAME=$NEMOTRON_MODEL_NAME source test/phases/config.sh
 ```
+
+---
+
+## 9. Files to Copy Off the Old VM Before Shutdown
+
+Everything in the repo itself is safe — it's all committed and pushed to `KHAEntertainment/sglang-mamba`. The items below are **local-only** (gitignored or outside the repo) and will be lost if the VM is deleted.
+
+### High priority (context you'd otherwise reconstruct from scratch)
+
+| Source path on old VM | What it is | Copy to |
+|----------------------|------------|---------|
+| `~/.remember/remember.md` | Session handoff note (last state / next steps) | Any safe location |
+| `~/.remember/now.md` | Rolling session memory buffer (recent work log) | Any safe location |
+| `~/.remember/today-2026-03-28.md` | Compressed daily summary | Any safe location |
+| `~/.claude/projects/-home-bbrenner-sglang-mamba/memory/*.md` | All persistent memory files (project context, feedback, user prefs) | `~/.claude/projects/.../memory/` on new VM |
+| `~/.claude/settings.json` | Claude Code plugin config (`enabledPlugins`, `skipDangerousModePermissionPrompt`) | `~/.claude/settings.json` on new VM |
+
+### Batch copy command (run from old VM)
+
+```bash
+# Replace DESTINATION with your local machine or GCS bucket path
+DESTINATION="your-local-machine:~/sglang-mamba-backup/"
+
+# Memory files (Claude context)
+scp ~/.remember/remember.md \
+    ~/.remember/now.md \
+    ~/.remember/today-2026-03-28.md \
+    $DESTINATION
+
+# Project-scoped memory
+scp -r ~/.claude/projects/-home-bbrenner-sglang-mamba/memory/ \
+    $DESTINATION
+
+# Claude settings
+scp ~/.claude/settings.json $DESTINATION
+```
+
+### To restore on a new VM
+
+```bash
+# After cloning the repo and installing Claude Code:
+mkdir -p ~/.remember
+cp remember.md now.md today-*.md ~/.remember/
+
+mkdir -p "~/.claude/projects/-home-USER-sglang-mamba/memory/"
+# NOTE: adjust the path — it mirrors the absolute path of the clone on the new VM
+# e.g., if cloned to /home/ubuntu/sglang-mamba the dir is:
+# ~/.claude/projects/-home-ubuntu-sglang-mamba/memory/
+cp memory/*.md "~/.claude/projects/-home-ubuntu-sglang-mamba/memory/"
+
+cp settings.json ~/.claude/settings.json
+```
+
+### Not needed (all committed to git)
+
+- `test/phases/results/*.md` — phase reports ✓ committed
+- `test/registered/radix_cache/test_mamba_radix_cache_comprehensive.py` ✓ committed
+- `test/registered/radix_cache/test_mamba_radix_cache_gauntlet.py` ✓ committed
+- All source code changes ✓ committed and pushed to main
