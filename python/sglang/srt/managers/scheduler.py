@@ -19,6 +19,7 @@ import os
 import signal
 import sys
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -1161,6 +1162,7 @@ class Scheduler(
                 mamba_pool_idx=req.mamba_pool_idx,
                 req_pool_idx=req.req_pool_idx,
                 layer_config=layer_config,
+                fill_ids=req.fill_ids.tolist() if hasattr(req, "fill_ids") and req.fill_ids is not None else None,
             )
 
             # Save snapshot
@@ -1308,10 +1310,108 @@ class Scheduler(
 
         # Note: create_new_request is deferred to Phase 3
         if recv_req.create_new_request:
-            return RestoreSnapshotReqOutput(
-                success=False,
-                message="create_new_request is not yet implemented (Phase 3)"
-            )
+            try:
+                # Get mamba_pool from req_to_token_pool
+                mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+                if mamba_pool is None:
+                    return RestoreSnapshotReqOutput(
+                        success=False,
+                        message="Mamba pool not available"
+                    )
+
+                # Load snapshot from disk
+                conv_states, temporal_states, metadata = self.snapshot_manager.load_snapshot(
+                    recv_req.conversation_id,
+                    recv_req.turn_number,
+                    recv_req.branch_name
+                )
+
+                # Allocate a new Mamba pool slot
+                new_pool_idx = mamba_pool.alloc(1)
+                if new_pool_idx is None:
+                    return RestoreSnapshotReqOutput(
+                        success=False,
+                        message="No free Mamba pool slots available"
+                    )
+
+                # new_pool_idx is a tensor, get scalar
+                new_pool_idx_scalar = new_pool_idx.item()
+                pool_freed = False  # guard for outer except cleanup
+
+                # Inject state into the new pool slot
+                self.snapshot_manager.inject_state_to_pool(
+                    conv_states, temporal_states, mamba_pool, new_pool_idx_scalar
+                )
+
+                # Create new request ID
+                new_rid = f"restored-{uuid.uuid4().hex[:8]}"
+
+                # Create minimal Req object
+                # We need to import Req here to avoid circular imports
+                from sglang.srt.managers.schedule_batch import Req
+                from sglang.srt.sampling.sampling_params import SamplingParams
+
+                # Build origin_input_ids from metadata.fill_ids
+                if metadata.fill_ids is None:
+                    # Snapshot lacks fill_ids — incompatible; fabricating tokens would
+                    # silently desync the token stream from the injected Mamba state.
+                    mamba_pool.free(new_pool_idx_scalar)
+                    return RestoreSnapshotReqOutput(
+                        success=False,
+                        message=(
+                            "Snapshot is incompatible: fill_ids missing. "
+                            "Re-run the original conversation to create a compatible snapshot."
+                        ),
+                    )
+                origin_input_ids = metadata.fill_ids
+
+                new_req = Req(
+                    rid=new_rid,
+                    origin_input_text="",  # We don't have original text
+                    origin_input_ids=origin_input_ids,
+                    sampling_params=SamplingParams(),
+                )
+                new_req.mamba_pool_idx = new_pool_idx_scalar
+                new_req.fill_ids = torch.tensor(origin_input_ids, dtype=torch.int64, device=self.device) if origin_input_ids else torch.tensor([], dtype=torch.int64, device=self.device)
+
+                # Register the new request in the waiting queue so it can be found by _find_request_by_rid
+                try:
+                    self.init_req_max_new_tokens(new_req)
+                    self._add_request_to_queue(new_req)
+                    logger.info(
+                        f"Created new request from snapshot: conversation={recv_req.conversation_id}, "
+                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}"
+                    )
+
+                    return RestoreSnapshotReqOutput(
+                        success=True,
+                        message=f"Created new request from snapshot. rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}",
+                        token_count=metadata.token_count if metadata else None,
+                        rid=new_rid,
+                        mamba_pool_idx=new_pool_idx_scalar,
+                    )
+                except Exception as reg_error:
+                    # If registration fails, clean up the allocated mamba pool slot
+                    logger.error(f"Failed to register restored request: {reg_error}", exc_info=True)
+                    try:
+                        mamba_pool.free(new_pool_idx)
+                        pool_freed = True
+                    except Exception as cleanup_error:
+                        logger.error(f"Failed to free mamba pool slot during cleanup: {cleanup_error}")
+                    raise
+
+            except Exception as e:
+                logger.error(f"Failed to create new request from snapshot: {e}", exc_info=True)
+                # If we allocated a mamba pool slot but failed before registering, try to free it
+                if 'new_pool_idx' in locals() and not pool_freed:
+                    try:
+                        mamba_pool.free(new_pool_idx)
+                    except Exception as cleanup_error:
+                        logger.error(f"Failed to free mamba pool slot during error cleanup: {cleanup_error}")
+                return RestoreSnapshotReqOutput(
+                    success=False,
+                    message=f"Error creating new request from snapshot: {str(e)}"
+                )
 
         try:
             # Find the request by rid
@@ -1352,6 +1452,17 @@ class Scheduler(
 
             conv_states, temporal_states, metadata = snapshot
 
+            # Validate fill_ids BEFORE mutating the live request — if missing the
+            # request would be left with new Mamba state but stale token history.
+            if metadata.fill_ids is None:
+                return RestoreSnapshotReqOutput(
+                    success=False,
+                    message=(
+                        "Snapshot is incompatible: fill_ids missing. "
+                        "Re-run the original conversation to create a compatible snapshot."
+                    ),
+                )
+
             # Get mamba_pool from req_to_token_pool
             mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
             if mamba_pool is None:
@@ -1362,12 +1473,13 @@ class Scheduler(
 
             # Inject state back into pool
             self.snapshot_manager.inject_state_to_pool(
-                mamba_pool, req.mamba_pool_idx, conv_states, temporal_states
+                conv_states, temporal_states, mamba_pool, req.mamba_pool_idx
             )
 
-            # Update request metadata
-            # Note: We cannot update fill_ids or input_text here because we don't store it
-            # This is a known limitation documented in the plan
+            # Sync fill_ids from metadata to request
+            req.fill_ids = torch.tensor(metadata.fill_ids, dtype=torch.int64, device=self.device)
+            req.origin_input_ids = metadata.fill_ids  # keep as list for downstream code
+            logger.info(f"Synced fill_ids after restore, len={len(metadata.fill_ids)}")
 
             logger.info(
                 f"Snapshot restored: conversation={recv_req.conversation_id}, "
@@ -1378,7 +1490,9 @@ class Scheduler(
             return RestoreSnapshotReqOutput(
                 success=True,
                 message="Snapshot restored successfully",
-                token_count=metadata.token_count if metadata else None
+                token_count=metadata.token_count if metadata else None,
+                rid=recv_req.rid,
+                mamba_pool_idx=req.mamba_pool_idx,
             )
 
         except Exception as e:
@@ -2840,13 +2954,13 @@ class Scheduler(
             self.chunked_req.init_next_round_input()
             self.chunked_req = adder.add_chunked_req(self.chunked_req)
 
-        if self.enable_lora:
+        if self.server_args.enable_lora:
             running_loras = {req.lora_id for req in self.running_batch.reqs}
 
         # Get requests from the waiting queue to a new prefill batch
         for req in self.waiting_queue:
-            if self.enable_lora and req.lora_id not in running_loras:
-                if self.enable_lora_overlap_loading:
+            if self.server_args.enable_lora and req.lora_id not in running_loras:
+                if self.server_args.enable_lora_overlap_loading:
                     # For overlapping loading of LoRA weights with computation, we will load each adapter one at a time,
                     # as opposed to loading them in one batch
                     res = self.lora_overlap_loader.try_overlap_load_lora(
@@ -2864,6 +2978,7 @@ class Scheduler(
             running_bs = len(self.running_batch.reqs)
             if len(adder.can_run_list) >= self.get_num_allocatable_reqs(running_bs):
                 self.running_batch.batch_is_full = True
+
             if self.disaggregation_mode == DisaggregationMode.PREFILL:
                 # In prefill mode, prealloc queue and transfer queue can also take memory,
                 # so we need to check if the available size for the actual available size.
@@ -2893,7 +3008,7 @@ class Scheduler(
                 truncation_align_size=self.truncation_align_size,
             )
 
-            if self.enable_lora:
+            if self.server_args.enable_lora:
                 running_loras.add(req.lora_id)
 
             if res != AddReqResult.CONTINUE:

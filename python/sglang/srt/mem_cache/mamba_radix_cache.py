@@ -419,6 +419,9 @@ class MambaRadixCache(BasePrefixCache):
         # LRU lists are used to maintain the order of eviction of the nodes in the tree
         self.full_lru_list = LRUList(mamba=False)
         self.mamba_lru_list = LRUList(mamba=True)
+        # Observable hit/miss counters — incremented on every match_prefix call
+        self.hit_tokens = 0
+        self.miss_tokens = 0
 
     def match_prefix(self, params: MatchPrefixParams) -> MatchResult:
         """Find the matching prefix from the radix tree.
@@ -444,6 +447,9 @@ class MambaRadixCache(BasePrefixCache):
             )
 
         value, last_node, best_value_len = self._match_prefix_helper(key)
+        # Increment observable counters so callers can assert cache activity.
+        self.hit_tokens += best_value_len
+        self.miss_tokens += max(0, len(params.key) - best_value_len)
         return self._match_post_processor(params, value, last_node, best_value_len)
 
     def insert(self, params: InsertParams) -> InsertResult:

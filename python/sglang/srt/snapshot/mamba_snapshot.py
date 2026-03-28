@@ -48,6 +48,7 @@ class MambaSnapshotMetadata:
     active_tool_context: Optional[str] = None
     branch_name: Optional[str] = None
     parent_snapshot: Optional[str] = None
+    fill_ids: Optional[List[int]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert metadata to dictionary for JSON serialization."""
