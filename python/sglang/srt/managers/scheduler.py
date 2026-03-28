@@ -1041,36 +1041,27 @@ class Scheduler(
         """
         Restore the latest snapshots for all conversations on server startup.
 
-        This enables continuity across server restarts.
+        This pre-loads the latest snapshot for each conversation into the WARM
+        tier so restart-time continuity remains a server-level capability.
         """
         if self.snapshot_manager is None:
             return
 
-        logger.info("Attempting to restore snapshots from previous sessions...")
-
-        conversations = self.snapshot_manager.list_conversations()
-
-        if not conversations:
-            logger.info("No previous snapshots found")
+        if self.tier_manager is None or self.conversation_tracker is None:
+            logger.warning(
+                "Snapshot auto-restore requires memory tiers; skipping startup restore"
+            )
             return
 
-        logger.info(f"Found {len(conversations)} conversation(s) with snapshots")
+        logger.info("Attempting to restore snapshots from previous sessions...")
+        from sglang.srt.snapshot.tier_manager import (
+            restore_latest_snapshots_to_warm_tier,
+        )
 
-        # For now, we'll just log what we found
-        # Full restoration requires request recreation which is complex
-        # and should be implemented when the agent loop is added
-        for conv_id in conversations:
-            latest = self.snapshot_manager.get_latest_snapshot(conv_id)
-            if latest:
-                turn_number, metadata = latest
-                logger.info(
-                    f"  - Conversation {conv_id}: latest snapshot at turn {turn_number}, "
-                    f"{metadata.token_count} tokens"
-                )
-
-        logger.info(
-            "Snapshot restoration logged. Full state restoration will be "
-            "implemented with agent loop in Phase 3."
+        restore_latest_snapshots_to_warm_tier(
+            snapshot_manager=self.snapshot_manager,
+            tier_manager=self.tier_manager,
+            restore_logger=logger,
         )
 
     def _find_request_by_rid(self, rid: str):
