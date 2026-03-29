@@ -1611,7 +1611,8 @@ class Scheduler(
                 return RestoreSnapshotReqOutput(
                     success=False,
                     message=f"Snapshot not found: conversation={effective_conv_id}, "
-                            f"turn={recv_req.turn_number}, branch={recv_req.branch_name}"
+                            f"turn={recv_req.turn_number}, branch={recv_req.branch_name}",
+                    request_id=request_id,
                 )
 
             conv_states, temporal_states, metadata = snapshot
@@ -1625,6 +1626,7 @@ class Scheduler(
                         "Snapshot is incompatible: fill_ids missing. "
                         "Re-run the original conversation to create a compatible snapshot."
                     ),
+                    request_id=request_id,
                 )
 
             # Get mamba_pool from req_to_token_pool
@@ -1632,7 +1634,8 @@ class Scheduler(
             if mamba_pool is None:
                 return RestoreSnapshotReqOutput(
                     success=False,
-                    message="Mamba pool not available"
+                    message="Mamba pool not available",
+                    request_id=request_id,
                 )
 
             # Inject state back into pool
@@ -1657,13 +1660,15 @@ class Scheduler(
                 token_count=metadata.token_count if metadata else None,
                 rid=recv_req.rid,
                 mamba_pool_idx=req.mamba_pool_idx,
+                request_id=request_id,
             )
 
         except Exception as e:
             logger.error(f"Failed to restore snapshot: {e}", exc_info=True)
             return RestoreSnapshotReqOutput(
                 success=False,
-                message=f"Error restoring snapshot: {str(e)}"
+                message=f"Error restoring snapshot: {str(e)}",
+                request_id=request_id,
             )
 
     def handle_delete_snapshot(self, recv_req):
