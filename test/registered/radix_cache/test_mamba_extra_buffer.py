@@ -115,13 +115,15 @@ class TestMambaExtraBufferServer(unittest.TestCase):
         content = data["choices"][0]["message"]["content"]
         self.assertGreater(len(content), 0)
 
-        baseline_url = os.environ.get("BASELINE_SERVER_URL", SERVER_URL)
-        baseline = requests.post(
-            f"{baseline_url}/v1/chat/completions", json=payload, timeout=60
-        )
-        self.assertEqual(baseline.status_code, 200)
-        baseline_content = baseline.json()["choices"][0]["message"]["content"]
-        self.assertEqual(content, baseline_content)
+        # Baseline comparison only if BASELINE_SERVER_URL is explicitly configured
+        baseline_server_url = os.environ.get("BASELINE_SERVER_URL")
+        if baseline_server_url is not None:
+            baseline = requests.post(
+                f"{baseline_server_url}/v1/chat/completions", json=payload, timeout=60
+            )
+            self.assertEqual(baseline.status_code, 200)
+            baseline_content = baseline.json()["choices"][0]["message"]["content"]
+            self.assertEqual(content, baseline_content)
 
 
 if __name__ == "__main__":

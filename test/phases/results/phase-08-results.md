@@ -9,7 +9,7 @@
 
 ## Result
 
-```
+```text
 4 passed, 1 warning in 13.24s
 ```
 
@@ -24,7 +24,7 @@
 
 ## Token Savings
 
-```
+```text
 Full resend: 97 tokens
 Stateful:     6 tokens
 Savings:     91 tokens (93.8%)

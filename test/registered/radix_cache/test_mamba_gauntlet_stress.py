@@ -8,7 +8,6 @@ import concurrent.futures
 import json
 import os
 import re
-import time
 import unittest
 import uuid
 
@@ -95,8 +94,10 @@ class TestMambaGauntletStress(unittest.TestCase):
         # At temperature=0, all 50 outputs must be identical — any divergence indicates
         # state corruption or nondeterminism that constitutes a test failure.
         unique = set(outputs)
-        self.assertEqual(len(unique), 1,
-            f"Outputs diverged across runs — expected all 50 identical at temperature=0: {unique}")
+        self.assertEqual(
+            len(unique), 1,
+            f"Outputs diverged across runs — expected all 50 identical at temperature=0: {unique}"
+        )
 
     def test_alternating_long_and_short_requests(self):
         """Interleave long-context and short requests 20 times; verify no cross-contamination."""

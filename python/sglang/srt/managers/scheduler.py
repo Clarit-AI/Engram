@@ -1443,14 +1443,13 @@ class Scheduler(
 
                 # Check total input length against max_req_input_len
                 total_input_len = len(origin_input_ids)
-                max_req_input_len = self.server_args.max_req_input_len if hasattr(self.server_args, 'max_req_input_len') else None
-                if max_req_input_len is not None and total_input_len > max_req_input_len:
+                if total_input_len >= self.max_req_input_len:
                     # Input too long — fail fast to avoid Mamba state desynchronization
                     mamba_pool.free(new_pool_idx_scalar)
                     return RestoreSnapshotReqOutput(
                         success=False,
                         message=(
-                            f"Input length ({total_input_len}) exceeds max_req_input_len ({max_req_input_len}). "
+                            f"Input length ({total_input_len}) meets or exceeds max_req_input_len ({self.max_req_input_len}). "
                             "Cannot restore snapshot with continuation_ids that would exceed the limit. "
                             "Reduce continuation_ids length or increase max_req_input_len."
                         ),
