@@ -276,3 +276,6 @@ sgl-kernel/csrc/**/*_musa/
 .dolt/
 .beads/*.db
 .beads-credential-key
+
+# VM migration context (local only, not for commit)
+docs/migration-prep/

@@ -19,10 +19,11 @@ This is an enhancement that builds on the existing Mamba implementation in SGLan
 - **State Persistence**: Store snapshots to disk in safetensors format
 - **Zero Impact**: Existing Mamba and transformer inference workflows are unaffected
 
-### Phase 2 (Coming Soon)
-- **State Restoration**: Restore from saved snapshots to resume conversations
+### Phase 2 (Available Now)
+- **State Restoration**: Restore from saved snapshots to resume conversations (in-place and create_new_request)
 - **State Reuse**: Share snapshots across multiple inference branches
 - **Multi-turn Conversations**: Efficiently handle long conversations without reprocessing context
+- **Startup Restore**: Automatically pre-load snapshots into WARM tier on server restart
 
 ## Quick Start
 
@@ -76,7 +77,7 @@ Snapshots are automatically persisted to disk when you use:
 
 The snapshots are saved in safetensors format with JSON metadata.
 
-**Phase 2 (Coming Soon):** State restoration and advanced snapshot management.
+**Phase 2 (Available Now):** State restoration, startup warm restore, and advanced snapshot management.
 
 ## When to Use Snapshots
 
@@ -87,7 +88,7 @@ The snapshots are saved in safetensors format with JSON metadata.
 3. **State Tracking**: Monitor memory usage and token counts across turns
 4. **Audit Trail**: Keep records of conversation progression
 
-### Phase 2 Capabilities (Coming Soon)
+### Phase 2 Capabilities (Available Now)
 
 1. **State Restoration**: Resume conversations from saved snapshots
 2. **Branching**: Explore multiple conversation paths from a checkpoint
