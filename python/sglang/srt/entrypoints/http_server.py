@@ -1217,6 +1217,8 @@ async def restore_snapshot(obj: RestoreSnapshotReqInput, request: Request):
                 "mamba_pool_idx": result.mamba_pool_idx,
                 "message": result.message,
                 "token_count": result.token_count,
+                "output_ids": result.output_ids,
+                "output_text": result.output_text,
             },
             status_code=HTTPStatus.OK,
         )

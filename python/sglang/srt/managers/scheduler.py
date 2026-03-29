@@ -1423,10 +1423,19 @@ class Scheduler(
                             "Re-run the original conversation to create a compatible snapshot."
                         ),
                     )
-                origin_input_ids = metadata.fill_ids
+                origin_input_ids = list(metadata.fill_ids)
+
+                # Stateful generation: append new tokens from the client.
+                # The client sends only the new question tokens; the server
+                # reconstructs Turn N context from the snapshot.
+                stateful_generate = bool(recv_req.continuation_ids)
+                if stateful_generate:
+                    origin_input_ids = origin_input_ids + list(recv_req.continuation_ids)
 
                 _sp = SamplingParams()
                 _sp.normalize(None)  # initialize stop_strs etc. (no tokenizer needed)
+                if recv_req.max_new_tokens is not None:
+                    _sp.max_new_tokens = recv_req.max_new_tokens
                 new_req = Req(
                     rid=new_rid,
                     origin_input_text="",  # We don't have original text
@@ -1438,14 +1447,23 @@ class Scheduler(
                 new_req.mamba_pool_idx = new_pool_idx_0d  # 0-dim tensor, required by free_mamba_cache
                 new_req.fill_ids = torch.tensor(origin_input_ids, dtype=torch.int64, device=self.device) if origin_input_ids else torch.tensor([], dtype=torch.int64, device=self.device)
 
+                # Mark for deferred output: generation completes before result is sent.
+                new_req._stateful_generate = stateful_generate
+
                 # Register the new request in the waiting queue so it can be found by _find_request_by_rid
                 try:
                     self.init_req_max_new_tokens(new_req)
                     self._add_request_to_queue(new_req)
                     logger.info(
                         f"Created new request from snapshot: conversation={recv_req.conversation_id}, "
-                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}"
+                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}, "
+                        f"stateful_generate={stateful_generate}"
                     )
+
+                    if stateful_generate:
+                        # Output will be sent after generation completes via
+                        # stream_output_generation (see _stateful_generate flag).
+                        return None
 
                     return RestoreSnapshotReqOutput(
                         success=True,

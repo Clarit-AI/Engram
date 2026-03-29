@@ -949,6 +949,22 @@ class SchedulerOutputProcessorMixin:
             if req is skip_req:
                 continue
 
+            # Stateful-generate requests (created by restore_snapshot with continuation_ids)
+            # have no pending HTTP connection; route their final output via the snapshot
+            # result channel and skip all normal BatchTokenIDOut output.
+            if getattr(req, "_stateful_generate", False):
+                if req.finished() and not getattr(req, "finished_output", False):
+                    req.finished_output = True
+                    from sglang.srt.managers.io_struct import RestoreSnapshotReqOutput
+                    self.send_to_tokenizer.send_output(
+                        RestoreSnapshotReqOutput(
+                            success=True,
+                            rid=req.rid,
+                            output_ids=list(req.output_ids),
+                        )
+                    )
+                continue
+
             # Multimodal partial stream chunks break the detokenizer, so drop aborted requests here.
             if self.model_config.is_multimodal_gen and req.to_finish:
                 continue

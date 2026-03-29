@@ -2078,6 +2078,11 @@ class RestoreSnapshotReqInput(BaseReq):
     turn_number: Optional[int] = None
     branch_name: Optional[str] = None
     create_new_request: bool = False
+    # Stateful generation: new tokens to append after the restored context.
+    # When provided, /restore_snapshot blocks until generation completes and
+    # returns output_ids + output_text in RestoreSnapshotReqOutput.
+    continuation_ids: Optional[List[int]] = None
+    max_new_tokens: Optional[int] = None
 
     def __post_init__(self):
         if not (self.rid or self.conversation_id):
@@ -2091,8 +2096,8 @@ class RestoreSnapshotReqInput(BaseReq):
 class RestoreSnapshotReqOutput(BaseReq):
     """Response from restoring a snapshot.
 
-    Note: Future enhancement could add a 'metadata' field returning full
-    snapshot metadata (timestamp, token_count, model_name, etc.) for verification.
+    When continuation_ids were provided in the request, output_ids and
+    output_text contain the generated response.
     """
 
     success: bool = False
@@ -2100,6 +2105,8 @@ class RestoreSnapshotReqOutput(BaseReq):
     token_count: Optional[int] = None
     rid: Optional[str] = None
     mamba_pool_idx: Optional[int] = None
+    output_ids: Optional[List[int]] = None
+    output_text: Optional[str] = None
 
 
 @dataclass

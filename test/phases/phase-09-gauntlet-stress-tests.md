@@ -1,4 +1,4 @@
-# Phase 8 — Gauntlet / Stress Tests
+# Phase 9 — Gauntlet / Stress Tests
 
 ## Purpose
 
@@ -297,7 +297,7 @@ if __name__ == "__main__":
 ```bash
 REPORT="$RESULTS_DIR/phase-08-${MODEL_NAME}-$(date +%Y%m%d-%H%M).md"
 cat > "$REPORT" << 'EOF'
-# Phase 8 — Gauntlet / Stress Tests
+# Phase 9 — Gauntlet / Stress Tests
 **Model**: granite-4.0-h-tiny
 **Date**: <date>
 **Duration**: <total runtime>
