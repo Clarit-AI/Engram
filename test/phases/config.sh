@@ -15,7 +15,7 @@
 # =============================================================================
 
 # --- Primary model (granite-4.0-h-tiny) ---
-export MODEL_PATH=${MODEL_PATH:-/home/jeanclawdai/models/granite-4.0-h-tiny}
+export MODEL_PATH=${MODEL_PATH:-/mnt/models/granite-4.0-h-tiny}
 export MODEL_NAME=${MODEL_NAME:-granite-4.0-h-tiny}
 
 # --- Fallback model (Nemotron 4B FP16 — use if granite OOMs) ---
