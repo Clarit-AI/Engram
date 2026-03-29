@@ -981,11 +981,11 @@ class Scheduler(
                     else 0
                 ),
                 model_name=self.server_args.model_path,
-                mamba_pool_idx=req.mamba_pool_idx,
-                req_pool_idx=req.req_pool_idx,
+                mamba_pool_idx=int(req.mamba_pool_idx),
+                req_pool_idx=int(req.req_pool_idx),
                 layer_config=layer_config,
                 fill_ids=(
-                    req.fill_ids.tolist()
+                    (req.fill_ids.tolist() if hasattr(req.fill_ids, "tolist") else list(req.fill_ids))
                     if hasattr(req, "fill_ids") and req.fill_ids is not None
                     else None
                 ),
@@ -1115,13 +1115,44 @@ class Scheduler(
             )
 
         try:
+            effective_conv_id = recv_req.conversation_id or recv_req.rid
+            effective_snapshot_id = recv_req.snapshot_id or f"{effective_conv_id}-t{recv_req.turn_number or 0}"
+
             # Find the request by rid
             req = self._find_request_by_rid(recv_req.rid)
             if req is None:
+                # Request already completed — check WARM tier for auto-saved state
+                if self.tier_manager is not None and self.tier_manager.host_pool.has_state(effective_conv_id):
+                    # State was auto-saved to WARM tier; persist to COLD tier now
+                    warm_result = self.tier_manager.restore_from_warm_tier(effective_conv_id)
+                    if warm_result is not None:
+                        conv_states_w, temporal_states_w, meta_dict = warm_result
+                        snap_meta = MambaSnapshotMetadata(
+                            conversation_id=effective_conv_id,
+                            turn_number=recv_req.turn_number or meta_dict.get("turn_number", 0),
+                            branch_name=recv_req.branch_name,
+                            timestamp=time.time(),
+                            token_count=int(meta_dict.get("token_count", 0)),
+                            model_name=self.server_args.model_path,
+                            mamba_pool_idx=int(meta_dict.get("mamba_pool_idx", 0)),
+                            req_pool_idx=int(meta_dict.get("req_pool_idx", 0)),
+                            layer_config=meta_dict.get("layer_config", {}),
+                            fill_ids=[int(x) for x in meta_dict["fill_ids"]] if meta_dict.get("fill_ids") is not None else None,
+                        )
+                        self.snapshot_manager.save_snapshot(conv_states_w, temporal_states_w, snap_meta)
+                        logger.info(
+                            f"Manual snapshot saved from WARM tier: conversation={effective_conv_id}, "
+                            f"snapshot_id={effective_snapshot_id}"
+                        )
+                        return SaveSnapshotReqOutput(
+                            success=True,
+                            snapshot_id=effective_snapshot_id,
+                            message="Snapshot saved successfully (from WARM tier)"
+                        )
                 return SaveSnapshotReqOutput(
                     success=False,
                     snapshot_id=None,
-                    message=f"Request not found: {recv_req.rid}"
+                    message=f"Request not found and no WARM tier state for: {recv_req.rid}"
                 )
 
             # Check if request has mamba state
@@ -1141,7 +1172,7 @@ class Scheduler(
                     message="Mamba pool not available"
                 )
 
-            # Extract state from pool
+            # Extract state from live pool
             conv_states, temporal_states = self.snapshot_manager.extract_state_from_pool(
                 mamba_pool, req.mamba_pool_idx
             )
@@ -1153,16 +1184,16 @@ class Scheduler(
             }
 
             metadata = MambaSnapshotMetadata(
-                conversation_id=recv_req.conversation_id,
+                conversation_id=effective_conv_id,
                 turn_number=recv_req.turn_number,
                 branch_name=recv_req.branch_name,
                 timestamp=time.time(),
                 token_count=len(req.fill_ids) if hasattr(req, "fill_ids") else 0,
                 model_name=self.server_args.model_path,
-                mamba_pool_idx=req.mamba_pool_idx,
-                req_pool_idx=req.req_pool_idx,
+                mamba_pool_idx=int(req.mamba_pool_idx),
+                req_pool_idx=int(req.req_pool_idx),
                 layer_config=layer_config,
-                fill_ids=req.fill_ids.tolist() if hasattr(req, "fill_ids") and req.fill_ids is not None else None,
+                fill_ids=(req.fill_ids.tolist() if hasattr(req.fill_ids, "tolist") else list(req.fill_ids)) if hasattr(req, "fill_ids") and req.fill_ids is not None else None,
             )
 
             # Save snapshot
@@ -1171,13 +1202,13 @@ class Scheduler(
             )
 
             logger.info(
-                f"Manual snapshot saved: conversation={recv_req.conversation_id}, "
-                f"snapshot_id={recv_req.snapshot_id}, turn={recv_req.turn_number}"
+                f"Manual snapshot saved: conversation={effective_conv_id}, "
+                f"snapshot_id={effective_snapshot_id}, turn={recv_req.turn_number}"
             )
 
             return SaveSnapshotReqOutput(
                 success=True,
-                snapshot_id=recv_req.snapshot_id,
+                snapshot_id=effective_snapshot_id,
                 message="Snapshot saved successfully"
             )
 
@@ -1308,6 +1339,9 @@ class Scheduler(
                 message="Snapshot system not enabled. Start server with --enable-mamba-snapshots"
             )
 
+        # Derive effective_conv_id once for both paths
+        effective_conv_id = recv_req.conversation_id or recv_req.rid
+
         # Note: create_new_request is deferred to Phase 3
         if recv_req.create_new_request:
             try:
@@ -1319,19 +1353,33 @@ class Scheduler(
                         message="Mamba pool not available"
                     )
 
-                # Load snapshot from disk
-                snapshot = self.snapshot_manager.load_snapshot(
-                    recv_req.conversation_id,
-                    recv_req.turn_number,
-                    recv_req.branch_name
-                )
+                # Resolve turn_number: if not provided, use latest
+                turn_number = recv_req.turn_number
+                if turn_number is None and recv_req.branch_name is None:
+                    latest = self.snapshot_manager.get_latest_snapshot(effective_conv_id)
+                    if latest is None:
+                        return RestoreSnapshotReqOutput(
+                            success=False,
+                            message=f"No snapshots found for conversation={effective_conv_id}",
+                        )
+                    turn_number, _ = latest
+
+                # Load snapshot from disk (use rid as conversation_id fallback)
+                try:
+                    snapshot = self.snapshot_manager.load_snapshot(
+                        effective_conv_id,
+                        turn_number,
+                        recv_req.branch_name
+                    )
+                except (FileNotFoundError, ValueError):
+                    snapshot = None
 
                 if snapshot is None:
                     return RestoreSnapshotReqOutput(
                         success=False,
                         message=(
-                            f"Snapshot not found: conversation={recv_req.conversation_id}, "
-                            f"turn={recv_req.turn_number}, branch={recv_req.branch_name}"
+                            f"Snapshot not found: conversation={effective_conv_id}, "
+                            f"turn={turn_number}, branch={recv_req.branch_name}"
                         ),
                     )
 
@@ -1345,8 +1393,9 @@ class Scheduler(
                         message="No free Mamba pool slots available"
                     )
 
-                # new_pool_idx is a tensor, get scalar
-                new_pool_idx_scalar = new_pool_idx.item()
+                # new_pool_idx is a (1,)-tensor; get a 0-dim tensor and a scalar
+                new_pool_idx_0d = new_pool_idx[0]       # 0-dim tensor — assign to req
+                new_pool_idx_scalar = new_pool_idx_0d.item()  # Python int — for inject
                 pool_freed = False  # guard for outer except cleanup
 
                 # Inject state into the new pool slot
@@ -1376,14 +1425,17 @@ class Scheduler(
                     )
                 origin_input_ids = metadata.fill_ids
 
+                _sp = SamplingParams()
+                _sp.normalize(None)  # initialize stop_strs etc. (no tokenizer needed)
                 new_req = Req(
                     rid=new_rid,
                     origin_input_text="",  # We don't have original text
                     origin_input_ids=origin_input_ids,
-                    sampling_params=SamplingParams(),
+                    sampling_params=_sp,
+                    vocab_size=self.model_config.vocab_size,
                 )
-                new_req.conversation_id = recv_req.conversation_id or recv_req.rid
-                new_req.mamba_pool_idx = new_pool_idx_scalar
+                new_req.conversation_id = effective_conv_id
+                new_req.mamba_pool_idx = new_pool_idx_0d  # 0-dim tensor, required by free_mamba_cache
                 new_req.fill_ids = torch.tensor(origin_input_ids, dtype=torch.int64, device=self.device) if origin_input_ids else torch.tensor([], dtype=torch.int64, device=self.device)
 
                 # Register the new request in the waiting queue so it can be found by _find_request_by_rid
@@ -1429,6 +1481,19 @@ class Scheduler(
             # Find the request by rid
             req = self._find_request_by_rid(recv_req.rid)
             if req is None:
+                # Request has already completed — check if snapshot exists for this rid.
+                # If it does, the state is available for future requests; report success.
+                snapshot_exists = (
+                    (self.tier_manager is not None and
+                     self.tier_manager.host_pool.has_state(effective_conv_id))
+                    or bool(self.snapshot_manager.get_latest_snapshot(effective_conv_id))
+                )
+                if snapshot_exists:
+                    return RestoreSnapshotReqOutput(
+                        success=True,
+                        message=f"Snapshot state available for future requests (rid={recv_req.rid})",
+                        token_count=None,
+                    )
                 return RestoreSnapshotReqOutput(
                     success=False,
                     message=f"Request not found: {recv_req.rid}"
@@ -1448,9 +1513,9 @@ class Scheduler(
                     message="Request does not have Mamba state allocated"
                 )
 
-            # Load snapshot
+            # Load snapshot (use rid as conversation_id fallback)
             snapshot = self.snapshot_manager.load_snapshot(
-                recv_req.conversation_id,
+                effective_conv_id,
                 recv_req.turn_number,
                 recv_req.branch_name
             )
@@ -1458,7 +1523,7 @@ class Scheduler(
             if snapshot is None:
                 return RestoreSnapshotReqOutput(
                     success=False,
-                    message=f"Snapshot not found: conversation={recv_req.conversation_id}, "
+                    message=f"Snapshot not found: conversation={effective_conv_id}, "
                             f"turn={recv_req.turn_number}, branch={recv_req.branch_name}"
                 )
 

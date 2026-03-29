@@ -60,8 +60,12 @@ from sglang.srt.managers.io_struct import (
     EmbeddingReqInput,
     FreezeGCReq,
     GenerateReqInput,
+    DeleteSnapshotReqOutput,
     GetSnapshotInfoReqInput,
+    GetSnapshotInfoReqOutput,
+    ListSnapshotsReqOutput,
     RestoreSnapshotReqInput,
+    RestoreSnapshotReqOutput,
     DeleteSnapshotReqInput,
     HealthCheckOutput,
     ListSnapshotsReqInput,
@@ -69,6 +73,7 @@ from sglang.srt.managers.io_struct import (
     OpenSessionReqOutput,
     PauseGenerationReqInput,
     SaveSnapshotReqInput,
+    SaveSnapshotReqOutput,
     SessionParams,
     TokenizedEmbeddingReqInput,
     TokenizedGenerateReqInput,
@@ -361,6 +366,13 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
         # Session
         self.session_futures = {}  # session_id -> asyncio event
 
+        # Snapshot response queues (used by dispatcher to route snapshot results back to callers)
+        self.snapshot_save_result_queue: asyncio.Queue = asyncio.Queue()
+        self.snapshot_restore_result_queue: asyncio.Queue = asyncio.Queue()
+        self.snapshot_list_result_queue: asyncio.Queue = asyncio.Queue()
+        self.snapshot_info_result_queue: asyncio.Queue = asyncio.Queue()
+        self.snapshot_delete_result_queue: asyncio.Queue = asyncio.Queue()
+
     def init_request_logging_and_dumping(self):
         # Request logging
         self.request_logger = RequestLogger(
@@ -484,6 +496,12 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                 # For handling case when scheduler skips detokenizer and forwards back to the tokenizer manager, we ignore it.
                 (HealthCheckOutput, lambda x: None),
                 (ActiveRanksOutput, self.update_active_ranks),
+                # Snapshot response routing: enqueue to per-operation queues for callers to await
+                (SaveSnapshotReqOutput, lambda x: self.snapshot_save_result_queue.put_nowait(x)),
+                (RestoreSnapshotReqOutput, lambda x: self.snapshot_restore_result_queue.put_nowait(x)),
+                (ListSnapshotsReqOutput, lambda x: self.snapshot_list_result_queue.put_nowait(x)),
+                (GetSnapshotInfoReqOutput, lambda x: self.snapshot_info_result_queue.put_nowait(x)),
+                (DeleteSnapshotReqOutput, lambda x: self.snapshot_delete_result_queue.put_nowait(x)),
             ]
         )
         self.init_communicators(self.server_args)
@@ -1353,36 +1371,31 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
     async def save_snapshot(self, obj: "SaveSnapshotReqInput"):
         """Forward snapshot save request to scheduler."""
         await self.send_to_scheduler.send_pyobj(obj)
-        # Wait for response from scheduler
-        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        recv_obj = await self.snapshot_save_result_queue.get()
         return recv_obj
 
     async def list_snapshots(self, obj: "ListSnapshotsReqInput"):
         """Forward snapshot list request to scheduler."""
         await self.send_to_scheduler.send_pyobj(obj)
-        # Wait for response from scheduler
-        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        recv_obj = await self.snapshot_list_result_queue.get()
         return recv_obj
 
     async def get_snapshot_info(self, obj: "GetSnapshotInfoReqInput"):
         """Forward snapshot info request to scheduler."""
         await self.send_to_scheduler.send_pyobj(obj)
-        # Wait for response from scheduler
-        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        recv_obj = await self.snapshot_info_result_queue.get()
         return recv_obj
 
     async def restore_snapshot(self, obj: "RestoreSnapshotReqInput"):
         """Forward snapshot restore request to scheduler."""
         await self.send_to_scheduler.send_pyobj(obj)
-        # Wait for response from scheduler
-        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        recv_obj = await self.snapshot_restore_result_queue.get()
         return recv_obj
 
     async def delete_snapshot(self, obj: "DeleteSnapshotReqInput"):
         """Forward snapshot delete request to scheduler."""
         await self.send_to_scheduler.send_pyobj(obj)
-        # Wait for response from scheduler
-        recv_obj = await self.recv_from_scheduler.recv_pyobj()
+        recv_obj = await self.snapshot_delete_result_queue.get()
         return recv_obj
 
     async def update_weights_from_disk(

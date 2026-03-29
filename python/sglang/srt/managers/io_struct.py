@@ -2020,8 +2020,8 @@ class LazyDumpTensorsReqOutput(BaseReq):
 class SaveSnapshotReqInput(BaseReq):
     """Request to save a Mamba state snapshot."""
 
-    snapshot_id: str
-    conversation_id: str
+    snapshot_id: Optional[str] = None
+    conversation_id: Optional[str] = None
     turn_number: Optional[int] = None
     branch_name: Optional[str] = None
 

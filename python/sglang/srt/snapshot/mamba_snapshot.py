@@ -245,13 +245,11 @@ class MambaSnapshotManager:
             ValueError: If state tensors don't match layer_config
             IOError: If disk write fails
         """
-        # Validate state shapes match metadata
-        num_layers = metadata.layer_config.get("num_layers")
-        if num_layers is not None and len(conv_states) != num_layers:
-            raise ValueError(
-                f"conv_states length ({len(conv_states)}) doesn't match "
-                f"num_layers ({num_layers})"
-            )
+        # conv_states uses one tensor per conv-shape (not per layer), so the
+        # list length equals the number of distinct conv shapes (typically 1),
+        # not num_layers. Skip the num_layers equality check here.
+        if not conv_states:
+            raise ValueError("conv_states must not be empty")
 
         # Get save paths
         metadata_path, state_path = self._get_snapshot_paths(

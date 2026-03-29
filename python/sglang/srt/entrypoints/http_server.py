@@ -1122,23 +1122,14 @@ async def save_snapshot(obj: SaveSnapshotReqInput, request: Request):
     """Save a Mamba state snapshot."""
     try:
         result = await _global_state.tokenizer_manager.save_snapshot(obj)
-        if result.success:
-            return ORJSONResponse(
-                {
-                    "success": True,
-                    "snapshot_id": result.snapshot_id,
-                    "message": result.message,
-                },
-                status_code=HTTPStatus.OK,
-            )
-        else:
-            return ORJSONResponse(
-                {
-                    "success": False,
-                    "message": result.message,
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
-            )
+        return ORJSONResponse(
+            {
+                "success": result.success,
+                "snapshot_id": result.snapshot_id,
+                "message": result.message,
+            },
+            status_code=HTTPStatus.OK,
+        )
     except Exception as e:
         return ORJSONResponse(
             {
@@ -1219,27 +1210,21 @@ async def restore_snapshot(obj: RestoreSnapshotReqInput, request: Request):
     """Restore Mamba state from a snapshot."""
     try:
         result = await _global_state.tokenizer_manager.restore_snapshot(obj)
-        if result.success:
-            return ORJSONResponse(
-                {
-                    "success": True,
-                    "message": result.message,
-                    "token_count": result.token_count,
-                },
-                status_code=HTTPStatus.OK,
-            )
-        else:
-            return ORJSONResponse(
-                {
-                    "success": False,
-                    "message": result.message,
-                },
-                status_code=HTTPStatus.BAD_REQUEST,
-            )
+        return ORJSONResponse(
+            {
+                "success": result.success,
+                "rid": result.rid,
+                "mamba_pool_idx": result.mamba_pool_idx,
+                "message": result.message,
+                "token_count": result.token_count,
+            },
+            status_code=HTTPStatus.OK,
+        )
     except Exception as e:
         return ORJSONResponse(
             {
                 "success": False,
+                "rid": None,
                 "message": f"Error restoring snapshot: {str(e)}",
             },
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
