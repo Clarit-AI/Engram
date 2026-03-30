@@ -44,6 +44,10 @@ def _get_tokenizer():
     return _tokenizer
 
 
+def _normalize_output_text(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
 class TestMambaStatefulInference(unittest.TestCase):
     def setUp(self):
         try:
@@ -104,12 +108,32 @@ class TestMambaStatefulInference(unittest.TestCase):
             # Wait before next poll
             time.sleep(poll_interval)
 
-    def _tokenize(self, text):
+    def _format_chat_input(self, messages, add_generation_prompt=False):
         tok = _get_tokenizer()
-        return tok.encode(text, add_special_tokens=False)
+        return tok.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+        )
 
-    def _stateful_generate(self, rid, new_text, max_new_tokens=80):
-        """Restore snapshot for `rid` and generate a response to `new_text`.
+    def _tokenize(self, text, role="user", add_generation_prompt=False):
+        tok = _get_tokenizer()
+        formatted = self._format_chat_input(
+            [{"role": role, "content": text}],
+            add_generation_prompt=add_generation_prompt,
+        )
+        return tok.encode(formatted, add_special_tokens=False)
+
+    def _tokenize_messages(self, messages, add_generation_prompt=False):
+        tok = _get_tokenizer()
+        formatted = self._format_chat_input(
+            messages,
+            add_generation_prompt=add_generation_prompt,
+        )
+        return tok.encode(formatted, add_special_tokens=False)
+
+    def _stateful_generate(self, rid, new_messages, max_new_tokens=80):
+        """Restore snapshot for `rid` and generate a response to `new_messages`.
 
         The client sends ONLY the new tokens — no prior conversation history.
         The server reconstructs context from the saved Mamba SSM snapshot.
@@ -119,14 +143,13 @@ class TestMambaStatefulInference(unittest.TestCase):
         that the restored state processes the continuation tokens correctly.
         """
         tok = _get_tokenizer()
-        # Use apply_chat_template to tokenize the new message consistently
-        # with how fill_ids were created during the original conversation.
-        # This bypasses the full chat template and only tokenizes the new content.
-        continuation_ids = tok.apply_chat_template(
-            [{"role": "user", "content": new_text}],
-            tokenize=True,
-            add_generation_prompt=False,
+        if isinstance(new_messages, str):
+            new_messages = [{"role": "user", "content": new_messages}]
+        continuation_text = self._format_chat_input(
+            new_messages,
+            add_generation_prompt=True,
         )
+        continuation_ids = tok.encode(continuation_text, add_special_tokens=False)
         r = requests.post(
             f"{SERVER_URL}/restore_snapshot",
             json={
@@ -159,9 +182,7 @@ class TestMambaStatefulInference(unittest.TestCase):
         self.assertTrue(snap.get("success"), f"Snapshot save failed: {snap}")
 
         # Turn 2: stateful — only send the new question
-        r2 = self._stateful_generate(
-            rid, "\nUser: What is the secret number?\nAssistant:"
-        )
+        r2 = self._stateful_generate(rid, "What is the secret number?")
         self.assertTrue(r2.get("success"), f"Stateful generate failed: {r2}")
         response = r2.get("output_text", "")
         self.assertIn(
@@ -201,18 +222,23 @@ class TestMambaStatefulInference(unittest.TestCase):
         # Stateful (test)
         r2 = self._stateful_generate(
             rid,
-            f"\nAssistant: {t1_text}\nUser: What is my favorite color?\nAssistant:",
+            "What is my favorite color?",
             max_new_tokens=40,
         )
         self.assertTrue(r2.get("success"), f"Stateful failed: {r2}")
         stateful_text = r2.get("output_text", "")
 
-        # Both should mention "blue"
-        self.assertIn("blue", full_text.lower(), f"Full resend missing 'blue': {full_text}")
+        normalized_full_text = _normalize_output_text(full_text)
+        normalized_stateful_text = _normalize_output_text(stateful_text)
         self.assertIn(
             "blue",
-            stateful_text.lower(),
-            f"Stateful missing 'blue': {stateful_text}",
+            normalized_full_text,
+            f"Full resend missing 'blue': {full_text}",
+        )
+        self.assertEqual(
+            normalized_full_text,
+            normalized_stateful_text,
+            f"Stateful output diverged from full resend: {full_text!r} vs {stateful_text!r}",
         )
 
     def test_multi_turn_stateful_chain(self):
@@ -251,6 +277,7 @@ class TestMambaStatefulInference(unittest.TestCase):
         r3 = self._stateful_generate(
             rid1, "What is my favorite color and what is my lucky number?", max_new_tokens=100
         )
+        self.assertTrue(r3.get("success"), f"Turn3 stateful generate failed: {r3}")
         response = r3.get("output_text", "")
 
         # Should recall both facts from prior turns
@@ -289,12 +316,20 @@ class TestMambaStatefulInference(unittest.TestCase):
         self.assertTrue(snap.get("success"))
 
         # Count tokens
-        turn1_tokens = len(self._tokenize(prompt))
         turn2_question = "What did I just say?"
-        turn2_tokens = len(self._tokenize(turn2_question))
-
-        full_resend_tokens = turn1_tokens + len(self._tokenize(t1_text)) + turn2_tokens
-        stateful_tokens = turn2_tokens  # Only new tokens!
+        full_resend_tokens = len(
+            self._tokenize_messages(
+                [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": t1_text},
+                    {"role": "user", "content": turn2_question},
+                ],
+                add_generation_prompt=True,
+            )
+        )
+        stateful_tokens = len(
+            self._tokenize(turn2_question, add_generation_prompt=True)
+        )
 
         print("\n=== Token Savings ===")
         print(f"Full resend: {full_resend_tokens} tokens")
