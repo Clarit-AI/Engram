@@ -1333,10 +1333,14 @@ class Scheduler(
         """
         from sglang.srt.managers.io_struct import RestoreSnapshotReqOutput
 
+        # Extract request_id for correlation
+        request_id = recv_req.request_id
+
         if self.snapshot_manager is None:
             return RestoreSnapshotReqOutput(
                 success=False,
-                message="Snapshot system not enabled. Start server with --enable-mamba-snapshots"
+                message="Snapshot system not enabled. Start server with --enable-mamba-snapshots",
+                request_id=request_id,
             )
 
         # Derive effective_conv_id once for both paths
@@ -1350,7 +1354,8 @@ class Scheduler(
                 if mamba_pool is None:
                     return RestoreSnapshotReqOutput(
                         success=False,
-                        message="Mamba pool not available"
+                        message="Mamba pool not available",
+                        request_id=request_id,
                     )
 
                 # Resolve turn_number: if not provided, use latest
@@ -1361,6 +1366,7 @@ class Scheduler(
                         return RestoreSnapshotReqOutput(
                             success=False,
                             message=f"No snapshots found for conversation={effective_conv_id}",
+                            request_id=request_id,
                         )
                     turn_number, _ = latest
 
@@ -1381,6 +1387,7 @@ class Scheduler(
                             f"Snapshot not found: conversation={effective_conv_id}, "
                             f"turn={turn_number}, branch={recv_req.branch_name}"
                         ),
+                        request_id=request_id,
                     )
 
                 conv_states, temporal_states, metadata = snapshot
@@ -1390,7 +1397,8 @@ class Scheduler(
                 if new_pool_idx is None:
                     return RestoreSnapshotReqOutput(
                         success=False,
-                        message="No free Mamba pool slots available"
+                        message="No free Mamba pool slots available",
+                        request_id=request_id,
                     )
 
                 # new_pool_idx is a (1,)-tensor; get a 0-dim tensor and a scalar
@@ -1422,30 +1430,102 @@ class Scheduler(
                             "Snapshot is incompatible: fill_ids missing. "
                             "Re-run the original conversation to create a compatible snapshot."
                         ),
+                        request_id=request_id,
                     )
-                origin_input_ids = metadata.fill_ids
+                origin_input_ids = list(metadata.fill_ids)
+
+                # Stateful generation: append new tokens from the client.
+                # The client sends only the new question tokens; the server
+                # reconstructs Turn N context from the snapshot.
+                stateful_generate = recv_req.continuation_ids is not None
+                if stateful_generate:
+                    origin_input_ids = origin_input_ids + list(recv_req.continuation_ids)
+
+                # Check total input length against max_req_input_len
+                total_input_len = len(origin_input_ids)
+                if total_input_len >= self.max_req_input_len:
+                    # Input too long — fail fast to avoid Mamba state desynchronization
+                    mamba_pool.free(new_pool_idx_scalar)
+                    return RestoreSnapshotReqOutput(
+                        success=False,
+                        message=(
+                            f"Input length ({total_input_len}) meets or exceeds max_req_input_len ({self.max_req_input_len}). "
+                            "Cannot restore snapshot with continuation_ids that would exceed the limit. "
+                            "Reduce continuation_ids length or increase max_req_input_len."
+                        ),
+                        rid=new_rid,
+                        mamba_pool_idx=None,
+                        request_id=request_id,
+                    )
 
                 _sp = SamplingParams()
                 _sp.normalize(None)  # initialize stop_strs etc. (no tokenizer needed)
+                if recv_req.max_new_tokens is not None:
+                    _sp.max_new_tokens = recv_req.max_new_tokens
                 new_req = Req(
                     rid=new_rid,
                     origin_input_text="",  # We don't have original text
                     origin_input_ids=origin_input_ids,
                     sampling_params=_sp,
                     vocab_size=self.model_config.vocab_size,
+                    http_worker_ipc=recv_req.http_worker_ipc,  # Pass through for output routing
                 )
                 new_req.conversation_id = effective_conv_id
                 new_req.mamba_pool_idx = new_pool_idx_0d  # 0-dim tensor, required by free_mamba_cache
                 new_req.fill_ids = torch.tensor(origin_input_ids, dtype=torch.int64, device=self.device) if origin_input_ids else torch.tensor([], dtype=torch.int64, device=self.device)
 
+                # Mark for deferred output: generation completes before result is sent.
+                new_req._stateful_generate = stateful_generate
+
                 # Register the new request in the waiting queue so it can be found by _find_request_by_rid
                 try:
                     self.init_req_max_new_tokens(new_req)
+
+                    # Check queue admission: _add_request_to_queue can silently refuse the request
+                    # (e.g., priority validation failure, queue full). In those cases, it sends an
+                    # AbortReq to the tokenizer but doesn't raise. Detect admission by checking if
+                    # the request's queue entry timestamp was set.
                     self._add_request_to_queue(new_req)
+
+                    # Detect if the request was actually admitted to the queue.
+                    # For NULL mode, check if wait_queue_entry_time was set (only set when added).
+                    # For PREFILL mode, check prefill_bootstrap_queue_entry_time.
+                    # For DECODE mode, check decode_prealloc_queue_entry_time.
+                    request_admitted = False
+                    if self.disaggregation_mode == DisaggregationMode.NULL:
+                        request_admitted = new_req.time_stats.wait_queue_entry_time is not None
+                    elif self.disaggregation_mode == DisaggregationMode.PREFILL:
+                        request_admitted = new_req.time_stats.prefill_bootstrap_queue_entry_time is not None
+                    elif self.disaggregation_mode == DisaggregationMode.DECODE:
+                        request_admitted = new_req.time_stats.decode_prealloc_queue_entry_time is not None
+
+                    if not request_admitted:
+                        # Request was not admitted (e.g., queue full, priority validation failed).
+                        # _add_request_to_queue already sent an AbortReq to the tokenizer.
+                        # Clean up the allocated mamba pool slot and return failure.
+                        logger.warning(
+                            f"Restore snapshot request not admitted to queue: conversation={recv_req.conversation_id}, "
+                            f"rid={new_rid}, stateful_generate={stateful_generate}"
+                        )
+                        mamba_pool.free(new_pool_idx)
+                        return RestoreSnapshotReqOutput(
+                            success=False,
+                            message=f"Request not admitted to queue (queue full or priority validation failed). rid={new_rid}",
+                            rid=new_rid,
+                            mamba_pool_idx=None,
+                            request_id=request_id,
+                        )
+
                     logger.info(
                         f"Created new request from snapshot: conversation={recv_req.conversation_id}, "
-                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}"
+                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}, "
+                        f"stateful_generate={stateful_generate}"
                     )
+
+                    if stateful_generate:
+                        # Output will be sent after generation completes via
+                        # stream_output_generation (see _stateful_generate flag).
+                        return None
 
                     return RestoreSnapshotReqOutput(
                         success=True,
@@ -1453,6 +1533,7 @@ class Scheduler(
                         token_count=metadata.token_count if metadata else None,
                         rid=new_rid,
                         mamba_pool_idx=new_pool_idx_scalar,
+                        request_id=request_id,
                     )
                 except Exception as reg_error:
                     # If registration fails, clean up the allocated mamba pool slot
@@ -1474,7 +1555,8 @@ class Scheduler(
                         logger.error(f"Failed to free mamba pool slot during error cleanup: {cleanup_error}")
                 return RestoreSnapshotReqOutput(
                     success=False,
-                    message=f"Error creating new request from snapshot: {str(e)}"
+                    message=f"Error creating new request from snapshot: {str(e)}",
+                    request_id=request_id,
                 )
 
         try:
@@ -1493,24 +1575,28 @@ class Scheduler(
                         success=True,
                         message=f"Snapshot state available for future requests (rid={recv_req.rid})",
                         token_count=None,
+                        request_id=request_id,
                     )
                 return RestoreSnapshotReqOutput(
                     success=False,
-                    message=f"Request not found: {recv_req.rid}"
+                    message=f"Request not found: {recv_req.rid}",
+                    request_id=request_id,
                 )
 
             # Check that request is idle (not currently running)
             if self.running_batch and req in self.running_batch.reqs:
                 return RestoreSnapshotReqOutput(
                     success=False,
-                    message="Cannot restore snapshot while request is running. Wait until request is idle."
+                    message="Cannot restore snapshot while request is running. Wait until request is idle.",
+                    request_id=request_id,
                 )
 
             # Check if request has mamba pool index
             if not hasattr(req, 'mamba_pool_idx') or req.mamba_pool_idx is None:
                 return RestoreSnapshotReqOutput(
                     success=False,
-                    message="Request does not have Mamba state allocated"
+                    message="Request does not have Mamba state allocated",
+                    request_id=request_id,
                 )
 
             # Load snapshot (use rid as conversation_id fallback)
@@ -1524,7 +1610,8 @@ class Scheduler(
                 return RestoreSnapshotReqOutput(
                     success=False,
                     message=f"Snapshot not found: conversation={effective_conv_id}, "
-                            f"turn={recv_req.turn_number}, branch={recv_req.branch_name}"
+                            f"turn={recv_req.turn_number}, branch={recv_req.branch_name}",
+                    request_id=request_id,
                 )
 
             conv_states, temporal_states, metadata = snapshot
@@ -1538,6 +1625,7 @@ class Scheduler(
                         "Snapshot is incompatible: fill_ids missing. "
                         "Re-run the original conversation to create a compatible snapshot."
                     ),
+                    request_id=request_id,
                 )
 
             # Get mamba_pool from req_to_token_pool
@@ -1545,7 +1633,8 @@ class Scheduler(
             if mamba_pool is None:
                 return RestoreSnapshotReqOutput(
                     success=False,
-                    message="Mamba pool not available"
+                    message="Mamba pool not available",
+                    request_id=request_id,
                 )
 
             # Inject state back into pool
@@ -1570,13 +1659,15 @@ class Scheduler(
                 token_count=metadata.token_count if metadata else None,
                 rid=recv_req.rid,
                 mamba_pool_idx=req.mamba_pool_idx,
+                request_id=request_id,
             )
 
         except Exception as e:
             logger.error(f"Failed to restore snapshot: {e}", exc_info=True)
             return RestoreSnapshotReqOutput(
                 success=False,
-                message=f"Error restoring snapshot: {str(e)}"
+                message=f"Error restoring snapshot: {str(e)}",
+                request_id=request_id,
             )
 
     def handle_delete_snapshot(self, recv_req):
@@ -2704,6 +2795,22 @@ class Scheduler(
             return False
         return True
 
+    def _cleanup_queued_request_resources(self, req: Req) -> None:
+        """Release resources held by a request that was already admitted to a queue."""
+        if self.disaggregation_mode == DisaggregationMode.DECODE:
+            release_kv_cache(req, self.tree_cache)
+
+        if self.disaggregation_mode == DisaggregationMode.PREFILL:
+            release_req_to_metadata_buffer(
+                req, self.req_to_metadata_buffer_idx_allocator
+            )
+
+        if (
+            req.mamba_pool_idx is not None
+            and self.disaggregation_mode != DisaggregationMode.DECODE
+        ):
+            release_kv_cache(req, self.tree_cache, is_insert=False)
+
     def _abort_on_queued_limit(self, recv_req: Req) -> bool:
         """Abort an incoming or existing request if the waiting queue is full. Returns True if the incoming request is aborted."""
         if (
@@ -2750,6 +2857,8 @@ class Scheduler(
             ),
             req_to_abort,
         )
+        if req_to_abort is not recv_req:
+            self._cleanup_queued_request_resources(req_to_abort)
         return req_to_abort.rid == recv_req.rid
 
     def _abort_on_waiting_timeout(self):
@@ -2775,6 +2884,7 @@ class Scheduler(
                     ),
                     req,
                 )
+                self._cleanup_queued_request_resources(req)
                 deleted_reqs.add(req)
 
         if deleted_reqs:
@@ -3494,10 +3604,16 @@ class Scheduler(
         if mamba_pool is None:
             return
 
-        # Trigger hooks for each request
+        # Trigger hooks for each request (prefill and non-decode paths).
+        # Finished decode requests are handled earlier in process_batch_result_decode,
+        # before free_mamba_cache clears mamba_pool_idx. Skip them here.
         for req in batch.reqs:
-            # Skip if request doesn't have mamba_pool_idx
+            # Skip if request doesn't have mamba_pool_idx (already freed or N/A)
             if not hasattr(req, "mamba_pool_idx") or req.mamba_pool_idx is None:
+                continue
+
+            # Finished decode reqs already snapshotted via the pre-free hook
+            if batch.forward_mode.is_decode() and req.finished():
                 continue
 
             # Calculate turn number (approximate based on output length)

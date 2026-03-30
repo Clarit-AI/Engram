@@ -1210,6 +1210,8 @@ async def restore_snapshot(obj: RestoreSnapshotReqInput, request: Request):
     """Restore Mamba state from a snapshot."""
     try:
         result = await _global_state.tokenizer_manager.restore_snapshot(obj)
+        # Return appropriate status code based on result.success
+        status_code = HTTPStatus.OK if result.success else HTTPStatus.INTERNAL_SERVER_ERROR
         return ORJSONResponse(
             {
                 "success": result.success,
@@ -1217,8 +1219,10 @@ async def restore_snapshot(obj: RestoreSnapshotReqInput, request: Request):
                 "mamba_pool_idx": result.mamba_pool_idx,
                 "message": result.message,
                 "token_count": result.token_count,
+                "output_ids": result.output_ids,
+                "output_text": result.output_text,
             },
-            status_code=HTTPStatus.OK,
+            status_code=status_code,
         )
     except Exception as e:
         return ORJSONResponse(

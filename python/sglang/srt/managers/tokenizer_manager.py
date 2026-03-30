@@ -369,6 +369,7 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
         # Snapshot response queues (used by dispatcher to route snapshot results back to callers)
         self.snapshot_save_result_queue: asyncio.Queue = asyncio.Queue()
         self.snapshot_restore_result_queue: asyncio.Queue = asyncio.Queue()
+        self.snapshot_restore_futures: Dict[str, asyncio.Future] = {}  # Per-request futures for concurrent safety
         self.snapshot_list_result_queue: asyncio.Queue = asyncio.Queue()
         self.snapshot_info_result_queue: asyncio.Queue = asyncio.Queue()
         self.snapshot_delete_result_queue: asyncio.Queue = asyncio.Queue()
@@ -498,7 +499,7 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                 (ActiveRanksOutput, self.update_active_ranks),
                 # Snapshot response routing: enqueue to per-operation queues for callers to await
                 (SaveSnapshotReqOutput, lambda x: self.snapshot_save_result_queue.put_nowait(x)),
-                (RestoreSnapshotReqOutput, lambda x: self.snapshot_restore_result_queue.put_nowait(x)),
+                (RestoreSnapshotReqOutput, self._complete_snapshot_restore_future),
                 (ListSnapshotsReqOutput, lambda x: self.snapshot_list_result_queue.put_nowait(x)),
                 (GetSnapshotInfoReqOutput, lambda x: self.snapshot_info_result_queue.put_nowait(x)),
                 (DeleteSnapshotReqOutput, lambda x: self.snapshot_delete_result_queue.put_nowait(x)),
@@ -1386,10 +1387,51 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
         recv_obj = await self.snapshot_info_result_queue.get()
         return recv_obj
 
+    def _complete_snapshot_restore_future(self, result: "RestoreSnapshotReqOutput"):
+        """Complete a pending restore_snapshot future by request_id.
+
+        This method is called by the dispatcher when a RestoreSnapshotReqOutput
+        is received from the scheduler. It looks up the future by request_id and
+        completes it, enabling per-request correlation instead of shared FIFO queuing.
+        """
+        request_id = getattr(result, "request_id", None)
+        if request_id is None:
+            # Fallback to shared queue if no request_id (shouldn't happen with new code)
+            self.snapshot_restore_result_queue.put_nowait(result)
+            return
+
+        future = self.snapshot_restore_futures.pop(request_id, None)
+        if future is None:
+            # Future not found (already completed or timed out) - log and drop
+            logging.warning(f"RestoreSnapshotReqOutput received for unknown request_id={request_id}")
+            return
+
+        if not future.done():
+            future.set_result(result)
+
     async def restore_snapshot(self, obj: "RestoreSnapshotReqInput"):
-        """Forward snapshot restore request to scheduler."""
+        """Forward snapshot restore request to scheduler.
+
+        Uses per-request futures for correlation to prevent out-of-order responses
+        under concurrent requests, replacing the shared FIFO queue approach.
+        """
+        # Create a future for this request and store it by request_id
+        future: asyncio.Future = asyncio.Future()
+        self.snapshot_restore_futures[obj.request_id] = future
+
+        # Send request to scheduler
         await self.send_to_scheduler.send_pyobj(obj)
-        recv_obj = await self.snapshot_restore_result_queue.get()
+
+        # Await the correlated response
+        recv_obj = await future
+
+        # Detokenize generated output for stateful-generate requests.
+        # Use "is not None" instead of truthiness to handle empty lists correctly
+        # (an empty list should decode to "", not skip decoding).
+        if recv_obj.output_ids is not None and self.tokenizer is not None:
+            recv_obj.output_text = self.tokenizer.decode(
+                recv_obj.output_ids, skip_special_tokens=True
+            )
         return recv_obj
 
     async def delete_snapshot(self, obj: "DeleteSnapshotReqInput"):
