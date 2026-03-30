@@ -113,7 +113,7 @@ class TestMambaGauntletStress(unittest.TestCase):
             self.assertGreater(len(long_resp["choices"][0]["message"]["content"]), 0)
             self.assertGreater(len(short_resp["choices"][0]["message"]["content"]), 0)
 
-    def test_server_health_after_stress(self):
+    def test_zz_server_health_after_stress(self):
         """After all stress tests run, server is still responsive and returns 200 on /health."""
         r = requests.get(f"{SERVER_URL}/health", timeout=10)
         self.assertEqual(r.status_code, 200, "Server became unhealthy after stress tests")

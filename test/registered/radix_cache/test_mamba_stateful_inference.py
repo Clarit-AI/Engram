@@ -240,6 +240,7 @@ class TestMambaStatefulInference(unittest.TestCase):
         # _stateful_generate creates a restored-* Req with conversation_id=rid1.
         # After it completes, EVERY_TURN auto-snapshot has Turn2 state in WARM under rid1.
         r2 = self._stateful_generate(rid1, "Also, my lucky number is 7. Got it?")
+        self.assertTrue(r2.get("success"), f"Turn2 stateful generate failed: {r2}")
         # Save Turn2 state: use rid1 as key — handle_save_snapshot falls back to
         # WARM tier via effective_conv_id=rid1, persisting Turn2 state to COLD.
         snap2 = self._save_snapshot(rid1)

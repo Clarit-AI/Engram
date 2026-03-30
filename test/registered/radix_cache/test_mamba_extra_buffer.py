@@ -6,6 +6,7 @@ register_amd_ci(est_time=90, suite="stage-b-test-small-1-gpu-amd")
 import os
 import unittest
 
+import requests
 import torch
 
 from sglang.srt.configs.mamba_utils import Mamba2CacheParams, Mamba2StateShape
@@ -18,7 +19,12 @@ from sglang.srt.utils import get_device
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:30000")
 
 
-def _make_pool_extra_buffer(max_num_reqs=4, mamba_cache_size=8, max_context_len=128):
+def _make_pool_extra_buffer(
+    max_num_reqs=4,
+    mamba_cache_size=8,
+    max_context_len=128,
+    speculative_num_draft_tokens=3,
+):
     device = get_device()
     num_layers = 48
     global_interval = 4
@@ -36,7 +42,8 @@ def _make_pool_extra_buffer(max_num_reqs=4, mamba_cache_size=8, max_context_len=
         size=max_num_reqs, mamba_size=mamba_cache_size,
         mamba_spec_state_size=max_num_reqs, max_context_len=max_context_len,
         device=device, enable_memory_saver=False, cache_params=cache_params,
-        enable_mamba_extra_buffer=True, speculative_num_draft_tokens=3,
+        enable_mamba_extra_buffer=True,
+        speculative_num_draft_tokens=speculative_num_draft_tokens,
     )
 
 
@@ -69,18 +76,21 @@ class TestMambaExtraBufferUnit(unittest.TestCase):
 
     def test_extra_buffer_free_with_keep(self):
         """free_mamba_cache with mamba_ping_pong_track_buffer_to_keep frees all but one ping-pong slot."""
+        pool = _make_pool_extra_buffer(speculative_num_draft_tokens=None)
         req = _make_req()
-        self.pool.alloc([req])
+        pool.alloc([req])
         buf = req.mamba_ping_pong_track_buffer
+        self.assertEqual(pool.mamba_ping_pong_track_buffer_size, 2)
+        self.assertEqual(len(buf), 2)
         keep_idx = 0
         # The kept tensor's data before free
         kept_data = buf[keep_idx].clone() if buf[keep_idx] is not None else None
 
-        self.pool.free_mamba_cache(req, mamba_ping_pong_track_buffer_to_keep=keep_idx)
+        pool.free_mamba_cache(req, mamba_ping_pong_track_buffer_to_keep=keep_idx)
         # Main mamba slot freed; kept ping-pong slot tensor data should be intact
         if kept_data is not None:
             self.assertTrue(torch.equal(buf[keep_idx], kept_data))
-        self.pool.free(req)
+        pool.free(req)
 
     def test_cache_unfinished_req_extra_buffer(self):
         """cache_unfinished_req clears mamba_last_track_seqlen and updates prefix_indices."""
@@ -92,7 +102,6 @@ class TestMambaExtraBufferServer(unittest.TestCase):
     """Server integration test — requires running server with extra_buffer strategy."""
 
     def setUp(self):
-        import requests
         try:
             r = requests.get(f"{SERVER_URL}/health", timeout=5)
             if r.status_code != 200:
@@ -102,7 +111,6 @@ class TestMambaExtraBufferServer(unittest.TestCase):
 
     def test_server_inference_extra_buffer_mode(self):
         """Inference in extra_buffer mode produces same output as no_buffer at temperature=0."""
-        import requests
         payload = {
             "model": "default",
             "messages": [{"role": "user", "content": "What is 2+2?"}],
