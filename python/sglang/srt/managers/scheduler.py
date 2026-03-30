@@ -1437,7 +1437,7 @@ class Scheduler(
                 # Stateful generation: append new tokens from the client.
                 # The client sends only the new question tokens; the server
                 # reconstructs Turn N context from the snapshot.
-                stateful_generate = bool(recv_req.continuation_ids)
+                stateful_generate = recv_req.continuation_ids is not None
                 if stateful_generate:
                     origin_input_ids = origin_input_ids + list(recv_req.continuation_ids)
 

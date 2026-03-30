@@ -1,13 +1,16 @@
 import logging
 import os
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import torch
 
 os.environ.setdefault("HOME", "/tmp")
 os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
 
+from sglang.srt.managers.io_struct import RestoreSnapshotReqInput
 from sglang.srt.managers.scheduler import Scheduler
+from sglang.srt.managers.schedule_batch import DisaggregationMode
 from sglang.srt.snapshot.conversation_tracker import ConversationTier, ConversationTracker
 from sglang.srt.snapshot.mamba_host_pool import MambaHostPool
 from sglang.srt.snapshot.mamba_snapshot import (
@@ -200,3 +203,48 @@ def test_restore_snapshots_on_startup_no_snapshots_logs_cleanly(tmp_path, caplog
 
     assert "No previous snapshots found" in caplog.text
     assert len(host_pool) == 0
+
+
+def test_handle_restore_snapshot_treats_empty_continuation_as_stateful():
+    scheduler = Scheduler.__new__(Scheduler)
+    snapshot_manager = Mock()
+    snapshot_manager.load_snapshot.return_value = (
+        [torch.ones((1, 2))],
+        torch.ones((1, 2)),
+        SimpleNamespace(fill_ids=[11, 12, 13], token_count=3),
+    )
+    snapshot_manager.inject_state_to_pool = Mock()
+    scheduler.snapshot_manager = snapshot_manager
+
+    mamba_pool = Mock()
+    mamba_pool.alloc.return_value = torch.tensor([4], dtype=torch.int64)
+    scheduler.req_to_token_pool = SimpleNamespace(mamba_pool=mamba_pool)
+    scheduler.max_req_input_len = 128
+    scheduler.model_config = SimpleNamespace(vocab_size=32000)
+    scheduler.device = torch.device("cpu")
+    scheduler.disaggregation_mode = DisaggregationMode.NULL
+    scheduler.init_req_max_new_tokens = lambda req: None
+
+    admitted_req = {}
+
+    def _add_request_to_queue(req):
+        admitted_req["req"] = req
+        req.time_stats.wait_queue_entry_time = 1.0
+
+    scheduler._add_request_to_queue = _add_request_to_queue
+
+    recv_req = RestoreSnapshotReqInput(
+        conversation_id="conv-a",
+        turn_number=2,
+        create_new_request=True,
+        continuation_ids=[],
+        max_new_tokens=16,
+    )
+
+    result = scheduler.handle_restore_snapshot(recv_req)
+
+    assert result is None
+    queued_req = admitted_req["req"]
+    assert queued_req._stateful_generate is True
+    assert queued_req.origin_input_ids == [11, 12, 13]
+    assert queued_req.fill_ids.tolist() == [11, 12, 13]
