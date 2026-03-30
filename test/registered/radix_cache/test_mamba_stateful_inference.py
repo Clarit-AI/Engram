@@ -160,8 +160,16 @@ class TestMambaStatefulInference(unittest.TestCase):
             },
             timeout=120,
         )
-        r.raise_for_status()
-        return r.json()
+        result = r.json()
+        try:
+            r.raise_for_status()
+        except requests.HTTPError:
+            if isinstance(result, dict):
+                result.setdefault("success", False)
+                result.setdefault("status_code", r.status_code)
+                return result
+            raise
+        return result
 
     # ── tests ────────────────────────────────────────────────────────
 
