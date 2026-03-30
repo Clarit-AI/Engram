@@ -295,7 +295,7 @@ class TestMambaStatefulInference(unittest.TestCase):
         full_resend_tokens = turn1_tokens + len(self._tokenize(t1_text)) + turn2_tokens
         stateful_tokens = turn2_tokens  # Only new tokens!
 
-        print(f"\n=== Token Savings ===")
+        print("\n=== Token Savings ===")
         print(f"Full resend: {full_resend_tokens} tokens")
         print(f"Stateful:    {stateful_tokens} tokens")
         print(f"Savings:     {full_resend_tokens - stateful_tokens} tokens "
