@@ -5,14 +5,12 @@ Tests the host memory pool functionality including LRU eviction,
 cross-session references, and memory management.
 """
 
-import tempfile
 import time
-from pathlib import Path
 
 import pytest
 import torch
 
-from sglang.srt.snapshot.mamba_host_pool import MambaHostPool, HostPoolEntry
+from sglang.srt.snapshot.mamba_host_pool import MambaHostPool
 
 
 class TestMambaHostPool:
@@ -143,7 +141,9 @@ class TestMambaHostPool:
 
         # Save state for conv_A
         conv_states, temporal_states = self.create_dummy_state()
-        pool.save_state("conv_A", conv_states, temporal_states, metadata={"user": "alice"})
+        pool.save_state(
+            "conv_A", conv_states, temporal_states, metadata={"user": "alice"}
+        )
 
         # Load from conv_B (cross-session ref)
         result = pool.get_state_for_reference("conv_B", "conv_A")

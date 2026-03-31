@@ -56,21 +56,21 @@ from sglang.srt.managers.io_struct import (
     BatchTokenizedGenerateReqInput,
     ConfigureLoggingReq,
     ContinueGenerationReqInput,
+    DeleteSnapshotReqInput,
+    DeleteSnapshotReqOutput,
     EmbeddingReqInput,
     FreezeGCReq,
     GenerateReqInput,
-    DeleteSnapshotReqOutput,
     GetSnapshotInfoReqInput,
     GetSnapshotInfoReqOutput,
-    ListSnapshotsReqOutput,
-    RestoreSnapshotReqInput,
-    RestoreSnapshotReqOutput,
-    DeleteSnapshotReqInput,
     HealthCheckOutput,
     ListSnapshotsReqInput,
+    ListSnapshotsReqOutput,
     LoadLoRAAdapterReqInput,
     OpenSessionReqOutput,
     PauseGenerationReqInput,
+    RestoreSnapshotReqInput,
+    RestoreSnapshotReqOutput,
     SaveSnapshotReqInput,
     SaveSnapshotReqOutput,
     SessionParams,
@@ -484,11 +484,26 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                 (HealthCheckOutput, lambda x: None),
                 (ActiveRanksOutput, self.update_active_ranks),
                 # Snapshot response routing: enqueue to per-operation queues for callers to await
-                (SaveSnapshotReqOutput, lambda x: self.snapshot_save_result_queue.put_nowait(x)),
-                (RestoreSnapshotReqOutput, lambda x: self.snapshot_restore_result_queue.put_nowait(x)),
-                (ListSnapshotsReqOutput, lambda x: self.snapshot_list_result_queue.put_nowait(x)),
-                (GetSnapshotInfoReqOutput, lambda x: self.snapshot_info_result_queue.put_nowait(x)),
-                (DeleteSnapshotReqOutput, lambda x: self.snapshot_delete_result_queue.put_nowait(x)),
+                (
+                    SaveSnapshotReqOutput,
+                    lambda x: self.snapshot_save_result_queue.put_nowait(x),
+                ),
+                (
+                    RestoreSnapshotReqOutput,
+                    lambda x: self.snapshot_restore_result_queue.put_nowait(x),
+                ),
+                (
+                    ListSnapshotsReqOutput,
+                    lambda x: self.snapshot_list_result_queue.put_nowait(x),
+                ),
+                (
+                    GetSnapshotInfoReqOutput,
+                    lambda x: self.snapshot_info_result_queue.put_nowait(x),
+                ),
+                (
+                    DeleteSnapshotReqOutput,
+                    lambda x: self.snapshot_delete_result_queue.put_nowait(x),
+                ),
             ]
         )
         self.init_communicators(self.server_args)

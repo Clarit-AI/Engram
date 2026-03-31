@@ -8,15 +8,11 @@ from typing import TYPE_CHECKING, Any, List, Optional
 import torch
 
 from sglang.srt.managers.cache_controller import CacheOperation as BaseCacheOperation
-from sglang.srt.managers.cache_controller import (
-    HiCacheAck,
-)
+from sglang.srt.managers.cache_controller import HiCacheAck
 from sglang.srt.managers.cache_controller import (
     HiCacheController as BaseHiCacheController,
 )
-from sglang.srt.managers.cache_controller import (
-    LayerDoneCounter,
-)
+from sglang.srt.managers.cache_controller import LayerDoneCounter
 from sglang.srt.managers.cache_controller import (
     StorageOperation as BaseStorageOperation,
 )

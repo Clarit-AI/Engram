@@ -20,7 +20,6 @@ without requiring direct access to the RuntimeEndpoint internals.
 
 from typing import Dict, List, Optional
 
-
 __all__ = [
     "SnapshotManager",
     "SnapshotError",
@@ -35,31 +34,37 @@ __all__ = [
 # Snapshot-specific exceptions
 class SnapshotError(Exception):
     """Base exception for snapshot operations."""
+
     pass
 
 
 class SnapshotDisabledError(SnapshotError):
     """Raised when snapshot operations are attempted but snapshots are not enabled."""
+
     pass
 
 
 class SnapshotNotFoundError(SnapshotError):
     """Raised when a requested snapshot ID doesn't exist."""
+
     pass
 
 
 class SnapshotInvalidError(SnapshotError):
     """Raised when a snapshot's state is corrupted or invalid."""
+
     pass
 
 
 class SnapshotInUseError(SnapshotError):
     """Raised when attempting to delete/modify a snapshot currently in use."""
+
     pass
 
 
 class SnapshotDeserializationError(SnapshotError):
     """Raised when snapshot file is corrupted or incompatible."""
+
     pass
 
 
@@ -115,7 +120,7 @@ class SnapshotManager:
             )
 
         # Verify snapshot support by checking for the method
-        if not hasattr(endpoint, 'list_snapshots'):
+        if not hasattr(endpoint, "list_snapshots"):
             raise RuntimeError(
                 "RuntimeEndpoint does not support snapshots. "
                 "Start the server with --enable-snapshot-persistence flag."
@@ -179,9 +184,7 @@ class SnapshotManager:
             ```
         """
         if turn_number is None and branch_name is None:
-            raise ValueError(
-                "Must specify either turn_number or branch_name"
-            )
+            raise ValueError("Must specify either turn_number or branch_name")
 
         try:
             return self.endpoint.get_snapshot_info(
@@ -245,9 +248,7 @@ class SnapshotManager:
             the request's input text or metadata.
         """
         if turn_number is None and branch_name is None:
-            raise ValueError(
-                "Must specify either turn_number or branch_name"
-            )
+            raise ValueError("Must specify either turn_number or branch_name")
 
         try:
             result = self.endpoint.restore_snapshot(
@@ -256,7 +257,7 @@ class SnapshotManager:
                 turn_number=turn_number,
                 branch_name=branch_name,
             )
-            if not result.get('success'):
+            if not result.get("success"):
                 raise RuntimeError(f"Restore failed: {result.get('message')}")
             return result
         except RuntimeError:
@@ -294,9 +295,7 @@ class SnapshotManager:
             ```
         """
         if turn_number is None and branch_name is None:
-            raise ValueError(
-                "Must specify either turn_number or branch_name"
-            )
+            raise ValueError("Must specify either turn_number or branch_name")
 
         try:
             result = self.endpoint.delete_snapshot(
@@ -304,7 +303,7 @@ class SnapshotManager:
                 turn_number=turn_number,
                 branch_name=branch_name,
             )
-            return result.get('success', False)
+            return result.get("success", False)
         except Exception as e:
             raise RuntimeError(f"Failed to delete snapshot: {e}") from e
 

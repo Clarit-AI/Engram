@@ -102,9 +102,7 @@ class TestSnapshotRetentionPolicy:
             req = self.create_mock_req()
 
             # No tool call: should NOT snapshot
-            assert not policy.should_snapshot(
-                req, turn_number=1, additional_context={}
-            )
+            assert not policy.should_snapshot(req, turn_number=1, additional_context={})
 
             # Tool call made: should snapshot
             assert policy.should_snapshot(

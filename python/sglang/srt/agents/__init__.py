@@ -17,17 +17,17 @@ Key Components:
 is unaffected. Agent features only activate when explicitly enabled.
 """
 
-from sglang.srt.agents.tool_registry import Tool, ToolRegistry, ToolParameter
 from sglang.srt.agents.tool_execution import ToolExecutionEngine, ToolExecutionResult
+from sglang.srt.agents.tool_registry import Tool, ToolParameter, ToolRegistry
 
 try:
-    from sglang.srt.agents.tool_parser import ToolCallParser
     from sglang.srt.agents.agent_loop import AgentLoop
     from sglang.srt.agents.builtin_tools import (
-        MemoryStoreTool,
-        MemoryRecallTool,
         CalculatorTool,
+        MemoryRecallTool,
+        MemoryStoreTool,
     )
+    from sglang.srt.agents.tool_parser import ToolCallParser
 except ImportError:
     # Allow partial imports during development
     pass

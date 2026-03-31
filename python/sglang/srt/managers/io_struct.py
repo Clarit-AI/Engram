@@ -1931,9 +1931,7 @@ class GetLoadsReqOutput(BaseReq):
     max_total_num_tokens: int = field(
         metadata={"metric": ("gauge", "Maximum token capacity")}
     )
-    token_usage: float = field(
-        metadata={"metric": ("gauge", "Token pool usage ratio")}
-    )
+    token_usage: float = field(metadata={"metric": ("gauge", "Token pool usage ratio")})
     gen_throughput: float = field(
         metadata={"metric": ("gauge", "Generation throughput tokens/sec")}
     )

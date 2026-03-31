@@ -1,7 +1,6 @@
 import argparse
 
 from sglang.cli.generate import generate
-from sglang.cli.serve import serve
 from sglang.cli.utils import get_git_commit_hash
 from sglang.version import __version__
 

@@ -1012,6 +1012,7 @@ class ProgramState:
         # Generate snapshot_id if not provided
         if snapshot_id is None:
             import uuid
+
             snapshot_id = f"snap_{uuid.uuid4().hex[:12]}"
 
         # Use session ID as conversation_id if not provided
@@ -1019,7 +1020,7 @@ class ProgramState:
             conversation_id = self.stream_executor.sid
 
         # Call backend to save snapshot
-        if not hasattr(self.stream_executor.backend, 'save_snapshot'):
+        if not hasattr(self.stream_executor.backend, "save_snapshot"):
             raise RuntimeError(
                 "Backend does not support snapshots. "
                 "Use RuntimeEndpoint with --enable-snapshot-persistence"
@@ -1030,7 +1031,7 @@ class ProgramState:
             snapshot_id=snapshot_id,
             conversation_id=conversation_id,
             turn_number=turn_number,
-            branch_name=branch_name
+            branch_name=branch_name,
         )
 
     def list_snapshots(self, conversation_id: Optional[str] = None) -> List[Dict]:
@@ -1051,7 +1052,7 @@ class ProgramState:
         if conversation_id is None:
             conversation_id = self.stream_executor.sid
 
-        if not hasattr(self.stream_executor.backend, 'list_snapshots'):
+        if not hasattr(self.stream_executor.backend, "list_snapshots"):
             raise RuntimeError("Backend does not support snapshots")
 
         return self.stream_executor.backend.list_snapshots(conversation_id)
@@ -1076,7 +1077,7 @@ class ProgramState:
         Raises:
             FileNotFoundError: If snapshot doesn't exist
         """
-        if not hasattr(self.stream_executor.backend, 'get_snapshot_info'):
+        if not hasattr(self.stream_executor.backend, "get_snapshot_info"):
             raise RuntimeError("Backend does not support snapshots")
 
         return self.stream_executor.backend.get_snapshot_info(
@@ -1111,7 +1112,7 @@ class ProgramState:
         # Ensure execution is synced before restoring
         self.stream_executor.sync()
 
-        if not hasattr(self.stream_executor.backend, 'restore_snapshot'):
+        if not hasattr(self.stream_executor.backend, "restore_snapshot"):
             raise RuntimeError("Backend does not support snapshots")
 
         result = self.stream_executor.backend.restore_snapshot(
@@ -1122,7 +1123,7 @@ class ProgramState:
             create_new_request=create_new_request,
         )
 
-        if not result.get('success'):
+        if not result.get("success"):
             raise RuntimeError(f"Restore failed: {result.get('message')}")
 
         return result
@@ -1147,7 +1148,7 @@ class ProgramState:
         Raises:
             RuntimeError: If backend doesn't support snapshots
         """
-        if not hasattr(self.stream_executor.backend, 'delete_snapshot'):
+        if not hasattr(self.stream_executor.backend, "delete_snapshot"):
             raise RuntimeError("Backend does not support snapshots")
 
         result = self.stream_executor.backend.delete_snapshot(
@@ -1156,7 +1157,7 @@ class ProgramState:
             branch_name=branch_name,
         )
 
-        return result.get('success', False)
+        return result.get("success", False)
 
     def __iadd__(self, other):
         if other is None:

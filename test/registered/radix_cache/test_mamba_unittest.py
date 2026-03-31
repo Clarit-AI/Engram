@@ -456,5 +456,6 @@ class TestMamba(unittest.TestCase):
 
         tree.sanity_check()
 
+
 if __name__ == "__main__":
     unittest.main()

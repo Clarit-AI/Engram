@@ -66,9 +66,7 @@ class ToolParameter:
             result["enum"] = self.enum
 
         if self.properties is not None:
-            result["properties"] = {
-                k: v.to_dict() for k, v in self.properties.items()
-            }
+            result["properties"] = {k: v.to_dict() for k, v in self.properties.items()}
 
         if self.items is not None:
             result["items"] = self.items.to_dict()
@@ -134,9 +132,7 @@ class Tool:
         # Check parameter types (basic validation)
         for param_name, param_value in params.items():
             # Find parameter definition
-            param_def = next(
-                (p for p in self.parameters if p.name == param_name), None
-            )
+            param_def = next((p for p in self.parameters if p.name == param_name), None)
 
             if param_def is None:
                 logger.warning(

@@ -17,9 +17,7 @@ def run_server(server_args):
     if server_args.encoder_only:
         # For encoder disaggregation
         if server_args.grpc_mode:
-            from sglang.srt.disaggregation.encode_grpc_server import (
-                serve_grpc_encoder,
-            )
+            from sglang.srt.disaggregation.encode_grpc_server import serve_grpc_encoder
 
             asyncio.run(serve_grpc_encoder(server_args))
         else:

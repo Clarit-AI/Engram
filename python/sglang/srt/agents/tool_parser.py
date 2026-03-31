@@ -19,6 +19,7 @@ from xml.etree import ElementTree as ET
 # Attempt to import defusedxml for safe XML parsing
 try:
     import defusedxml.ElementTree as DefusedET
+
     DEFUSEDXML_AVAILABLE = True
 except ImportError:
     DEFUSEDXML_AVAILABLE = False
@@ -290,7 +291,9 @@ class ToolCallParser:
 
                     # Basic safety: limit input size
                     if len(xml_text) > 10000:  # 10KB limit
-                        logger.warning(f"XML input too large ({len(xml_text)} bytes), skipping")
+                        logger.warning(
+                            f"XML input too large ({len(xml_text)} bytes), skipping"
+                        )
                         continue
 
                     root = ET.fromstring(xml_text)

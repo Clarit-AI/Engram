@@ -11,7 +11,6 @@ from typing import Any, Callable, Optional, Union
 import torch
 
 from sglang.srt.compilation.compilation_config import CompilationConfig
-from sglang.srt.compilation.piecewise_context_manager import is_in_piecewise_cuda_graph
 
 logger = logging.getLogger(__name__)
 

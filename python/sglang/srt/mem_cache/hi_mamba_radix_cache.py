@@ -13,11 +13,8 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 import torch
 
 from sglang.srt.mem_cache.base_prefix_cache import (
-    DecLockRefParams,
-    DecLockRefResult,
     EvictParams,
     EvictResult,
-    IncLockRefResult,
     InitLoadBackParams,
     MatchPrefixParams,
     MatchResult,

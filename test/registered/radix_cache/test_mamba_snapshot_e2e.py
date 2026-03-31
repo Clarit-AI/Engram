@@ -1,10 +1,9 @@
-from sglang.test.ci.ci_register import register_cuda_ci, register_amd_ci
+from sglang.test.ci.ci_register import register_amd_ci, register_cuda_ci
 
 register_cuda_ci(est_time=150, suite="stage-b-test-small-1-gpu")
 register_amd_ci(est_time=150, suite="stage-b-test-small-1-gpu-amd")
 
 import glob
-import json
 import os
 import time
 import unittest
@@ -36,51 +35,59 @@ class TestMambaSnapshotE2E(unittest.TestCase):
         return r.json()
 
     def _save_snapshot(self, rid):
-        r = requests.post(f"{SERVER_URL}/save_snapshot",
-                          json={"rid": rid}, timeout=30)
+        r = requests.post(f"{SERVER_URL}/save_snapshot", json={"rid": rid}, timeout=30)
         r.raise_for_status()
         return r.json()
 
     def _restore_snapshot(self, rid):
-        r = requests.post(f"{SERVER_URL}/restore_snapshot",
-                          json={"rid": rid}, timeout=30)
+        r = requests.post(
+            f"{SERVER_URL}/restore_snapshot", json={"rid": rid}, timeout=30
+        )
         r.raise_for_status()
         return r.json()
 
     def _restore_snapshot_new_request(self, rid):
         """Restore with create_new_request=True — returns a new rid."""
-        r = requests.post(f"{SERVER_URL}/restore_snapshot",
-                          json={"rid": rid, "create_new_request": True}, timeout=30)
+        r = requests.post(
+            f"{SERVER_URL}/restore_snapshot",
+            json={"rid": rid, "create_new_request": True},
+            timeout=30,
+        )
         r.raise_for_status()
         return r.json()
 
     def test_save_snapshot_returns_success(self):
         """After generating tokens for a request, POST /save_snapshot returns success=True."""
         import uuid
+
         rid = f"test-save-{uuid.uuid4().hex[:8]}"
         self._chat([{"role": "user", "content": "Hello, what is 1+1?"}], rid=rid)
         time.sleep(0.5)  # allow request to settle
 
         result = self._save_snapshot(rid)
         self.assertTrue(
-            result.get("success", False),
-            f"save_snapshot returned: {result}"
+            result.get("success", False), f"save_snapshot returned: {result}"
         )
 
     def test_restore_snapshot_state_equivalence(self):
         """Save after turn N, restore, re-generate turn N+1 — output must match original at temperature=0."""
         import uuid
+
         rid = f"test-restore-{uuid.uuid4().hex[:8]}"
         messages = []
 
         # Turn 1
         messages.append({"role": "user", "content": "My secret word is: ALPHA42."})
         resp1 = self._chat(messages, rid=rid)
-        messages.append({"role": "assistant", "content": resp1["choices"][0]["message"]["content"]})
+        messages.append(
+            {"role": "assistant", "content": resp1["choices"][0]["message"]["content"]}
+        )
 
         # Save snapshot after turn 1
         save_result = self._save_snapshot(rid)
-        self.assertTrue(save_result.get("success", False), f"Snapshot save failed: {save_result}")
+        self.assertTrue(
+            save_result.get("success", False), f"Snapshot save failed: {save_result}"
+        )
 
         # Turn 2 — generate original output
         turn2_prompt = "What is my secret word?"
@@ -90,15 +97,19 @@ class TestMambaSnapshotE2E(unittest.TestCase):
 
         # Restore snapshot (back to post-turn-1 state)
         restore_result = self._restore_snapshot(rid)
-        self.assertTrue(restore_result.get("success", False), f"Snapshot restore failed: {restore_result}")
+        self.assertTrue(
+            restore_result.get("success", False),
+            f"Snapshot restore failed: {restore_result}",
+        )
 
         # Re-generate turn 2 from restored state
         resp2_restored = self._chat(messages_with_t2, rid=rid)
         restored_output = resp2_restored["choices"][0]["message"]["content"]
 
         self.assertEqual(
-            original_output.strip(), restored_output.strip(),
-            f"Output mismatch after restore.\nOriginal: {original_output}\nRestored: {restored_output}"
+            original_output.strip(),
+            restored_output.strip(),
+            f"Output mismatch after restore.\nOriginal: {original_output}\nRestored: {restored_output}",
         )
 
     def test_restore_requires_idle_request(self):
@@ -107,12 +118,13 @@ class TestMambaSnapshotE2E(unittest.TestCase):
         # Should not raise — must return a response indicating failure
         self.assertFalse(
             result.get("success", True),
-            f"Expected success=False for nonexistent rid, got: {result}"
+            f"Expected success=False for nonexistent rid, got: {result}",
         )
 
     def test_snapshot_disk_format(self):
         """After save, .safetensors and .json files exist on disk with expected keys."""
         import uuid
+
         rid = f"test-disk-{uuid.uuid4().hex[:8]}"
         self._chat([{"role": "user", "content": "Save this state."}], rid=rid)
         time.sleep(0.5)
@@ -121,18 +133,23 @@ class TestMambaSnapshotE2E(unittest.TestCase):
         time.sleep(1.0)  # allow disk flush
 
         # Find safetensors files
-        safetensors_files = glob.glob(os.path.join(SNAPSHOT_DIR, "**/*.safetensors"), recursive=True)
-        self.assertGreater(len(safetensors_files), 0, f"No .safetensors files found in {SNAPSHOT_DIR}")
+        safetensors_files = glob.glob(
+            os.path.join(SNAPSHOT_DIR, "**/*.safetensors"), recursive=True
+        )
+        self.assertGreater(
+            len(safetensors_files), 0, f"No .safetensors files found in {SNAPSHOT_DIR}"
+        )
 
         # Verify keys
         try:
             from safetensors import safe_open
+
             with safe_open(safetensors_files[0], framework="pt") as f:
                 keys = list(f.keys())
             key_str = str(keys).lower()
             self.assertTrue(
                 any(k in key_str for k in ("conv", "ssm", "temporal", "state")),
-                f"Expected conv/ssm/temporal/state keys, got: {keys}"
+                f"Expected conv/ssm/temporal/state keys, got: {keys}",
             )
         except ImportError:
             self.skipTest("safetensors not installed")
@@ -141,6 +158,7 @@ class TestMambaSnapshotE2E(unittest.TestCase):
         """MambaHostPool WARM tier: save CPU tensors, retrieve, verify data integrity."""
         try:
             import torch
+
             from sglang.srt.snapshot.mamba_host_pool import MambaHostPool
         except ImportError as e:
             self.skipTest(f"MambaHostPool not importable: {e}")
@@ -159,30 +177,39 @@ class TestMambaSnapshotE2E(unittest.TestCase):
             torch.randn(1, hidden, conv_kernel, dtype=torch.float32)
             for _ in range(num_layers)
         ]
-        temporal_states = torch.randn(num_layers, 1, ssm_state_dim, hidden, dtype=torch.float32)
+        temporal_states = torch.randn(
+            num_layers, 1, ssm_state_dim, hidden, dtype=torch.float32
+        )
 
         # Save to WARM tier (host RAM)
-        ok = pool.save_state(conv_id, conv_states, temporal_states, metadata={"turn": 1})
+        ok = pool.save_state(
+            conv_id, conv_states, temporal_states, metadata={"turn": 1}
+        )
         self.assertTrue(ok, "MambaHostPool.save_state() returned False")
 
         # Retrieve from WARM tier
         result = pool.get_state(conv_id)
-        self.assertIsNotNone(result, "MambaHostPool.get_state() returned None after save")
+        self.assertIsNotNone(
+            result, "MambaHostPool.get_state() returned None after save"
+        )
 
         retrieved_conv, retrieved_temporal, retrieved_meta = result
 
         # Verify tensor data integrity
-        self.assertEqual(len(retrieved_conv), num_layers,
-                         f"Expected {num_layers} conv states, got {len(retrieved_conv)}")
+        self.assertEqual(
+            len(retrieved_conv),
+            num_layers,
+            f"Expected {num_layers} conv states, got {len(retrieved_conv)}",
+        )
         for i, (orig, retr) in enumerate(zip(conv_states, retrieved_conv)):
             self.assertTrue(
                 torch.allclose(orig.cpu(), retr.cpu()),
-                f"Conv state layer {i} mismatch after WARM tier round-trip"
+                f"Conv state layer {i} mismatch after WARM tier round-trip",
             )
 
         self.assertTrue(
             torch.allclose(temporal_states.cpu(), retrieved_temporal.cpu()),
-            "Temporal state mismatch after WARM tier round-trip"
+            "Temporal state mismatch after WARM tier round-trip",
         )
 
         # Verify metadata preserved
@@ -197,22 +224,29 @@ class TestMambaSnapshotE2E(unittest.TestCase):
 
         # Pool should have evicted down to 3
         self.assertLessEqual(
-            len(small_pool), 3,
-            f"LRU eviction failed: pool has {len(small_pool)} entries (max 3)"
+            len(small_pool),
+            3,
+            f"LRU eviction failed: pool has {len(small_pool)} entries (max 3)",
         )
 
     def test_create_new_request_returns_new_rid(self):
         """create_new_request=True returns a new rid different from the original."""
         import uuid
+
         rid = f"test-new-rid-{uuid.uuid4().hex[:8]}"
         self._chat([{"role": "user", "content": "Hello, what is 1+1?"}], rid=rid)
         time.sleep(0.5)  # allow request to settle
 
         save_result = self._save_snapshot(rid)
-        self.assertTrue(save_result.get("success", False), f"Snapshot save failed: {save_result}")
+        self.assertTrue(
+            save_result.get("success", False), f"Snapshot save failed: {save_result}"
+        )
 
         restore_result = self._restore_snapshot_new_request(rid)
-        self.assertTrue(restore_result.get("success", False), f"create_new_request restore failed: {restore_result}")
+        self.assertTrue(
+            restore_result.get("success", False),
+            f"create_new_request restore failed: {restore_result}",
+        )
 
         new_rid = restore_result.get("rid")
         self.assertIsNotNone(new_rid, "Expected rid in response")

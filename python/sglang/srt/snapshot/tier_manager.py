@@ -13,7 +13,6 @@ from typing import List, Optional, Tuple
 import torch
 
 from sglang.srt.snapshot.conversation_tracker import (
-    ConversationState,
     ConversationTier,
     ConversationTracker,
 )

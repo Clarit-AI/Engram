@@ -24,7 +24,6 @@ from sglang.srt.managers.io_struct import (
 from sglang.srt.managers.scheduler import ScheduleBatch
 from sglang.srt.managers.utils import GenerationBatchResult
 from sglang.srt.observability.metrics_collector import (
-    DPCooperationInfo,
     SchedulerMetricsCollector,
     SchedulerStats,
     compute_routing_key_stats,

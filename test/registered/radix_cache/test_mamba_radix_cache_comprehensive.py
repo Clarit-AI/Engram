@@ -83,7 +83,10 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
 
         # Layer configuration
         self.full_attention_layer_ids = [
-            i for i in range(self.global_interval - 1, self.num_layers, self.global_interval)
+            i
+            for i in range(
+                self.global_interval - 1, self.num_layers, self.global_interval
+            )
         ]
         self.mamba_layers = [
             i for i in range(self.num_layers) if i not in self.full_attention_layer_ids
@@ -100,7 +103,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
                 state_size=128,
                 conv_kernel=4,
             )
-            self.mamba2_cache_params = Mamba2CacheParams(shape=shape, layers=self.mamba_layers)
+            self.mamba2_cache_params = Mamba2CacheParams(
+                shape=shape, layers=self.mamba_layers
+            )
 
         # Create req_to_token_pool
         self.req_to_token_pool = HybridReqToTokenPool(
@@ -197,13 +202,17 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         self.assertGreaterEqual(evict_result.mamba_num_evicted, 1)
 
         # Match [1, 2, 3] - should match KV cache but no Mamba state (tombstone)
-        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey([1, 2, 3])))
+        match_result = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey([1, 2, 3]))
+        )
         # Due to tombstone, match should only return nodes with Mamba states
         # In this case, it should return empty because the [1,2,3] node is a tombstone
         self.assertEqual(len(match_result.device_indices), 0)
 
         # Match [1, 2, 3, 4, 5] - should match the full sequence with Mamba state
-        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey(token_ids_2)))
+        match_result = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey(token_ids_2))
+        )
         self.assertEqual(len(match_result.device_indices), 5)
 
     def test_lru_list_integrity(self):
@@ -259,7 +268,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         )
 
         # Match and get the last node
-        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey(token_ids)))
+        match_result = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey(token_ids))
+        )
         last_node = match_result.last_device_node
 
         # Lock the node
@@ -327,7 +338,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         )
 
         # New item must be findable
-        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey(token_ids_new)))
+        match_result = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey(token_ids_new))
+        )
         self.assertGreater(
             len(match_result.device_indices), 0, "New item should be findable in cache"
         )
@@ -440,7 +453,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
     def test_empty_cache_operations(self):
         """Test operations on an empty cache."""
         # Match on empty cache
-        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey([1, 2, 3])))
+        match_result = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey([1, 2, 3]))
+        )
         self.assertEqual(len(match_result.device_indices), 0)
         self.assertEqual(match_result.last_device_node, self.cache.root_node)
 
@@ -474,7 +489,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         self.assertEqual(self.cache.mamba_evictable_size(), 1)
 
         # Lock the node - evictable size should decrease
-        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey(token_ids)))
+        match_result = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey(token_ids))
+        )
         last_node = match_result.last_device_node
         self.cache.inc_lock_ref(last_node)
 
@@ -505,9 +522,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         KV pool.  Internal-node eviction never calls token_to_kv_pool_allocator
         .free(), so fake tensors are safe here.
         """
-        token_ids_A = list(range(65))   # [0..64]  — 65 tokens
-        token_ids_B = list(range(75))   # [0..74]  — 75 tokens (= A + 10)
-        token_ids_C = list(range(85))   # [0..84]  — 85 tokens (= B + 10)
+        token_ids_A = list(range(65))  # [0..64]  — 65 tokens
+        token_ids_B = list(range(75))  # [0..74]  — 75 tokens (= A + 10)
+        token_ids_C = list(range(85))  # [0..84]  — 85 tokens (= B + 10)
 
         # Fake KV tensors — value does not matter for branching_seqlen correctness.
         kv_A = torch.zeros(65, dtype=torch.int64)
@@ -515,22 +532,31 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         kv_C = torch.zeros(85, dtype=torch.int64)
 
         req_a = self._make_dummy_req()
-        self.cache.insert(InsertParams(
-            key=RadixKey(token_ids_A), value=kv_A,
-            mamba_value=req_a.mamba_pool_idx.unsqueeze(0),
-        ))
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids_A),
+                value=kv_A,
+                mamba_value=req_a.mamba_pool_idx.unsqueeze(0),
+            )
+        )
 
         req_b = self._make_dummy_req()
-        self.cache.insert(InsertParams(
-            key=RadixKey(token_ids_B), value=kv_B,
-            mamba_value=req_b.mamba_pool_idx.unsqueeze(0),
-        ))
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids_B),
+                value=kv_B,
+                mamba_value=req_b.mamba_pool_idx.unsqueeze(0),
+            )
+        )
 
         req_c = self._make_dummy_req()
-        self.cache.insert(InsertParams(
-            key=RadixKey(token_ids_C), value=kv_C,
-            mamba_value=req_c.mamba_pool_idx.unsqueeze(0),
-        ))
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids_C),
+                value=kv_C,
+                mamba_value=req_c.mamba_pool_idx.unsqueeze(0),
+            )
+        )
 
         # Evict 2 mamba states: LRU=NodeA → tombstone, then NodeB → tombstone.
         evict_result = self.cache.evict(EvictParams(num_tokens=0, mamba_num=2))
@@ -539,7 +565,9 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         # Match B: path goes through NodeA(tombstone) + NodeB(tombstone).
         # best_value_len=0 (no live mamba node on path) → branching detected.
         # sum(matched)=75 → chunk_aligned=64 → mamba_branching_seqlen=64.
-        match_result = self.cache.match_prefix(MatchPrefixParams(key=RadixKey(token_ids_B)))
+        match_result = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey(token_ids_B))
+        )
         self.assertIsNotNone(
             match_result.mamba_branching_seqlen,
             "mamba_branching_seqlen should be set when tombstone is encountered",
@@ -549,6 +577,7 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
             64,
             "mamba_branching_seqlen should equal chunk-aligned total matched tokens",
         )
+
 
 if __name__ == "__main__":
     unittest.main()

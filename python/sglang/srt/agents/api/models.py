@@ -8,7 +8,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-
 # ============================================================================
 # Tool Management Models
 # ============================================================================
@@ -48,9 +47,7 @@ class ToolCallRequest(BaseModel):
     conversation_id: Optional[str] = Field(
         None, description="Optional conversation ID for context"
     )
-    timeout: Optional[float] = Field(
-        None, description="Execution timeout in seconds"
-    )
+    timeout: Optional[float] = Field(None, description="Execution timeout in seconds")
 
 
 class ToolCallResponse(BaseModel):
@@ -204,9 +201,7 @@ class TierTransitionRequest(BaseModel):
     """Request to manually transition conversation tier."""
 
     conversation_id: str = Field(..., description="Conversation ID")
-    target_tier: str = Field(
-        ..., description="Target tier (active/warm/cold/archived)"
-    )
+    target_tier: str = Field(..., description="Target tier (active/warm/cold/archived)")
 
 
 class TierTransitionResponse(BaseModel):
@@ -280,9 +275,7 @@ class HealthResponse(BaseModel):
     snapshot_persistence_enabled: bool = Field(
         ..., description="Snapshot persistence enabled"
     )
-    components: Dict[str, bool] = Field(
-        ..., description="Component health status"
-    )
+    components: Dict[str, bool] = Field(..., description="Component health status")
 
 
 class StatsResponse(BaseModel):

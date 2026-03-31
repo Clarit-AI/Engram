@@ -167,16 +167,16 @@ import sglang as sgl
 def mamba_conversation(s):
     s += "System: You are an expert assistant.\n"
     s += "User: Hello!\n"
-    
+
     # Save state at this exact point
     s.save_snapshot(conversation_id="conv_123", turn_number=1)
-    
+
     s += "Assistant: How can I help you today?\n"
-    
+
     # Later or in a different execution...
     # Rollback to the exact point in the conversation
     s.restore_snapshot(conversation_id="conv_123", turn_number=1)
-    
+
     # Or create an alternate branch
     s += "User: Can you tell me a joke?\n"
     s.save_snapshot(conversation_id="conv_123", branch_name="joke-path")
@@ -480,4 +480,3 @@ response = client.chat.completions.create(
 - **Docs**: https://sgl-project.github.io/
 - **Paper**: RadixAttention (arXiv:2312.07104)
 - **Discord**: https://discord.gg/sglang
-

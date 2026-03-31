@@ -6,11 +6,9 @@ and other common agent tasks.
 """
 
 import ast
-import json
 import logging
 import math
 import operator
-import re
 from typing import Any, Dict, Optional
 
 from sglang.srt.agents.tool_registry import Tool, ToolParameter, ToolParameterType
@@ -64,7 +62,9 @@ class SafeExpressionEvaluator(ast.NodeVisitor):
         "round": round,
         "min": min,
         "max": max,
-        "pow": lambda base, exp, mod=None: SafeExpressionEvaluator._safe_pow(base, exp, mod),
+        "pow": lambda base, exp, mod=None: SafeExpressionEvaluator._safe_pow(
+            base, exp, mod
+        ),
         "sqrt": math.sqrt,
         "sin": math.sin,
         "cos": math.cos,
@@ -482,9 +482,7 @@ class MemorySearchTool:
             results = []
 
             # Search in specified category or all categories
-            categories_to_search = (
-                [category] if category else list(memory.keys())
-            )
+            categories_to_search = [category] if category else list(memory.keys())
 
             for cat in categories_to_search:
                 if cat not in memory:
@@ -492,9 +490,10 @@ class MemorySearchTool:
 
                 for key, value in memory[cat].items():
                     # Search in key or value
-                    if query.lower() in key.lower() or query.lower() in str(
-                        value
-                    ).lower():
+                    if (
+                        query.lower() in key.lower()
+                        or query.lower() in str(value).lower()
+                    ):
                         results.append(
                             {
                                 "category": cat,
@@ -587,7 +586,10 @@ class CalculatorTool:
                     "error": str(e),
                 }
             except Exception as e:
-                logger.error(f"Unexpected calculator error for '{expression}': {e}", exc_info=True)
+                logger.error(
+                    f"Unexpected calculator error for '{expression}': {e}",
+                    exc_info=True,
+                )
                 return {
                     "status": "error",
                     "expression": expression,

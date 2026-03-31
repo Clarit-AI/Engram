@@ -9,7 +9,6 @@ import time
 import pytest
 
 from sglang.srt.snapshot.conversation_tracker import (
-    ConversationState,
     ConversationTier,
     ConversationTracker,
 )

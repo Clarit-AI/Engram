@@ -24,12 +24,10 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List
 
 import torch
-
-import sys
-from pathlib import Path
 
 # Add repo-local python directory to path for imports
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -105,7 +103,10 @@ class MambaRadixCacheBenchmark:
         """Setup memory pools for testing."""
         # Layer configuration
         self.full_attention_layer_ids = [
-            i for i in range(self.global_interval - 1, self.num_layers, self.global_interval)
+            i
+            for i in range(
+                self.global_interval - 1, self.num_layers, self.global_interval
+            )
         ]
         self.mamba_layers = [
             i for i in range(self.num_layers) if i not in self.full_attention_layer_ids
@@ -122,7 +123,9 @@ class MambaRadixCacheBenchmark:
                 state_size=128,
                 conv_kernel=4,
             )
-            self.mamba2_cache_params = Mamba2CacheParams(shape=shape, layers=self.mamba_layers)
+            self.mamba2_cache_params = Mamba2CacheParams(
+                shape=shape, layers=self.mamba_layers
+            )
 
         # Create req_to_token_pool
         self.req_to_token_pool = HybridReqToTokenPool(
@@ -170,7 +173,9 @@ class MambaRadixCacheBenchmark:
         )
         self.cache = MambaRadixCache(params=params)
 
-    def benchmark_insert(self, num_sequences: int = 1000, seq_len: int = 10) -> BenchmarkResult:
+    def benchmark_insert(
+        self, num_sequences: int = 1000, seq_len: int = 10
+    ) -> BenchmarkResult:
         """Benchmark insert operations."""
         timings = []
 
@@ -423,13 +428,13 @@ class MambaRadixCacheBenchmark:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="MambaRadixCache Performance Benchmark")
+    parser = argparse.ArgumentParser(
+        description="MambaRadixCache Performance Benchmark"
+    )
     parser.add_argument(
         "--profile", action="store_true", help="Enable cProfile profiling"
     )
-    parser.add_argument(
-        "--kv-cache-size", type=int, default=1024, help="KV cache size"
-    )
+    parser.add_argument("--kv-cache-size", type=int, default=1024, help="KV cache size")
     parser.add_argument(
         "--mamba-cache-size", type=int, default=128, help="Mamba cache size"
     )

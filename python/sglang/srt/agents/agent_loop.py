@@ -14,10 +14,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from sglang.srt.agents.tool_execution import (
-    ToolExecutionEngine,
-    ToolExecutionResult,
-)
+from sglang.srt.agents.tool_execution import ToolExecutionEngine, ToolExecutionResult
 from sglang.srt.agents.tool_parser import ToolCallParser
 from sglang.srt.agents.tool_registry import ToolRegistry
 
@@ -215,7 +212,9 @@ class AgentLoop:
             if not tool_calls:
                 # No tool calls - we're done
                 final_response = model_response
-                logger.debug(f"No tool calls found, finishing. Response: {model_response[:100]}")
+                logger.debug(
+                    f"No tool calls found, finishing. Response: {model_response[:100]}"
+                )
                 break
 
             # Limit number of tool calls
@@ -342,9 +341,7 @@ class AgentLoop:
             else:
                 lines.append(f"   Error: {result.error}")
 
-            lines.append(
-                f"   Execution time: {result.execution_time_ms:.2f}ms"
-            )
+            lines.append(f"   Execution time: {result.execution_time_ms:.2f}ms")
 
         return "\n".join(lines)
 

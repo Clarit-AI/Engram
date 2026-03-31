@@ -1,4 +1,4 @@
-from sglang.test.ci.ci_register import register_cuda_ci, register_amd_ci
+from sglang.test.ci.ci_register import register_amd_ci, register_cuda_ci
 
 register_cuda_ci(est_time=180, suite="stage-b-test-small-1-gpu")
 register_amd_ci(est_time=180, suite="stage-b-test-small-1-gpu-amd")
@@ -11,7 +11,7 @@ import unittest
 import requests
 
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:30000")
-LONG_SYSTEM = "You are a concise assistant. " * 80   # ~500 tokens shared prefix
+LONG_SYSTEM = "You are a concise assistant. " * 80  # ~500 tokens shared prefix
 
 
 class TestMambaRadixCacheServerIntegration(unittest.TestCase):
@@ -27,17 +27,21 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
     def test_cache_hit_on_repeated_prefix(self):
         """Second request sharing a long prefix has shorter prefill (cache hit)."""
         # Request A: long system prompt + question 1
-        resp_a = self._chat([
-            {"role": "system", "content": LONG_SYSTEM},
-            {"role": "user", "content": "What is the capital of France?"},
-        ])
+        resp_a = self._chat(
+            [
+                {"role": "system", "content": LONG_SYSTEM},
+                {"role": "user", "content": "What is the capital of France?"},
+            ]
+        )
         self.assertGreater(len(resp_a["choices"][0]["message"]["content"]), 0)
 
         # Request B: same system prompt + different question (should hit cache)
-        resp_b = self._chat([
-            {"role": "system", "content": LONG_SYSTEM},
-            {"role": "user", "content": "What is the capital of Germany?"},
-        ])
+        resp_b = self._chat(
+            [
+                {"role": "system", "content": LONG_SYSTEM},
+                {"role": "user", "content": "What is the capital of Germany?"},
+            ]
+        )
         self.assertGreater(len(resp_b["choices"][0]["message"]["content"]), 0)
         self.assertGreater(
             resp_b["usage"]["prompt_tokens_details"]["cached_tokens"],
@@ -48,10 +52,16 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
     def test_cache_miss_fallback(self):
         """Unique prefix (never seen before) generates correct output without corruption."""
         import uuid
+
         unique_prefix = f"Unique context {uuid.uuid4().hex}: "
-        resp = self._chat([
-            {"role": "user", "content": unique_prefix + "Reply with the word: correct"},
-        ])
+        resp = self._chat(
+            [
+                {
+                    "role": "user",
+                    "content": unique_prefix + "Reply with the word: correct",
+                },
+            ]
+        )
         content = resp["choices"][0]["message"]["content"].lower()
         self.assertIn("correct", content)
 
@@ -66,7 +76,9 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
         ]
 
         def send(q):
-            return self._chat(messages_base + [{"role": "user", "content": q}])["choices"][0]["message"]["content"].strip()
+            return self._chat(messages_base + [{"role": "user", "content": q}])[
+                "choices"
+            ][0]["message"]["content"].strip()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
             results = list(ex.map(send, questions))
@@ -108,14 +120,22 @@ class TestMambaRadixCacheServerIntegration(unittest.TestCase):
     def test_eviction_under_pressure(self):
         """Fill Mamba cache near-capacity with distinct requests; new requests still succeed (eviction works)."""
         for i in range(30):
-            resp = self._chat([
-                {"role": "user", "content": f"Request number {i}. Reply with: ok{i}"},
-            ], max_tokens=10)
+            resp = self._chat(
+                [
+                    {
+                        "role": "user",
+                        "content": f"Request number {i}. Reply with: ok{i}",
+                    },
+                ],
+                max_tokens=10,
+            )
             self.assertIn(resp["choices"][0]["finish_reason"], ("stop", "length"))
             time.sleep(0.1)
 
         # Final request must still work
-        resp = self._chat([{"role": "user", "content": "Reply with: final_ok"}], max_tokens=10)
+        resp = self._chat(
+            [{"role": "user", "content": "Reply with: final_ok"}], max_tokens=10
+        )
         self.assertIn(resp["choices"][0]["finish_reason"], ("stop", "length"))
 
 

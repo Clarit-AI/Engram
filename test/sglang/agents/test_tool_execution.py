@@ -10,7 +10,6 @@ import pytest
 
 from sglang.srt.agents.tool_execution import (
     ToolExecutionEngine,
-    ToolExecutionResult,
     ToolExecutionStatus,
 )
 from sglang.srt.agents.tool_registry import (
@@ -106,7 +105,12 @@ class TestToolExecutionEngine:
             name="test",
             description="Test",
             parameters=[
-                ToolParameter("required_param", ToolParameterType.STRING, "Required", required=True)
+                ToolParameter(
+                    "required_param",
+                    ToolParameterType.STRING,
+                    "Required",
+                    required=True,
+                )
             ],
             function=lambda required_param: required_param,
         )
@@ -185,8 +189,18 @@ class TestToolExecutionEngine:
         registry = ToolRegistry()
         engine = ToolExecutionEngine(registry)
 
-        tool1 = Tool("double", "Double", [ToolParameter("x", ToolParameterType.INTEGER, "X")], lambda x: x * 2)
-        tool2 = Tool("triple", "Triple", [ToolParameter("x", ToolParameterType.INTEGER, "X")], lambda x: x * 3)
+        tool1 = Tool(
+            "double",
+            "Double",
+            [ToolParameter("x", ToolParameterType.INTEGER, "X")],
+            lambda x: x * 2,
+        )
+        tool2 = Tool(
+            "triple",
+            "Triple",
+            [ToolParameter("x", ToolParameterType.INTEGER, "X")],
+            lambda x: x * 3,
+        )
 
         registry.register(tool1)
         registry.register(tool2)

@@ -12,15 +12,11 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status
 
 from sglang.srt.agents.api.models import (
-    AgentHistoryResponse,
-    AgentRunRequest,
-    AgentRunResponse,
     ConversationInfo,
     ConversationListResponse,
     ConversationRestoreRequest,
     ConversationRestoreResponse,
     ConversationSearchRequest,
-    ErrorResponse,
     HealthResponse,
     MemoryRecallRequest,
     MemoryRecallResponse,
@@ -100,9 +96,7 @@ class AgentAPIHandler:
         router.add_api_route("/memory/search", self.search_memory, methods=["POST"])
 
         # Conversation management
-        router.add_api_route(
-            "/conversations", self.list_conversations, methods=["GET"]
-        )
+        router.add_api_route("/conversations", self.list_conversations, methods=["GET"])
         router.add_api_route(
             "/conversations/search", self.search_conversations, methods=["POST"]
         )
@@ -148,20 +142,24 @@ class AgentAPIHandler:
             "tool_parser": self.tool_parser is not None,
         }
         if tiers_enabled:
-            components.update({
-                "tier_manager": self.tier_manager is not None,
-                "conversation_tracker": self.conversation_tracker is not None,
-                "host_pool": self.host_pool is not None,
-            })
+            components.update(
+                {
+                    "tier_manager": self.tier_manager is not None,
+                    "conversation_tracker": self.conversation_tracker is not None,
+                    "host_pool": self.host_pool is not None,
+                }
+            )
 
         # Determine overall health based on what SHOULD be available
         if agent_enabled:
             # Agent tools enabled: require core components
-            core_healthy = all([
-                self.tool_registry is not None,
-                self.tool_executor is not None,
-                self.tool_parser is not None,
-            ])
+            core_healthy = all(
+                [
+                    self.tool_registry is not None,
+                    self.tool_executor is not None,
+                    self.tool_parser is not None,
+                ]
+            )
 
             if core_healthy:
                 health_status = "healthy"
@@ -324,9 +322,7 @@ class AgentAPIHandler:
             category=request.category,
         )
 
-    async def recall_memory(
-        self, request: MemoryRecallRequest
-    ) -> MemoryRecallResponse:
+    async def recall_memory(self, request: MemoryRecallRequest) -> MemoryRecallResponse:
         """Recall information from memory."""
         if not self.tool_executor:
             raise HTTPException(
@@ -360,9 +356,7 @@ class AgentAPIHandler:
             data=result.result,
         )
 
-    async def search_memory(
-        self, request: MemorySearchRequest
-    ) -> MemorySearchResponse:
+    async def search_memory(self, request: MemorySearchRequest) -> MemorySearchResponse:
         """Search memory by keyword."""
         if not self.tool_executor:
             raise HTTPException(
@@ -418,8 +412,8 @@ class AgentAPIHandler:
         if tier:
             try:
                 tier_enum = ConversationTier(tier)
-                conversations_list = self.conversation_tracker.list_conversations_by_tier(
-                    tier_enum
+                conversations_list = (
+                    self.conversation_tracker.list_conversations_by_tier(tier_enum)
                 )
             except ValueError:
                 raise HTTPException(

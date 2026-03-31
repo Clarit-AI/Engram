@@ -103,20 +103,22 @@ def _sanitize_traceback(tb: str) -> str:
         Sanitized traceback with redacted paths and limited stack depth
     """
     # Replace absolute paths with generic placeholders (Unix)
-    tb = re.sub(r'/home/[^/]+/', '~/', tb)
-    tb = re.sub(r'/opt/[^/]+/', '/opt/<redacted>/', tb)
-    tb = re.sub(r'/usr/local/[^/]+/', '/usr/local/<redacted>/', tb)
+    tb = re.sub(r"/home/[^/]+/", "~/", tb)
+    tb = re.sub(r"/opt/[^/]+/", "/opt/<redacted>/", tb)
+    tb = re.sub(r"/usr/local/[^/]+/", "/usr/local/<redacted>/", tb)
 
     # Replace absolute paths with generic placeholders (Windows)
-    tb = re.sub(r'[A-Za-z]:\\Users\\[^\\]+\\', r'C:\\Users\\<redacted>\\', tb)
-    tb = re.sub(r'[A-Za-z]:\\Program Files[^\\]*\\', r'C:\\Program Files\\<redacted>\\', tb)
+    tb = re.sub(r"[A-Za-z]:\\Users\\[^\\]+\\", r"C:\\Users\\<redacted>\\", tb)
+    tb = re.sub(
+        r"[A-Za-z]:\\Program Files[^\\]*\\", r"C:\\Program Files\\<redacted>\\", tb
+    )
 
     # Limit stack depth to prevent excessive output
-    lines = tb.split('\n')
+    lines = tb.split("\n")
     if len(lines) > 20:
-        lines = lines[:5] + ['  ... (frames redacted) ...'] + lines[-15:]
+        lines = lines[:5] + ["  ... (frames redacted) ..."] + lines[-15:]
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 class ToolExecutionEngine:
@@ -314,7 +316,7 @@ class ToolExecutionEngine:
 
         proc = multiprocessing.Process(
             target=_tool_worker,
-            args=(tool.function, parameters, result_queue, exception_queue)
+            args=(tool.function, parameters, result_queue, exception_queue),
         )
         proc.start()
         proc.join(timeout=timeout)
@@ -369,9 +371,7 @@ class ToolExecutionEngine:
         if in_event_loop:
             # Already in async context - must use thread pool to avoid RuntimeError
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            future = executor.submit(
-                lambda: asyncio.run(tool.function(**parameters))
-            )
+            future = executor.submit(lambda: asyncio.run(tool.function(**parameters)))
             try:
                 return future.result(timeout=timeout)
             except (concurrent.futures.TimeoutError, asyncio.TimeoutError):

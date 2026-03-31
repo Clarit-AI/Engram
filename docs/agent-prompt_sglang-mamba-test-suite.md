@@ -10,21 +10,21 @@ The codebase is rooted at the SGLang source tree. You will be running tests agai
 
 This fork extends upstream SGLang with a **stateful Mamba inference architecture**. The stateful components are:
 
-1. **`HybridReqToTokenPool` + `MambaPool`** (`python/sglang/srt/mem_cache/memory_pool.py`) — GPU tensor storage for per-request Mamba conv/temporal states, with a `req_index_to_mamba_index_mapping` for O(1) lookup. [1] 
+1. **`HybridReqToTokenPool` + `MambaPool`** (`python/sglang/srt/mem_cache/memory_pool.py`) — GPU tensor storage for per-request Mamba conv/temporal states, with a `req_index_to_mamba_index_mapping` for O(1) lookup. [1]
 
-2. **`HybridLinearKVPool`** (`python/sglang/srt/mem_cache/memory_pool.py`) — A hybrid KV pool that stores attention-layer KV cache and exposes Mamba pool references to the radix cache. [2] 
+2. **`HybridLinearKVPool`** (`python/sglang/srt/mem_cache/memory_pool.py`) — A hybrid KV pool that stores attention-layer KV cache and exposes Mamba pool references to the radix cache. [2]
 
-3. **`MambaRadixCache`** (`python/sglang/srt/mem_cache/mamba_radix_cache.py`) — A hybrid radix tree with **dual LRU lists** (`full_lru_list` and `mamba_lru_list`), dual lock refs (`full_lock_ref`, `mamba_lock_ref`), tombstone nodes (KV present but Mamba state evicted), and copy-on-write (`cow_mamba`). [3] [4] 
+3. **`MambaRadixCache`** (`python/sglang/srt/mem_cache/mamba_radix_cache.py`) — A hybrid radix tree with **dual LRU lists** (`full_lru_list` and `mamba_lru_list`), dual lock refs (`full_lock_ref`, `mamba_lock_ref`), tombstone nodes (KV present but Mamba state evicted), and copy-on-write (`cow_mamba`). [3] [4]
 
-4. **`ForwardMetadata` / `Mamba2Metadata`** (`python/sglang/srt/layers/attention/mamba/mamba2_metadata.py`) — Per-forward-pass metadata carrying `mamba_cache_indices`, `track_conv_indices`, `track_ssm_h_src/dst`, `track_ssm_final_src/dst`, and chunked-prefill chunk index/offset tensors. [5] 
+4. **`ForwardMetadata` / `Mamba2Metadata`** (`python/sglang/srt/layers/attention/mamba/mamba2_metadata.py`) — Per-forward-pass metadata carrying `mamba_cache_indices`, `track_conv_indices`, `track_ssm_h_src/dst`, `track_ssm_final_src/dst`, and chunked-prefill chunk index/offset tensors. [5]
 
-5. **`MambaMixer2` + `hybrid_linear_attn_backend`** (`python/sglang/srt/layers/attention/hybrid_linear_attn_backend.py`) — The Mamba2 SSM kernel integration, including `causal_conv1d_fn`, `causal_conv1d_update`, and the GDN/Lightning hybrid variants. [6] 
+5. **`MambaMixer2` + `hybrid_linear_attn_backend`** (`python/sglang/srt/layers/attention/hybrid_linear_attn_backend.py`) — The Mamba2 SSM kernel integration, including `causal_conv1d_fn`, `causal_conv1d_update`, and the GDN/Lightning hybrid variants. [6]
 
-6. **`mamba_branching_seqlen` / COW** — Computed during `MambaRadixCache._match_post_processor()` when a KV hit extends past the last valid Mamba state (tombstone gap); consumed during prefill to re-anchor the SSM state at the correct chunk-aligned divergence point. [7] 
+6. **`mamba_branching_seqlen` / COW** — Computed during `MambaRadixCache._match_post_processor()` when a KV hit extends past the last valid Mamba state (tombstone gap); consumed during prefill to re-anchor the SSM state at the correct chunk-aligned divergence point. [7]
 
 7. **`mamba_scheduler_strategy`** (`python/sglang/srt/server_args.py`) — Two runtime modes: `no_buffer` (default, no overlap) and `extra_buffer` (ping-pong track buffer, supports chunked prefill and speculative decoding).
 
-8. **Snapshot system** (`python/sglang/srt/snapshot/`) — `POST /save_snapshot` and `POST /restore_snapshot` HTTP endpoints; `MambaSnapshotManager` for safetensors-based disk persistence of conv and temporal states; `TierManager`, `ConversationTracker`, `SnapshotPolicy`, `MambaHostPool`. [8] 
+8. **Snapshot system** (`python/sglang/srt/snapshot/`) — `POST /save_snapshot` and `POST /restore_snapshot` HTTP endpoints; `MambaSnapshotManager` for safetensors-based disk persistence of conv and temporal states; `TierManager`, `ConversationTracker`, `SnapshotPolicy`, `MambaHostPool`. [8]
 
 ---
 
@@ -32,17 +32,17 @@ This fork extends upstream SGLang with a **stateful Mamba inference architecture
 
 Familiarize yourself with these before writing anything new:
 
-- **Registered unit tests**: `test/registered/radix_cache/test_mamba_unittest.py` — covers `test_hybrid_linear_kv_pool`, `test_mamba_pool`, `test_mamba_radix_cache_1`. [9] 
+- **Registered unit tests**: `test/registered/radix_cache/test_mamba_unittest.py` — covers `test_hybrid_linear_kv_pool`, `test_mamba_pool`, `test_mamba_radix_cache_1`. [9]
 
-- **Comprehensive radix cache tests**: `test/registered/radix_cache/test_mamba_radix_cache_comprehensive.py` — 10 tests covering tombstones, LRU integrity, lock ref protection, full-cache eviction, COW, leaf-only eviction, empty cache, evictable size tracking, and `mamba_branching_seqlen`. [10] 
+- **Comprehensive radix cache tests**: `test/registered/radix_cache/test_mamba_radix_cache_comprehensive.py` — 10 tests covering tombstones, LRU integrity, lock ref protection, full-cache eviction, COW, leaf-only eviction, empty cache, evictable size tracking, and `mamba_branching_seqlen`. [10]
 
-- **Phase 3 test plan** (`phase3/test/test_plan.md`) — Documents all planned but not-yet-written integration and E2E tests. Read this to understand what is **✅ done** vs **⬜ planned**. [11] 
+- **Phase 3 test plan** (`phase3/test/test_plan.md`) — Documents all planned but not-yet-written integration and E2E tests. Read this to understand what is **✅ done** vs **⬜ planned**. [11]
 
-- **Coverage report** (`phase3/tests/test_coverage_report.md`) — Current coverage targets for `MambaRadixCache` components. [12] 
+- **Coverage report** (`phase3/tests/test_coverage_report.md`) — Current coverage targets for `MambaRadixCache` components. [12]
 
-- **Test runner**: `python test/run_suite.py --hw cuda --suite stage-b-test-small-1-gpu` [13] 
+- **Test runner**: `python test/run_suite.py --hw cuda --suite stage-b-test-small-1-gpu` [13]
 
-- **CI registration pattern**: Use `register_cuda_ci(est_time=..., suite="stage-b-test-small-1-gpu")` from `sglang.test.ci.ci_register` for any new test files. [14] 
+- **CI registration pattern**: Use `register_cuda_ci(est_time=..., suite="stage-b-test-small-1-gpu")` from `sglang.test.ci.ci_register` for any new test files. [14]
 
 ---
 
@@ -89,12 +89,12 @@ Before any test, verify the install is healthy:
 
 **What to do**:
 
-1. Re-run the existing `test_mamba_pool` and `test_hybrid_linear_kv_pool` from `test/registered/radix_cache/test_mamba_unittest.py` with verbose output and confirm they pass. [15] 
+1. Re-run the existing `test_mamba_pool` and `test_hybrid_linear_kv_pool` from `test/registered/radix_cache/test_mamba_unittest.py` with verbose output and confirm they pass. [15]
 
 2. **Write additional tests** in a new file `test/registered/radix_cache/test_mamba_pool_extended.py`:
    - `test_pool_exhaustion` — Allocate `mamba_cache_size` slots; assert next alloc fails gracefully (returns `None` or raises expected error).
-   - `test_mamba_pool_reuse_on_no_free` — Allocate a req, call `free(req)` without calling `free_mamba_cache(req)`, re-alloc same req object — verify `mamba_pool.available_size()` does **not** decrease further (the leaked slot is reused). This is the exact scenario tested in `test_mamba_pool` lines 130–140. [16] 
-   - `test_mamba_state_dtype_override` — Use `envs.SGLANG_MAMBA_SSM_DTYPE.override("bfloat16")` context and verify `Mamba2CacheParams` uses bfloat16 for temporal states, as shown in the existing test setup. [17] 
+   - `test_mamba_pool_reuse_on_no_free` — Allocate a req, call `free(req)` without calling `free_mamba_cache(req)`, re-alloc same req object — verify `mamba_pool.available_size()` does **not** decrease further (the leaked slot is reused). This is the exact scenario tested in `test_mamba_pool` lines 130–140. [16]
+   - `test_mamba_state_dtype_override` — Use `envs.SGLANG_MAMBA_SSM_DTYPE.override("bfloat16")` context and verify `Mamba2CacheParams` uses bfloat16 for temporal states, as shown in the existing test setup. [17]
    - `test_get_mamba_indices_mapping` — Call `req_to_token_pool.get_mamba_indices(req_pool_indices_tensor)` after alloc and verify the returned indices match `req.mamba_pool_idx`.
    - `test_enable_mamba_extra_buffer_false` — Explicitly construct `HybridReqToTokenPool` with `enable_mamba_extra_buffer=False`; confirm no `mamba_ping_pong_track_buffer` is allocated.
 
@@ -114,17 +114,17 @@ Before any test, verify the install is healthy:
 
 2. **Gauntlet tests to write** in `test/registered/radix_cache/test_mamba_radix_cache_gauntlet.py`:
 
-   - `test_interleaved_insert_evict_match` — Insert 10 sequences; interleave `evict_mamba(1)` and `evict_full(1)` calls between each insert; verify `sanity_check()` passes after every operation. The `sanity_check()` method validates LRU list integrity end-to-end. [18] 
+   - `test_interleaved_insert_evict_match` — Insert 10 sequences; interleave `evict_mamba(1)` and `evict_full(1)` calls between each insert; verify `sanity_check()` passes after every operation. The `sanity_check()` method validates LRU list integrity end-to-end. [18]
 
-   - `test_tombstone_does_not_match_mamba` — Insert `[1,2,3]` with mamba state; evict its mamba state via `evict_mamba(1)` (creating a tombstone); then `match_prefix([1,2,3])` and assert `last_node.mamba_value is None` but KV indices are still returned. [19] 
+   - `test_tombstone_does_not_match_mamba` — Insert `[1,2,3]` with mamba state; evict its mamba state via `evict_mamba(1)` (creating a tombstone); then `match_prefix([1,2,3])` and assert `last_node.mamba_value is None` but KV indices are still returned. [19]
 
-   - `test_branching_seqlen_triggered` — Build a scenario where the KV cache hit extends past the last Mamba node (tombstone gap exists); call `match_prefix` and verify `result.mamba_branching_seqlen` is not None and is chunk-aligned. [20] 
+   - `test_branching_seqlen_triggered` — Build a scenario where the KV cache hit extends past the last Mamba node (tombstone gap exists); call `match_prefix` and verify `result.mamba_branching_seqlen` is not None and is chunk-aligned. [20]
 
-   - `test_cow_state_independence` — After COW, modify the original cached node's `mamba_value`; verify the copied state on the request is unaffected. This proves true copy semantics. [21] 
+   - `test_cow_state_independence` — After COW, modify the original cached node's `mamba_value`; verify the copied state on the request is unaffected. This proves true copy semantics. [21]
 
-   - `test_inc_dec_lock_ref_symmetry` — For a 3-node chain (root → A → B), call `inc_lock_ref(B)` and verify `full_lock_ref` propagates up to A and root, and `mamba_lock_ref` locks only B. Then `dec_lock_ref(B)` and verify all counters return to 0. [22] 
+   - `test_inc_dec_lock_ref_symmetry` — For a 3-node chain (root → A → B), call `inc_lock_ref(B)` and verify `full_lock_ref` propagates up to A and root, and `mamba_lock_ref` locks only B. Then `dec_lock_ref(B)` and verify all counters return to 0. [22]
 
-   - `test_full_evictable_and_protected_size_accounting` — After every `inc_lock_ref`, `dec_lock_ref`, insert, and evict, verify that `full_evictable_size() + full_protected_size()` equals the total tokens cached (i.e., sizes are always conserved). [23] 
+   - `test_full_evictable_and_protected_size_accounting` — After every `inc_lock_ref`, `dec_lock_ref`, insert, and evict, verify that `full_evictable_size() + full_protected_size()` equals the total tokens cached (i.e., sizes are always conserved). [23]
 
 **Pass criteria**: All tests green; `sanity_check()` passes after every test case (call it in `tearDown`).
 
@@ -152,13 +152,13 @@ Before any test, verify the install is healthy:
 
 **Goal**: Verify that the metadata constructed during each forward pass is correct for prefill, decode, and mixed batches.
 
-**Approach**: Write targeted unit tests against `Mamba2Metadata.prepare_decode()` and `Mamba2Metadata.prepare_mixed()` using synthetic `ForwardBatch` objects (no server needed). [24] 
+**Approach**: Write targeted unit tests against `Mamba2Metadata.prepare_decode()` and `Mamba2Metadata.prepare_mixed()` using synthetic `ForwardBatch` objects (no server needed). [24]
 
 **Tests to implement** (`test/registered/radix_cache/test_mamba_metadata.py`):
 
 - `test_prepare_decode_pure_decode_batch` — Verify `num_prefills=0`, `num_decodes=N`, `mixed_metadata=None`.
 - `test_prepare_mixed_prefill_only` — Verify `num_prefills=N`, `num_decodes=0`, `mixed_metadata` is populated.
-- `test_chunk_indices_offsets_correctness` — Use the static method `Mamba2Metadata._query_start_loc_to_chunk_indices_offsets` with the worked example from the docstring (`query_start_loc=[0,5,10]`, `chunk_size=8`) and assert `chunk_indices=[0,0,1]`, `chunk_offsets=[0,5,0]`. [25] 
+- `test_chunk_indices_offsets_correctness` — Use the static method `Mamba2Metadata._query_start_loc_to_chunk_indices_offsets` with the worked example from the docstring (`query_start_loc=[0,5,10]`, `chunk_size=8`) and assert `chunk_indices=[0,0,1]`, `chunk_offsets=[0,5,0]`. [25]
 - `test_has_initial_states_flag` — Provide `context_lens_tensor` with mixed zeros and non-zeros; verify `has_initial_states` tensor is correct and `prep_initial_states` is True only when any non-zero is present.
 - `test_mamba_cache_indices_preserved` — Verify `mamba_cache_indices` from the base `ForwardMetadata` is passed through unchanged to the produced `Mamba2Metadata`.
 
@@ -174,7 +174,7 @@ Before any test, verify the install is healthy:
 
 - `test_extra_buffer_alloc` — Verify that after `HybridReqToTokenPool.alloc([req])` with `enable_mamba_extra_buffer=True`, `req.mamba_ping_pong_track_buffer` is non-None and has the expected size (2 for non-speculative).
 - `test_extra_buffer_free_with_keep` — Verify `free_mamba_cache(req, mamba_ping_pong_track_buffer_to_keep=idx)` frees the main slot and all but one ping-pong slot, and the kept slot's tensor data is intact.
-- `test_cache_unfinished_req_extra_buffer` — Simulate the `cache_unfinished_req` code path by calling it on a mock req with `mamba_last_track_seqlen` set; verify `mamba_branching_seqlen` is cleared and `prefix_indices` is updated. [26] 
+- `test_cache_unfinished_req_extra_buffer` — Simulate the `cache_unfinished_req` code path by calling it on a mock req with `mamba_last_track_seqlen` set; verify `mamba_branching_seqlen` is cleared and `prefix_indices` is updated. [26]
 - `test_server_inference_extra_buffer_mode` — Do a basic inference request through the running server in `extra_buffer` mode; verify output correctness matches Phase 1 baseline for the same prompt at `temperature=0`.
 
 ---
@@ -191,7 +191,7 @@ Before any test, verify the install is healthy:
 - `test_restore_snapshot_state_equivalence` — Save a snapshot after turn N. Generate turn N+1 from the live state. Then restore the snapshot and re-generate turn N+1 from the restored state (at `temperature=0`). Assert the two outputs are identical — this proves state fidelity.
 - `test_restore_requires_idle_request` — Attempt to restore a snapshot while the request is in `running_batch`; verify `success=False` is returned gracefully.
 - `test_snapshot_disk_format` — After save, locate the `.safetensors` and `.json` metadata files on disk and verify they contain `conv_states` and `temporal_states` keys matching the expected layer count.
-- `test_snapshot_manager_tier_consistency` — Verify `TierManager` promotes/demotes snapshots between GPU, host (`MambaHostPool`), and disk tiers without data corruption. Write a small mock that exercises the tier transitions directly. [27] [28] 
+- `test_snapshot_manager_tier_consistency` — Verify `TierManager` promotes/demotes snapshots between GPU, host (`MambaHostPool`), and disk tiers without data corruption. Write a small mock that exercises the tier transitions directly. [27] [28]
 
 **HITL check**: Use the chat interface to generate a 3-turn conversation, save a snapshot after turn 2, then continue to turn 3. Restore the snapshot and ask a variation of turn 3's question; confirm the answer reflects only turns 1–2 context, not turn 3.
 

@@ -6,7 +6,6 @@ agent responses, and system updates via WebSocket.
 """
 
 import asyncio
-import json
 import logging
 from typing import Any, Dict, Optional
 
@@ -61,7 +60,10 @@ class WebSocketManager:
         logger.info("WebSocketManager initialized")
 
     async def connect(
-        self, websocket: WebSocket, connection_id: str, subscribe_to: Optional[list] = None
+        self,
+        websocket: WebSocket,
+        connection_id: str,
+        subscribe_to: Optional[list] = None,
     ):
         """
         Accept new WebSocket connection.
@@ -282,7 +284,7 @@ class StreamingToolExecutor:
                 tool_name=tool_name,
                 status=ToolExecutionStatus.ERROR,
                 error=str(e),
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
             )
 
 

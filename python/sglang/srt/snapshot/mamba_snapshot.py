@@ -7,7 +7,6 @@ using safetensors format, along with associated metadata tracking.
 
 import json
 import logging
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -127,7 +126,8 @@ class MambaSnapshotManager:
 
         # Only allow alphanumeric, underscore, hyphen, and period
         import re
-        if not re.match(r'^[a-zA-Z0-9_.-]+$', component):
+
+        if not re.match(r"^[a-zA-Z0-9_.-]+$", component):
             raise ValueError(
                 f"{name} contains invalid characters. "
                 f"Only alphanumeric, underscore, hyphen, and period are allowed. "
@@ -135,7 +135,7 @@ class MambaSnapshotManager:
             )
 
         # Prevent path traversal attempts
-        if '..' in component or component.startswith(('/', '\\')):
+        if ".." in component or component.startswith(("/", "\\")):
             raise ValueError(
                 f"{name} contains path traversal sequences. Got: {component}"
             )
@@ -410,7 +410,11 @@ class MambaSnapshotManager:
         turns = []
 
         for path in conv_dir.iterdir():
-            if path.is_file() and path.name.startswith("turn_") and path.suffix == ".json":
+            if (
+                path.is_file()
+                and path.name.startswith("turn_")
+                and path.suffix == ".json"
+            ):
                 turn_str = path.stem.replace("turn_", "").replace("_metadata", "")
                 try:
                     turn_num = int(turn_str)
@@ -584,7 +588,9 @@ class MambaSnapshotManager:
 
         # Extract temporal state
         # Shape: [num_layers, size+1, ...] -> extract [:, mamba_pool_idx, ...]
-        temporal_states = mamba_pool.mamba_cache.temporal[:, mamba_pool_idx].clone().cpu()
+        temporal_states = (
+            mamba_pool.mamba_cache.temporal[:, mamba_pool_idx].clone().cpu()
+        )
 
         logger.debug(
             f"Extracted state from pool idx {mamba_pool_idx}: "

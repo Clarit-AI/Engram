@@ -24,7 +24,11 @@ from sglang.srt.configs.mamba_utils import Mamba2CacheParams, Mamba2StateShape
 from sglang.srt.environ import envs
 from sglang.srt.managers.schedule_batch import Req
 from sglang.srt.mem_cache.allocator import TokenToKVPoolAllocator
-from sglang.srt.mem_cache.base_prefix_cache import EvictParams, InsertParams, MatchPrefixParams
+from sglang.srt.mem_cache.base_prefix_cache import (
+    EvictParams,
+    InsertParams,
+    MatchPrefixParams,
+)
 from sglang.srt.mem_cache.cache_init_params import CacheInitParams
 from sglang.srt.mem_cache.mamba_radix_cache import MambaRadixCache
 from sglang.srt.mem_cache.memory_pool import HybridLinearKVPool, HybridReqToTokenPool
@@ -56,7 +60,10 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
         self._rid_counter = itertools.count(1)
 
         self.full_attention_layer_ids = [
-            i for i in range(self.global_interval - 1, self.num_layers, self.global_interval)
+            i
+            for i in range(
+                self.global_interval - 1, self.num_layers, self.global_interval
+            )
         ]
         self.mamba_layers = [
             i for i in range(self.num_layers) if i not in self.full_attention_layer_ids
@@ -72,7 +79,9 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
                 state_size=128,
                 conv_kernel=4,
             )
-            self.mamba2_cache_params = Mamba2CacheParams(shape=shape, layers=self.mamba_layers)
+            self.mamba2_cache_params = Mamba2CacheParams(
+                shape=shape, layers=self.mamba_layers
+            )
 
         self.req_to_token_pool = HybridReqToTokenPool(
             size=self.max_num_reqs,
@@ -133,11 +142,13 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
         if req is None:
             req = self._make_dummy_req()
         kv = self.allocator.alloc(len(token_ids))
-        result = self.cache.insert(InsertParams(
-            key=RadixKey(token_ids),
-            value=kv,
-            mamba_value=req.mamba_pool_idx.unsqueeze(0),
-        ))
+        result = self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids),
+                value=kv,
+                mamba_value=req.mamba_pool_idx.unsqueeze(0),
+            )
+        )
         return req, result
 
     # -------------------------------------------------------------------------
@@ -181,20 +192,22 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
         # live mamba state → device_indices is empty (truncated to best_value_len=0).
         r1 = self.cache.match_prefix(MatchPrefixParams(key=RadixKey([1, 2, 3])))
         self.assertEqual(
-            len(r1.device_indices), 0,
-            "Tombstoned node should not contribute to device_indices"
+            len(r1.device_indices),
+            0,
+            "Tombstoned node should not contribute to device_indices",
         )
 
         # Matching [1,2,3,4]: passes through tombstone NodeA, ends at live NodeB=[4].
         # NodeB has mamba → best_value_len includes both nodes → KV for all 4 tokens.
         r2 = self.cache.match_prefix(MatchPrefixParams(key=RadixKey([1, 2, 3, 4])))
         self.assertEqual(
-            len(r2.device_indices), 4,
-            "Full path through tombstone to live mamba node should return all 4 KV indices"
+            len(r2.device_indices),
+            4,
+            "Full path through tombstone to live mamba node should return all 4 KV indices",
         )
         self.assertIsNotNone(
             r2.last_device_node.mamba_value,
-            "last_device_node should be the live mamba node [4], not the tombstone"
+            "last_device_node should be the live mamba node [4], not the tombstone",
         )
 
     # -------------------------------------------------------------------------
@@ -216,14 +229,29 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
         kv_C = torch.zeros(85, dtype=torch.int64)
 
         req_a = self._make_dummy_req()
-        self.cache.insert(InsertParams(key=RadixKey(token_ids_A), value=kv_A,
-                                       mamba_value=req_a.mamba_pool_idx.unsqueeze(0)))
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids_A),
+                value=kv_A,
+                mamba_value=req_a.mamba_pool_idx.unsqueeze(0),
+            )
+        )
         req_b = self._make_dummy_req()
-        self.cache.insert(InsertParams(key=RadixKey(token_ids_B), value=kv_B,
-                                       mamba_value=req_b.mamba_pool_idx.unsqueeze(0)))
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids_B),
+                value=kv_B,
+                mamba_value=req_b.mamba_pool_idx.unsqueeze(0),
+            )
+        )
         req_c = self._make_dummy_req()
-        self.cache.insert(InsertParams(key=RadixKey(token_ids_C), value=kv_C,
-                                       mamba_value=req_c.mamba_pool_idx.unsqueeze(0)))
+        self.cache.insert(
+            InsertParams(
+                key=RadixKey(token_ids_C),
+                value=kv_C,
+                mamba_value=req_c.mamba_pool_idx.unsqueeze(0),
+            )
+        )
 
         evict = self.cache.evict(EvictParams(num_tokens=0, mamba_num=2))
         self.assertGreaterEqual(evict.mamba_num_evicted, 2)
@@ -235,8 +263,9 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
         )
         chunk_size = 64  # default mamba_cache_chunk_size
         self.assertEqual(
-            match.mamba_branching_seqlen % chunk_size, 0,
-            "mamba_branching_seqlen must be chunk-aligned"
+            match.mamba_branching_seqlen % chunk_size,
+            0,
+            "mamba_branching_seqlen must be chunk-aligned",
         )
         self.assertEqual(match.mamba_branching_seqlen, 64)
 
@@ -261,21 +290,31 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
         match = self.cache.match_prefix(
             MatchPrefixParams(key=RadixKey([1, 2, 3]), req=req_cow, cow_mamba=True)
         )
-        self.assertIsNotNone(req_cow.mamba_pool_idx, "COW should allocate a mamba slot for req_cow")
+        self.assertIsNotNone(
+            req_cow.mamba_pool_idx, "COW should allocate a mamba slot for req_cow"
+        )
         cow_slot = req_cow.mamba_pool_idx.item()
 
         # Verify the copy has the sentinel value.
         copied_val = pool.mamba_cache.temporal[:, cow_slot].mean().item()
-        self.assertAlmostEqual(copied_val, 1.0, places=2,
-                               msg="COW'd copy should reflect original sentinel value")
+        self.assertAlmostEqual(
+            copied_val,
+            1.0,
+            places=2,
+            msg="COW'd copy should reflect original sentinel value",
+        )
 
         # Now overwrite the ORIGINAL cache node slot with zeros.
         pool.mamba_cache.temporal[:, node_slot] = 0.0
 
         # COW'd copy must be unaffected.
         copied_val_after = pool.mamba_cache.temporal[:, cow_slot].mean().item()
-        self.assertAlmostEqual(copied_val_after, 1.0, places=2,
-                               msg="Modifying original slot must not affect COW'd copy")
+        self.assertAlmostEqual(
+            copied_val_after,
+            1.0,
+            places=2,
+            msg="Modifying original slot must not affect COW'd copy",
+        )
 
     # -------------------------------------------------------------------------
     # Test 5: inc_lock_ref / dec_lock_ref symmetry on a 2-node chain
@@ -302,15 +341,27 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
 
         # Lock NodeB — full_lock_ref propagates to NodeA; mamba_lock_ref set on NodeB.
         self.cache.inc_lock_ref(node_b)
-        self.assertGreater(node_b.full_lock_ref, 0, "NodeB.full_lock_ref should be > 0 after inc")
-        self.assertGreater(node_a.full_lock_ref, 0, "NodeA.full_lock_ref should be > 0 after inc")
-        self.assertGreater(node_b.mamba_lock_ref, 0, "NodeB.mamba_lock_ref should be > 0 after inc")
+        self.assertGreater(
+            node_b.full_lock_ref, 0, "NodeB.full_lock_ref should be > 0 after inc"
+        )
+        self.assertGreater(
+            node_a.full_lock_ref, 0, "NodeA.full_lock_ref should be > 0 after inc"
+        )
+        self.assertGreater(
+            node_b.mamba_lock_ref, 0, "NodeB.mamba_lock_ref should be > 0 after inc"
+        )
 
         # Unlock — all lock refs must return to 0.
         self.cache.dec_lock_ref(node_b)
-        self.assertEqual(node_b.full_lock_ref, 0, "NodeB.full_lock_ref should be 0 after dec")
-        self.assertEqual(node_a.full_lock_ref, 0, "NodeA.full_lock_ref should be 0 after dec")
-        self.assertEqual(node_b.mamba_lock_ref, 0, "NodeB.mamba_lock_ref should be 0 after dec")
+        self.assertEqual(
+            node_b.full_lock_ref, 0, "NodeB.full_lock_ref should be 0 after dec"
+        )
+        self.assertEqual(
+            node_a.full_lock_ref, 0, "NodeA.full_lock_ref should be 0 after dec"
+        )
+        self.assertEqual(
+            node_b.mamba_lock_ref, 0, "NodeB.mamba_lock_ref should be 0 after dec"
+        )
 
     # -------------------------------------------------------------------------
     # Test 6: full_evictable_size + full_protected_size == total tokens in cache
@@ -334,8 +385,9 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
             prot = self.cache.full_protected_size()
             total = total_tokens_in_tree()
             self.assertEqual(
-                evict + prot, total,
-                f"{label}: evictable({evict}) + protected({prot}) != total({total})"
+                evict + prot,
+                total,
+                f"{label}: evictable({evict}) + protected({prot}) != total({total})",
             )
 
         check_conservation("initial (empty)")
@@ -349,7 +401,9 @@ class TestMambaRadixCacheGauntlet(unittest.TestCase):
         check_conservation("after insert [1,2,3,4,5]")
 
         # Lock NodeB (the leaf [4,5]) — moves its tokens + ancestor to protected.
-        match = self.cache.match_prefix(MatchPrefixParams(key=RadixKey([1, 2, 3, 4, 5])))
+        match = self.cache.match_prefix(
+            MatchPrefixParams(key=RadixKey([1, 2, 3, 4, 5]))
+        )
         node_b = match.last_device_node
         self.cache.inc_lock_ref(node_b)
         check_conservation("after inc_lock_ref(NodeB)")

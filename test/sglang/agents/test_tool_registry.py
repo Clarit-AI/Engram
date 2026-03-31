@@ -34,9 +34,7 @@ class TestToolRegistry:
         tool = Tool(
             name="double",
             description="Double a number",
-            parameters=[
-                ToolParameter("x", ToolParameterType.INTEGER, "Input number")
-            ],
+            parameters=[ToolParameter("x", ToolParameterType.INTEGER, "Input number")],
             function=test_func,
         )
 
@@ -174,6 +172,7 @@ class TestToolRegistry:
 
     def test_parameter_validation(self):
         """Test parameter validation."""
+
         def test_func(x: int, y: str):
             return f"{x}: {y}"
 

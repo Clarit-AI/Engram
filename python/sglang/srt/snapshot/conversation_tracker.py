@@ -307,9 +307,7 @@ class ConversationTracker:
         """
         with self._lock:
             return [
-                state
-                for state in self._conversations.values()
-                if state.tier == tier
+                state for state in self._conversations.values() if state.tier == tier
             ]
 
     def get_stats(self) -> dict:

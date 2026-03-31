@@ -4,12 +4,13 @@ Pytest fixtures for Mamba layer tests.
 This module provides common fixtures for testing Mamba SSM components.
 """
 
+from typing import Any, Dict
+
 import pytest
 import torch
-from typing import Dict, Any
 
-from sglang.srt.server_args import ServerArgs
 from sglang.srt.configs.model_config import ModelConfig
+from sglang.srt.server_args import ServerArgs
 
 
 @pytest.fixture
@@ -66,7 +67,10 @@ def mock_mamba_state(server_args_fixture: ServerArgs) -> torch.Tensor:
     d_conv = 4
 
     return torch.randn(
-        batch_size, num_layers, d_state, d_conv,
+        batch_size,
+        num_layers,
+        d_state,
+        d_conv,
         device=server_args_fixture.device,
         dtype=torch.float16,
     )

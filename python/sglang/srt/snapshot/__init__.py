@@ -27,14 +27,14 @@ from sglang.srt.snapshot.mamba_snapshot import (
 )
 
 try:
+    from sglang.srt.snapshot.conversation_tracker import (
+        ConversationState,
+        ConversationTier,
+        ConversationTracker,
+    )
+    from sglang.srt.snapshot.mamba_host_pool import HostPoolEntry, MambaHostPool
     from sglang.srt.snapshot.snapshot_hooks import SnapshotHookManager
     from sglang.srt.snapshot.snapshot_policy import SnapshotRetentionPolicy
-    from sglang.srt.snapshot.mamba_host_pool import MambaHostPool, HostPoolEntry
-    from sglang.srt.snapshot.conversation_tracker import (
-        ConversationTracker,
-        ConversationTier,
-        ConversationState,
-    )
     from sglang.srt.snapshot.tier_manager import TierManager
 except ImportError:
     # Allow partial imports during development

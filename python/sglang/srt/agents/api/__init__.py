@@ -19,23 +19,23 @@ agent framework is enabled via --enable-agent-tools.
 """
 
 from sglang.srt.agents.api.models import (
+    ConversationListResponse,
+    MemoryRecallRequest,
+    MemoryStoreRequest,
+    TierStatsResponse,
     ToolCallRequest,
     ToolCallResponse,
-    MemoryStoreRequest,
-    MemoryRecallRequest,
-    ConversationListResponse,
-    TierStatsResponse,
 )
 
 try:
     from sglang.srt.agents.api.handlers import (
-        register_agent_api_routes,
         AgentAPIHandler,
+        register_agent_api_routes,
     )
     from sglang.srt.agents.api.websocket import (
-        register_websocket_routes,
-        WebSocketManager,
         StreamingToolExecutor,
+        WebSocketManager,
+        register_websocket_routes,
     )
 except ImportError:
     # Allow partial imports during development

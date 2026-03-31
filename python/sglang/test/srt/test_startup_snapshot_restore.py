@@ -8,7 +8,10 @@ os.environ.setdefault("HOME", "/tmp")
 os.environ.setdefault("XDG_CACHE_HOME", "/tmp")
 
 from sglang.srt.managers.scheduler import Scheduler
-from sglang.srt.snapshot.conversation_tracker import ConversationTier, ConversationTracker
+from sglang.srt.snapshot.conversation_tracker import (
+    ConversationTier,
+    ConversationTracker,
+)
 from sglang.srt.snapshot.mamba_host_pool import MambaHostPool
 from sglang.srt.snapshot.mamba_snapshot import (
     MambaSnapshotManager,
@@ -91,13 +94,17 @@ def test_scheduler_restore_snapshots_on_startup_guard_and_delegate(tmp_path):
     with patch(
         "sglang.srt.snapshot.tier_manager.restore_latest_snapshots_to_warm_tier"
     ) as restore_mock:
-        _build_scheduler(snapshot_manager, None, conversation_tracker).restore_snapshots_on_startup()
+        _build_scheduler(
+            snapshot_manager, None, conversation_tracker
+        ).restore_snapshots_on_startup()
         restore_mock.assert_not_called()
 
     with patch(
         "sglang.srt.snapshot.tier_manager.restore_latest_snapshots_to_warm_tier"
     ) as restore_mock:
-        _build_scheduler(snapshot_manager, tier_manager, None).restore_snapshots_on_startup()
+        _build_scheduler(
+            snapshot_manager, tier_manager, None
+        ).restore_snapshots_on_startup()
         restore_mock.assert_not_called()
 
     with patch(
@@ -136,7 +143,10 @@ def test_restore_snapshots_on_startup_continues_after_failure(tmp_path, caplog):
     assert host_pool.has_state("healthy")
     assert conversation_tracker.get_tier("healthy") == ConversationTier.WARM
     assert "Failed to restore conversation broken on startup" in caplog.text
-    assert "Startup restore complete: 1/2 conversation(s) pre-loaded to WARM tier" in caplog.text
+    assert (
+        "Startup restore complete: 1/2 conversation(s) pre-loaded to WARM tier"
+        in caplog.text
+    )
 
 
 def test_save_to_warm_tier_registers_untracked_conversation(tmp_path):
