@@ -192,6 +192,16 @@ def is_musa() -> bool:
     return hasattr(torch.version, "musa") and torch.version.musa is not None
 
 
+@lru_cache(maxsize=1)
+def is_mps() -> bool:
+    return torch.backends.mps.is_available()
+
+
+def get_numa_node(gpu_id):
+    """Return the NUMA node for gpu_id, or None if unavailable."""
+    return None
+
+
 def is_float4_e2m1fn_x2(dtype) -> bool:
     """Check if dtype is float4_e2m1fn_x2 and CUDA is available."""
     target_dtype = getattr(torch, "float4_e2m1fn_x2", None)
