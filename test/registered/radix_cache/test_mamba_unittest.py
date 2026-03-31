@@ -295,7 +295,6 @@ class TestMamba(unittest.TestCase):
         )
 
         print(tree.available_and_evictable_str())
-        print(available_and_evictable_str(tree))
         tree.sanity_check()
 
     def _setup_tree_and_allocator(self):

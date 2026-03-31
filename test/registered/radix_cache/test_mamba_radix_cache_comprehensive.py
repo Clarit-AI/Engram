@@ -526,10 +526,11 @@ class TestMambaRadixCacheComprehensive(unittest.TestCase):
         token_ids_B = list(range(75))  # [0..74]  — 75 tokens (= A + 10)
         token_ids_C = list(range(85))  # [0..84]  — 85 tokens (= B + 10)
 
-        # Fake KV tensors — value does not matter for branching_seqlen correctness.
-        kv_A = torch.zeros(65, dtype=torch.int64)
-        kv_B = torch.zeros(75, dtype=torch.int64)
-        kv_C = torch.zeros(85, dtype=torch.int64)
+        # Fake KV tensors on device — upstream _insert_helper may free duplicate
+        # KV pages during insert, so tensors must be on the allocator's device.
+        kv_A = torch.zeros(65, dtype=torch.int64, device=self.device)
+        kv_B = torch.zeros(75, dtype=torch.int64, device=self.device)
+        kv_C = torch.zeros(85, dtype=torch.int64, device=self.device)
 
         req_a = self._make_dummy_req()
         self.cache.insert(
