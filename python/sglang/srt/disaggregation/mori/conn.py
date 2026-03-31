@@ -35,12 +35,8 @@ from sglang.srt.disaggregation.common.conn import (
 from sglang.srt.disaggregation.common.utils import group_concurrent_contiguous
 from sglang.srt.disaggregation.utils import DisaggregationMode
 from sglang.srt.server_args import ServerArgs
-from sglang.srt.utils.common import (
-    format_tcp_address,
-    get_int_env_var,
-    get_local_ip_auto,
-    is_valid_ipv6_address,
-)
+from sglang.srt.utils.common import get_int_env_var
+from sglang.srt.utils.network import NetworkAddress, get_local_ip_auto
 
 logger = logging.getLogger(__name__)
 MORI_GUARD = b"MoriMsgGuard"

@@ -63,10 +63,10 @@ from sglang.srt.utils.common import (
     nullable_str,
     parse_connector_type,
     torch_release,
-    wait_port_available,
     xpu_has_xmx_support,
 )
 from sglang.srt.utils.hf_transformers_utils import check_gguf_file
+from sglang.srt.utils.network import NetworkAddress, get_free_port, wait_port_available
 from sglang.utils import is_in_ci
 
 logger = logging.getLogger(__name__)

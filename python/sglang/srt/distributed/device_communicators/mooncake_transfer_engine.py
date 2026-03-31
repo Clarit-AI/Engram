@@ -4,7 +4,7 @@ import os
 from typing import List, Optional
 
 from sglang.srt.environ import envs
-from sglang.srt.utils import get_free_port, maybe_wrap_ipv6_address
+from sglang.srt.utils.network import NetworkAddress, get_free_port
 
 logger = logging.getLogger(__name__)
 

@@ -16,12 +16,7 @@ from torch.distributed import ProcessGroup
 from zmq import IPV6  # type: ignore
 from zmq import SUB, SUBSCRIBE, XPUB, XPUB_VERBOSE, Context  # type: ignore
 
-from sglang.srt.utils import (
-    format_tcp_address,
-    get_local_ip_auto,
-    get_open_port,
-    is_valid_ipv6_address,
-)
+from sglang.srt.utils.network import NetworkAddress, get_local_ip_auto, get_open_port
 
 # SGLANG_RINGBUFFER_WARNING_INTERVAL can be set to 60
 SGLANG_RINGBUFFER_WARNING_INTERVAL = int(

@@ -155,7 +155,6 @@ from sglang.srt.utils import (
     enable_show_time_cost,
     get_available_gpu_memory,
     get_cpu_ids_by_node,
-    get_local_ip_auto,
     init_custom_process_group,
     is_hip,
     is_host_cpu_arm64,
@@ -169,6 +168,7 @@ from sglang.srt.utils import (
     set_cuda_arch,
     slow_rank_detector,
 )
+from sglang.srt.utils.network import get_local_ip_auto
 from sglang.srt.utils.nvtx_pytorch_hooks import PytHooks
 from sglang.srt.utils.offloader import (
     create_offloader_from_server_args,
