@@ -8,10 +8,7 @@ import time
 
 import pytest
 
-from sglang.srt.agents.tool_execution import (
-    ToolExecutionEngine,
-    ToolExecutionStatus,
-)
+from sglang.srt.agents.tool_execution import ToolExecutionEngine, ToolExecutionStatus
 from sglang.srt.agents.tool_registry import (
     Tool,
     ToolParameter,

@@ -146,7 +146,7 @@ def __get_host_id() -> str:
         try:
             with open("/etc/machine-id", "r") as f:
                 return f.read().strip()
-        except:
+        except (OSError, UnicodeError):
             pass
 
     mac = uuid.getnode()

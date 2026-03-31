@@ -4,14 +4,20 @@ import subprocess
 import time
 import unittest
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional
 
 import requests
 import zmq
 
 from sglang import Engine
-from sglang.srt.observability.trace import *
-from sglang.srt.observability.trace import get_cur_time_ns, set_global_trace_level
+from sglang.srt.observability.trace import (
+    TraceReqContext,
+    TraceSliceContext,
+    get_cur_time_ns,
+    process_tracing_init,
+    set_global_trace_level,
+    trace_set_thread_info,
+)
 from sglang.srt.utils import kill_process_tree
 from sglang.srt.utils.network import get_zmq_socket
 from sglang.test.test_utils import (
@@ -26,7 +32,7 @@ from sglang.test.test_utils import (
 @dataclass
 class Req:
     rid: int
-    req_context: Optional[Union[TraceReqContext]] = None
+    req_context: Optional[TraceReqContext] = None
 
 
 class TestTrace(CustomTestCase):
