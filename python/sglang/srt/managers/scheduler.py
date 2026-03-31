@@ -3735,7 +3735,6 @@ class Scheduler(
             nodes_pinned=nodes_pinned,
             message=msg,
         )
->>>>>>> 50953aea8 ([Scheduler] Unify idle checks into `is_fully_idle()` and fix weight update test (#20296))
 
     def flush_cache(self):
         """Flush the memory pool and cache."""
