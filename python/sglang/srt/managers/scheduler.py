@@ -119,6 +119,8 @@ from sglang.srt.managers.io_struct import (
     LoadLoRAAdapterReqOutput,
     OpenSessionReqInput,
     PauseGenerationReqInput,
+    PinPrefixReqInput,
+    PinPrefixReqOutput,
     ProfileReq,
     ReleaseMemoryOccupationReqInput,
     RestoreSnapshotReqInput,
