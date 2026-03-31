@@ -60,7 +60,19 @@ if _is_npu:
     import torch_npu
 
 if _is_cuda:
-    from sgl_kernel import awq_dequantize, awq_marlin_moe_repack, awq_marlin_repack
+    from sgl_kernel import awq_dequantize
+
+    try:
+        from sglang.jit_kernel.awq_marlin_repack import (
+            awq_marlin_moe_repack,
+            awq_marlin_repack,
+        )
+    except ImportError:
+        try:
+            from sgl_kernel import awq_marlin_moe_repack, awq_marlin_repack
+        except ImportError:
+            awq_marlin_moe_repack = None
+            awq_marlin_repack = None
 
 
 elif _is_hip:
