@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Optional, Union
 
+from sglang.srt.constants import HEALTH_CHECK_RID_PREFIX
 from sglang.srt.managers.io_struct import EmbeddingReqInput, GenerateReqInput
 from sglang.srt.server_args import ServerArgs
 
@@ -87,6 +88,7 @@ class FileRequestMetricsExporter(RequestMetricsExporter):
 
         # File handler state management
         self._current_file_handler = None
+        self._current_file_lock = asyncio.Lock()
         self._current_hour_suffix = None
 
     def _ensure_file_handler(self, hour_suffix: str):
@@ -127,7 +129,7 @@ class FileRequestMetricsExporter(RequestMetricsExporter):
         self, obj: Union[GenerateReqInput, EmbeddingReqInput], out_dict: dict
     ):
         # Do not log health check requests, since they don't represent real user requests.
-        if isinstance(obj.rid, str) and "HEALTH_CHECK" in obj.rid:
+        if isinstance(obj.rid, str) and HEALTH_CHECK_RID_PREFIX in obj.rid:
             return
 
         try:
@@ -135,20 +137,21 @@ class FileRequestMetricsExporter(RequestMetricsExporter):
             current_time = datetime.now()
             hour_suffix = current_time.strftime("%Y%m%d_%H")
 
-            # Ensure correct file handler is open for current hour
-            self._ensure_file_handler(hour_suffix)
+            async with self._current_file_lock:
+                # Ensure correct file handler is open for current hour
+                self._ensure_file_handler(hour_suffix)
 
-            if self._current_file_handler is None:
-                return
+                if self._current_file_handler is None:
+                    return
 
-            metrics_data = self._format_output_data(obj, out_dict)
+                metrics_data = self._format_output_data(obj, out_dict)
 
-            def write_file():
-                json.dump(metrics_data, self._current_file_handler)
-                self._current_file_handler.write("\n")
-                self._current_file_handler.flush()
+                def write_file():
+                    json.dump(metrics_data, self._current_file_handler)
+                    self._current_file_handler.write("\n")
+                    self._current_file_handler.flush()
 
-            await asyncio.to_thread(write_file)
+                await asyncio.to_thread(write_file)
         except Exception as e:
             logger.exception(f"Failed to write perf metrics to file: {e}")
 

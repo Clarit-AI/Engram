@@ -8,7 +8,7 @@ import pickle
 import time
 import traceback
 from http import HTTPStatus
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import aiohttp
 import numpy as np
@@ -25,7 +25,9 @@ from sglang.srt.configs.load_config import LoadConfig
 from sglang.srt.configs.model_config import ModelConfig
 from sglang.srt.disaggregation.encode_receiver import EmbeddingData
 from sglang.srt.distributed.parallel_state import (
+    get_default_distributed_backend,
     get_mooncake_transfer_engine,
+    get_tp_group,
     init_distributed_environment,
     initialize_model_parallel,
 )
@@ -47,7 +49,12 @@ from sglang.srt.utils import (
     load_video,
     random_uuid,
 )
-from sglang.srt.utils.network import config_socket, get_local_ip_auto, get_zmq_socket
+from sglang.srt.utils.network import (
+    NetworkAddress,
+    config_socket,
+    get_local_ip_auto,
+    get_zmq_socket,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +209,7 @@ class MMEncoder:
         self._build_vision_config(server_args.mm_process_config)
 
         init_distributed_environment(
+            backend=get_default_distributed_backend(self.device),
             world_size=server_args.tp_size,
             rank=rank,
             distributed_init_method=dist_init_method,
@@ -258,6 +266,7 @@ class MMEncoder:
 
             if self.server_args.encoder_transfer_backend == "mooncake":
                 self.local_ip = get_local_ip_auto()
+
                 self.engine = get_mooncake_transfer_engine()
                 if self.engine is None:
                     from sglang.srt.distributed.device_communicators.mooncake_transfer_engine import (
@@ -274,7 +283,6 @@ class MMEncoder:
                     )
 
             self.embedding_to_send = dict()
-            self.background_tasks: Set[asyncio.Task] = set()
 
         logger.info(f"rank {rank} init finish ")
 
@@ -427,8 +435,13 @@ class MMEncoder:
             return data
         try:
             if modality == Modality.IMAGE:
-                img, _ = load_image(data)
-                if discard_alpha_channel and img.mode != "RGB":
+                img, _ = load_image(data, False)
+                if (
+                    discard_alpha_channel
+                    and not isinstance(img, torch.Tensor)
+                    and img.mode != "RGB"
+                ):
+                    # Needed only when `img` is a PIL image
                     img = img.convert("RGB")
                 return img
             elif modality == Modality.VIDEO:
@@ -999,11 +1012,10 @@ class MMEncoder:
             mm_data.embedding = None
 
         # Send ack/data
-        endpoint = (
-            f"tcp://{url}"
-            if url is not None
-            else f"tcp://{prefill_host}:{embedding_port}"
-        )
+        if url is not None:
+            endpoint = NetworkAddress.parse(url).to_tcp()
+        else:
+            endpoint = NetworkAddress(prefill_host, embedding_port).to_tcp()
         logger.info(f"{endpoint = }")
 
         # Serialize data
@@ -1300,9 +1312,12 @@ def launch_server(server_args: ServerArgs):
     ipc_path_prefix = random_uuid()
     port_args = PortArgs.init_new(server_args)
     if server_args.dist_init_addr:
-        dist_init_method = f"tcp://{server_args.dist_init_addr}"
+        na = NetworkAddress.parse(server_args.dist_init_addr)
+        dist_init_method = na.to_tcp()
     else:
-        dist_init_method = f"tcp://127.0.0.1:{port_args.nccl_port}"
+        dist_init_method = NetworkAddress(
+            server_args.host or "127.0.0.1", port_args.nccl_port
+        ).to_tcp()
     for rank in range(1, server_args.tp_size):
         schedule_path = f"ipc:///tmp/{ipc_path_prefix}_schedule_{rank}"
         send_sockets.append(

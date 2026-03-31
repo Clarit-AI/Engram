@@ -7,7 +7,6 @@ from typing import List, Union
 import numpy as np
 import torch
 import torchvision
-from decord import VideoReader
 from PIL import Image
 from torchvision.transforms import InterpolationMode
 
@@ -26,7 +25,10 @@ from sglang.srt.models.qwen3_vl_moe import Qwen3VLMoeForConditionalGeneration
 from sglang.srt.multimodal.processors.base_processor import (
     BaseMultimodalProcessor as SGLangBaseProcessor,
 )
-from sglang.srt.multimodal.processors.base_processor import MultimodalSpecialTokens
+from sglang.srt.multimodal.processors.base_processor import (
+    MultimodalSpecialTokens,
+)
+from sglang.srt.utils.video_decoder import VideoDecoderWrapper
 from sglang.utils import logger
 
 IMAGE_FACTOR = 28
@@ -154,19 +156,22 @@ async def preprocess_video(
     video_config: dict = {},
 ) -> torch.Tensor:
     # preprocessed video
-    if not isinstance(vr, VideoReader):
+    is_video_obj = isinstance(vr, VideoDecoderWrapper)
+    if not is_video_obj:
         return vr
     entry_time = time.perf_counter()
 
-    total_frames, video_fps = len(vr), vr.get_avg_fps()
+    total_frames, video_fps = len(vr), vr.avg_fps
+
     nframes = smart_nframes(
         video_config, total_frames=total_frames, video_fps=video_fps
     )
     idx = np.linspace(0, total_frames - 1, num=nframes, dtype=np.int64)
     idx = np.unique(idx)
-    video_np = vr.get_batch(idx).asnumpy()
-    video = torch.from_numpy(video_np).pin_memory()
-    video = video.permute(0, 3, 1, 2)  # Convert to TCHW format
+
+    video = vr.get_frames_as_tensor(idx.tolist())
+
+    video = video.permute(0, 3, 1, 2)  # NHWC -> TCHW
 
     nframes, _, height, width = video.shape
     min_pixels = video_config.get("min_pixels", VIDEO_MIN_PIXELS)
@@ -363,6 +368,31 @@ class QwenVLImageProcessor(SGLangBaseProcessor):
             input_ids.extend(prompt[cur_idx:])
 
         return input_ids, offsets, modality_list
+
+    def compute_mrope_positions(self, input_ids, mm_items):
+        image_grid_thw = None
+        video_grid_thw = None
+        for item in mm_items:
+            if "image_grid_thw" in item.model_specific_data:
+                image_grid_thw = item.model_specific_data["image_grid_thw"]
+            if "video_grid_thw" in item.model_specific_data:
+                video_grid_thw = item.model_specific_data["video_grid_thw"]
+
+        input_ids_tensor = torch.tensor(input_ids, dtype=torch.long).unsqueeze(0)
+        mrope_positions, mrope_position_delta = MRotaryEmbedding.get_rope_index(
+            spatial_merge_size=self.hf_config.vision_config.spatial_merge_size,
+            image_token_id=self.mm_tokens.image_token_id,
+            video_token_id=self.mm_tokens.video_token_id,
+            vision_start_token_id=self.vision_start_token_id,
+            model_type=self.model_type,
+            tokens_per_second=getattr(
+                self.hf_config.vision_config, "tokens_per_second", None
+            ),
+            input_ids=input_ids_tensor,
+            image_grid_thw=image_grid_thw,
+            video_grid_thw=video_grid_thw,
+        )
+        return mrope_positions.squeeze(1), mrope_position_delta
 
     def get_mm_data(self, prompt, embeddings, **kwargs):
         img_grid_thw = kwargs.get("img_grid_thw", None)

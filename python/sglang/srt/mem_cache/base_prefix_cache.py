@@ -144,6 +144,7 @@ class MatchResult(NamedTuple):
     last_host_node: Any
     host_hit_length: int = 0
     mamba_branching_seqlen: Optional[int] = None
+    cache_protected_len: Optional[int] = None
 
 
 class BasePrefixCache(ABC, PrefixCacheTrait):
@@ -190,11 +191,13 @@ class BasePrefixCache(ABC, PrefixCacheTrait):
         pass
 
     @abstractmethod
-    def inc_lock_ref(self, node: Any):
+    def inc_lock_ref(self, node: Any) -> IncLockRefResult:
         pass
 
     @abstractmethod
-    def dec_lock_ref(self, node: Any, swa_uuid_for_lock: Optional[str] = None):
+    def dec_lock_ref(
+        self, node: Any, params: Optional[DecLockRefParams] = None
+    ) -> DecLockRefResult:
         pass
 
     def evictable_size(self):
@@ -223,8 +226,7 @@ class BasePrefixCache(ABC, PrefixCacheTrait):
 
     def init_load_back(
         self,
-        last_host_node: Any,
-        host_hit_length: int,
+        params: InitLoadBackParams,
     ) -> Tuple[torch.Tensor, Any]:
         """
         Preparing KV cache loading from host to device.
@@ -236,6 +238,14 @@ class BasePrefixCache(ABC, PrefixCacheTrait):
         Notify the cache controller to start the KV cache loading
         """
         raise NotImplementedError()
+
+    def flush_write_through_acks(self) -> None:
+        """Release lock_ref on radix-tree nodes whose write-through has completed.
+
+        Lightweight operation that only processes finished write acks.
+        No-op for caches without hierarchical write-through support.
+        """
+        pass
 
     def check_hicache_events(self) -> Any:
         """
@@ -257,3 +267,8 @@ class BasePrefixCache(ABC, PrefixCacheTrait):
 
     def is_tree_cache(self) -> bool:
         return not self.is_chunk_cache()
+
+    def available_and_evictable_str(self) -> str:
+        available_size = self.token_to_kv_pool_allocator.available_size()
+        evictable_size = self.evictable_size()
+        return f"Available tokens: {available_size + evictable_size} ({available_size=} + {evictable_size=})\n"

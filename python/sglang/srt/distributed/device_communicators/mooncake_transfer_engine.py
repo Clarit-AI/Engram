@@ -117,9 +117,9 @@ class MooncakeTransferEngine:
             hostname=self.hostname,
             device_name=self.ib_device,
         )
-        self.session_id = (
-            f"{maybe_wrap_ipv6_address(self.hostname)}:{self.engine.get_rpc_port()}"
-        )
+        self.session_id = NetworkAddress(
+            self.hostname, self.engine.get_rpc_port()
+        ).to_host_port_str()
 
     def register(self, ptr, length):
         try:
