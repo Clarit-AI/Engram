@@ -493,6 +493,31 @@ class SchedulerOutputProcessorMixin:
                     req.multimodal_inputs.release_features()
                 self.maybe_collect_routed_experts(req)
 
+                # Snapshot Mamba state BEFORE freeing the pool slot.
+                # _trigger_snapshot_hooks (called later) fires after free_mamba_cache
+                # has already set mamba_pool_idx = None, so it misses finished reqs.
+                # We snapshot here while the state is still live in the pool.
+                if (
+                    getattr(self, "snapshot_hook_manager", None) is not None
+                    and hasattr(req, "mamba_pool_idx")
+                    and req.mamba_pool_idx is not None
+                ):
+                    _mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+                    if _mamba_pool is not None:
+                        _fill_ids = getattr(req, "fill_ids", None)
+                        _turn_number = (
+                            len(_fill_ids)
+                            if _fill_ids is not None and hasattr(_fill_ids, "__len__")
+                            else len(req.output_ids)
+                        )
+                        self.snapshot_hook_manager.trigger_post_forward(
+                            req=req,
+                            mamba_pool=_mamba_pool,
+                            req_pool=self.req_to_token_pool,
+                            turn_number=_turn_number,
+                            additional_context=None,
+                        )
+
                 if self.server_args.disaggregation_decode_enable_offload_kvcache:
                     # Asynchronously offload KV cache; release_kv_cache will be called after Device->Host transfer completes
                     if not self.decode_offload_manager.offload_kv_cache(req):
@@ -992,6 +1017,48 @@ class SchedulerOutputProcessorMixin:
         for req in reqs:
             if req is skip_req:
                 continue
+
+            # Stateful-generate requests (created by restore_snapshot with continuation_ids)
+            # have no pending HTTP connection; route their final output via the snapshot
+            # result channel and skip all normal BatchTokenIDOut output.
+            if getattr(req, "_stateful_generate", False):
+                if req.finished() and not getattr(req, "finished_output", False):
+                    req.finished_output = True
+                    from sglang.srt.managers.io_struct import RestoreSnapshotReqOutput
+
+                    # Derive success from the actual finish reason, not always True.
+                    # A request that finished due to error/abort should report success=False.
+                    finish_reason = getattr(req, "finished_reason", None)
+                    success = True
+                    if finish_reason is not None:
+                        # Check if finish_reason indicates failure (abort, error, etc.)
+                        # BaseFinishReason has a 'type' field: 'abort', 'length', 'matched_token', 'matched_str', 'matched_regex'
+                        from sglang.srt.managers.schedule_batch import BaseFinishReason
+
+                        if isinstance(finish_reason, BaseFinishReason):
+                            if (
+                                hasattr(finish_reason, "type")
+                                and finish_reason.type == "abort"
+                            ):
+                                success = False
+
+                    # Use output_ids_through_stop to match the normal /generate path behavior
+                    # (stop tokens are trimmed from the output).
+                    output_ids = list(req.output_ids_through_stop)
+
+                    self.send_to_tokenizer.send_output(
+                        RestoreSnapshotReqOutput(
+                            success=success,
+                            rid=req.rid,
+                            output_ids=output_ids,
+                        )
+                    )
+                continue
+
+            # Multimodal partial stream chunks break the detokenizer, so drop aborted requests here.
+            if self.model_config.is_multimodal_gen and req.to_finish:
+                continue
+
 
             if req.finished():
                 if req.finished_output:

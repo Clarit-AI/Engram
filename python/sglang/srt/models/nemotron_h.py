@@ -912,4 +912,6 @@ def nemotron_mamba2_with_output(
 
     # Copy result back; output may be larger (padded) so only fill actual tokens
     output[:num_actual_tokens].view(ret.shape).copy_(ret)
+    if output.shape[0] > num_actual_tokens:
+        output[num_actual_tokens:].zero_()
     return

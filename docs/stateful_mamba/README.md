@@ -149,6 +149,7 @@ This documentation is organized as follows:
 
 - **[User Guide](user_guide.md)**: Comprehensive guide for using snapshot features
 - **[API Reference](api_reference.md)**: Detailed API documentation for all snapshot-related classes and methods
+- **[HTTP API Spec](http_api_spec.md)**: Server-facing snapshot endpoint spec with client integration examples
 - **[Architecture](architecture.md)**: Technical deep-dive into the snapshot system design
 - **[Examples](examples.md)**: Real-world examples and tutorials
 - **[Migration Guide](migration_guide.md)**: How to enable snapshots in existing applications

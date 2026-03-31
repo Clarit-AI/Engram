@@ -1,4 +1,4 @@
-# Phase 8 — Gauntlet / Stress Tests
+# Phase 9 — Gauntlet / Stress Tests
 
 ## Purpose
 
@@ -8,7 +8,7 @@ Break things under load to surface race conditions, memory leaks, eviction polic
 
 ## Prerequisites
 
-- **All prior phases complete** (Phases 0–7 must pass before running stress tests)
+- **All prior phases complete** (Phases 0–8 must pass before running stress tests)
 - Model checkpoint available at `$MODEL_PATH`
 - At least 20 GB VRAM free (stress tests may push near memory limits)
 - At least 50 GB disk space (for snapshot stress tests)
@@ -35,7 +35,7 @@ python -m sglang.launch_server \
     --model-path $MODEL_PATH \
     --port $SERVER_PORT \
     --mamba-scheduler-strategy no_buffer \
-    > /tmp/phase8_server.log 2>&1 &
+    > /tmp/phase9_server.log 2>&1 &
 
 export SERVER_PID=$!
 
@@ -78,7 +78,7 @@ Create `test/registered/radix_cache/test_mamba_gauntlet_stress.py` using the str
 # Stress tests may take 10–30 minutes
 SERVER_URL=http://localhost:$SERVER_PORT \
 python -m pytest test/registered/radix_cache/test_mamba_gauntlet_stress.py \
-    -v --timeout=600 2>&1 | tee /tmp/phase8_stress.log
+    -v --timeout=600 2>&1 | tee /tmp/phase9_stress.log
 ```
 
 ### Task 3: Monitor server health during stress
@@ -97,7 +97,7 @@ done
 ```bash
 # Check for CUDA errors, OOM, assertion failures, lock ref violations
 grep -i "cuda error\|out of memory\|oom\|assertion\|traceback\|lock_ref\|sanity" \
-    /tmp/phase8_server.log | head -100
+    /tmp/phase9_server.log | head -100
 
 # Check if server is still responsive after stress
 curl -s "$SERVER_URL/health"
@@ -295,9 +295,9 @@ if __name__ == "__main__":
 ## Write Report
 
 ```bash
-REPORT="$RESULTS_DIR/phase-08-${MODEL_NAME}-$(date +%Y%m%d-%H%M).md"
+REPORT="$RESULTS_DIR/phase-09-${MODEL_NAME}-$(date +%Y%m%d-%H%M).md"
 cat > "$REPORT" << 'EOF'
-# Phase 8 — Gauntlet / Stress Tests
+# Phase 9 — Gauntlet / Stress Tests
 **Model**: granite-4.0-h-tiny
 **Date**: <date>
 **Duration**: <total runtime>
@@ -335,7 +335,7 @@ echo "Report written to $REPORT"
 ## Reporting
 
 ```text
-PHASE 8 RESULT: PASS | FAIL
+PHASE 9 RESULT: PASS | FAIL
 Tests run: 6+  Passed: X  Failed: Y
 Server healthy post-stress: YES | NO
 CUDA errors: NONE | <count>

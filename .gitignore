@@ -272,3 +272,17 @@ sgl-kernel/csrc/**/*_musa/
 *.glb
 *.ply
 *.npz
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads/*.db
+.beads-credential-key
+
+# VM migration context (local only, not for commit)
+docs/migration-prep/
+
+# Runtime state files
+.remember/tmp/
+
+# Beads / Dolt files (added by bd init)
+*.db
