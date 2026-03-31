@@ -119,6 +119,8 @@ from sglang.srt.managers.io_struct import (
     LoadLoRAAdapterReqOutput,
     OpenSessionReqInput,
     PauseGenerationReqInput,
+    PinPrefixReqInput,
+    PinPrefixReqOutput,
     ProfileReq,
     ReleaseMemoryOccupationReqInput,
     RestoreSnapshotReqInput,
@@ -205,7 +207,8 @@ from sglang.srt.utils import (
     get_available_gpu_memory,
     get_bool_env_var,
     get_int_env_var,
-    get_zmq_socket,
+    get_numa_node,
+    is_mps,
     kill_itself_when_parent_died,
     numa_bind_to_node,
     point_to_point_pyobj,
@@ -219,6 +222,7 @@ from sglang.srt.utils.hf_transformers_utils import (
     get_tokenizer,
     get_tokenizer_from_processor,
 )
+from sglang.srt.utils.network import get_zmq_socket
 from sglang.srt.utils.torch_memory_saver_adapter import TorchMemorySaverAdapter
 from sglang.utils import TypeBasedDispatcher, get_exception_traceback
 
@@ -776,7 +780,8 @@ class Scheduler(
         # The last forward batch
         self.last_batch: Optional[ScheduleBatch] = None
         self.forward_ct = 0
-        self.return_health_check_ct = 0
+        self.return_health_check_ipcs: Deque[Optional[str]] = deque()
+        self._pending_flush: Optional[Tuple[FlushCacheReqInput, float]] = None
         self.num_retracted_reqs: int = 0
         self.num_paused_reqs: int = 0
         self.session_controller = SessionController(self.tree_cache)
@@ -2390,12 +2395,9 @@ class Scheduler(
         now = time.monotonic()
         self.session_controller.maybe_reap(now)
         for recv_req in recv_reqs:
-            # If it is a health check generation request and there are running requests, ignore it.
-            if is_health_check_generate_req(recv_req) and (
-                self.chunked_req is not None
-                or self.dllm_manager.any_staging_reqs()
-                or not self.running_batch.is_empty()
-                or len(self.offload_tags) > 0
+            # Skip health check when server is busy — ongoing requests already carry health info.
+            if is_health_check_generate_req(recv_req) and not self.is_fully_idle(
+                for_health_check=True
             ):
                 self.return_health_check_ct += 1
                 continue
@@ -2407,6 +2409,8 @@ class Scheduler(
                 else:
                     if self.recv_from_rpc is not None:
                         self.recv_from_rpc.send_pyobj(output)
+
+        self._check_pending_flush()
 
     def init_req_max_new_tokens(self, req):
         req.sampling_params.max_new_tokens = min(
@@ -2999,7 +3003,24 @@ class Scheduler(
     def get_new_batch_prefill(self) -> Optional[ScheduleBatch]:
         prefill_delayer_single_pass = None
         if self.prefill_delayer:
-            _, token_usage, _, _ = self._get_token_info()
+            # Get token usage from several pools
+            token_usage = None
+            if self.is_hybrid_swa:
+                _, _, full_token_usage, swa_token_usage, *_ = self._get_swa_token_info()
+                token_usage = max(full_token_usage, swa_token_usage)
+            if self.is_hybrid_ssm:
+                _, _, full_token_usage, mamba_token_usage, *_ = (
+                    self._get_mamba_token_info()
+                )
+                token_usage = (
+                    max(token_usage, mamba_token_usage)
+                    if token_usage is not None
+                    else max(full_token_usage, mamba_token_usage)
+                )
+            if token_usage is None:
+                _, token_usage, _, _ = self._get_token_info()
+
+            assert token_usage is not None
             prefill_delayer_single_pass = PrefillDelayerSinglePassExecutor(
                 self.prefill_delayer, token_usage=token_usage
             )
@@ -3021,6 +3042,9 @@ class Scheduler(
             ready_grammar_requests = self.grammar_manager.get_ready_grammar_requests()
             for req in ready_grammar_requests:
                 self._add_request_to_queue(req)
+
+        if self.enable_hierarchical_cache:
+            self.tree_cache.check_hicache_events()
 
         if self.try_preemption:
             # Reset batch_is_full to try preemption with a prefill adder.
@@ -3044,9 +3068,6 @@ class Scheduler(
         ):
             self.running_batch.batch_is_full = True
             return None
-
-        if self.enable_hierarchical_cache:
-            self.tree_cache.check_hicache_events()
 
         # Get priority queue
         self.policy.calc_priority(self.waiting_queue, self.running_batch)
@@ -3143,8 +3164,6 @@ class Scheduler(
                 running_loras.add(req.lora_id)
 
             if res != AddReqResult.CONTINUE:
-                self.maybe_release_mamba_cache(req)
-
                 if res == AddReqResult.NO_TOKEN:
                     if self.enable_hierarchical_cache:
                         # Set batch_is_full after making sure there are requests that can be served
@@ -3229,25 +3248,6 @@ class Scheduler(
             new_batch.decoding_reqs = None
 
         return new_batch
-
-    def maybe_release_mamba_cache(self, req: Req) -> None:
-        """Release mamba slot if allocated via COW but scheduling failed.
-
-        Without this, the slot remains held by a waiting request, causing
-        check_memory() to detect a "memory leak" and crash the server.
-        The next schedule round will re-allocate safely via match_prefix().
-
-        Note: In disaggregation DECODE mode, mamba state is transferred from PREFILL and
-        is not recoverable if freed, so we do not free it here. To avoid false-positive
-        leak checks in this situation, self_check_during_idle skips memory checking when
-        the waiting queue is not empty.
-        """
-        if (
-            req.mamba_pool_idx is not None
-            and self.disaggregation_mode != DisaggregationMode.DECODE
-        ):
-            self.req_to_token_pool.mamba_pool.free(req.mamba_pool_idx.unsqueeze(-1))
-            req.mamba_pool_idx = None
 
     def update_running_batch(self, batch: ScheduleBatch) -> Optional[ScheduleBatch]:
         """Update the current running decoding batch."""
@@ -3557,9 +3557,50 @@ class Scheduler(
             self.return_health_check_ct -= 1
             self.send_to_tokenizer.send_output(HealthCheckOutput())
 
-    def flush_cache_wrapped(self, recv_req: FlushCacheReqInput):
-        success = self.flush_cache()
-        return FlushCacheReqOutput(success=success)
+    def _check_pending_flush(self):
+        if self._pending_flush is None:
+            return
+
+        pending_req, deadline = self._pending_flush
+
+        if self.is_fully_idle():
+            success = self.flush_cache()
+            self._pending_flush = None
+            self.send_to_tokenizer.send_output(
+                FlushCacheReqOutput(success=success), pending_req
+            )
+            return
+
+        if time.monotonic() >= deadline:
+            logging.warning(
+                "Deferred flush_cache timed out while waiting for idle state."
+            )
+            self._pending_flush = None
+            self.send_to_tokenizer.send_output(
+                FlushCacheReqOutput(
+                    success=False, message="Timed out waiting for idle state."
+                ),
+                pending_req,
+            )
+
+    def flush_cache_wrapped(
+        self, recv_req: FlushCacheReqInput
+    ) -> Optional[FlushCacheReqOutput]:
+        if self._pending_flush is not None:
+            return FlushCacheReqOutput(
+                success=False,
+                message="Another flush_cache is already in progress.",
+            )
+
+        timeout_s = float(recv_req.timeout_s or 0.0)
+        if timeout_s <= 0.0:
+            return FlushCacheReqOutput(success=self.flush_cache())
+
+        if self.is_fully_idle():
+            return FlushCacheReqOutput(success=self.flush_cache())
+
+        self._pending_flush = (recv_req, time.monotonic() + timeout_s)
+        return None
 
     def clear_hicache_storage_wrapped(self, recv_req: ClearHiCacheReqInput):
         if self.enable_hierarchical_cache:
@@ -3571,20 +3612,49 @@ class Scheduler(
             if_success = False
         return ClearHiCacheReqOutput(success=if_success)
 
-    def _is_idle_for_hicache_storage_op(self) -> bool:
-        """Stricter idle check for storage attach/detach.
+    def is_fully_idle(self, for_health_check=False) -> bool:
+        # Health check piggybacks on running requests in process_output.
+        # Only running_batch + waiting_queue guarantee active GPU processing;
+        # disagg queues (bootstrap/prealloc/transfer) may have items without
+        # any request actually running on GPU — e.g. stuck handshake, full
+        # KV cache, or stalled transfer — so they can't carry health info.
+        # Batch running status
+        idle = (
+            self.running_batch.is_empty()
+            and self.chunked_req is None
+            and not self.dllm_manager.any_staging_reqs()
+            and (self.last_batch is None or self.last_batch.is_empty())
+            and (self.cur_batch is None or self.cur_batch.is_empty())
+            and (not self.enable_overlap or len(self.result_queue) == 0)
+            and (self.pp_size == 1 or all(x.is_empty() for x in self.running_mbs))
+        )
 
-        We require:
-        - no running batches (including overlap/pp/disagg paths) via `_is_no_request()`
-        - no queued requests in scheduler queues (waiting/grammar/disagg queues)
-        """
-        if not self._is_no_request():
-            return False
-        if len(self.waiting_queue) != 0:
-            return False
-        if len(self.grammar_manager.grammar_queue) != 0:
-            return False
-        return True
+        # Waiting queues: waiting + bootstrapping + preallocation + kv transfer (decode)
+        idle &= len(self.waiting_queue) == 0
+
+        if not for_health_check:
+            # Grammar queue and prefill inflight queue may not produce batch
+            # results instantly, but they still indicate the server is not idle.
+            idle &= len(self.grammar_manager.grammar_queue) == 0
+            if self.disaggregation_mode == DisaggregationMode.PREFILL:
+                idle &= len(self.disagg_prefill_inflight_queue) == 0
+                idle &= len(self.disagg_prefill_bootstrap_queue.queue) == 0
+
+            if self.disaggregation_mode == DisaggregationMode.DECODE:
+                idle &= len(self.disagg_decode_prealloc_queue.queue) == 0
+                idle &= len(self.disagg_decode_transfer_queue.queue) == 0
+
+            # HiCache: in-flight async ops (GPU↔Host↔L3) must drain before
+            # destructive operations like attach/detach/flush_cache.
+            if self.enable_hierarchical_cache:
+                tc = self.tree_cache
+                idle &= len(tc.ongoing_write_through) == 0
+                idle &= len(tc.ongoing_load_back) == 0
+                if tc.enable_storage:
+                    idle &= len(tc.ongoing_prefetch) == 0
+                    idle &= len(tc.ongoing_backup) == 0
+
+        return idle
 
     def attach_hicache_storage_wrapped(
         self, recv_req: AttachHiCacheStorageReqInput
@@ -3594,7 +3664,7 @@ class Scheduler(
                 success=False, message="Hierarchical cache is not enabled."
             )
 
-        if not self._is_idle_for_hicache_storage_op():
+        if not self.is_fully_idle():
             return AttachHiCacheStorageReqOutput(
                 success=False,
                 message=(
@@ -3647,7 +3717,7 @@ class Scheduler(
                 success=False, message="Hierarchical cache is not enabled."
             )
 
-        if not self._is_idle_for_hicache_storage_op():
+        if not self.is_fully_idle():
             return DetachHiCacheStorageReqOutput(
                 success=False,
                 message=(
@@ -3683,29 +3753,40 @@ class Scheduler(
 
         return DetachHiCacheStorageReqOutput(success=False, message=msg)
 
-    def _is_no_request(self):
-        no_request = (
-            self.running_batch.is_empty()
-            and (self.last_batch is None or self.last_batch.is_empty())
-            and (self.cur_batch is None or self.cur_batch.is_empty())
-            and (not self.enable_overlap or len(self.result_queue) == 0)
-            and (self.pp_size == 1 or all(x.is_empty() for x in self.running_mbs))
+    def pin_prefix_wrapped(self, recv_req: PinPrefixReqInput):
+        if not hasattr(self.tree_cache, "pin_prefix"):
+            return PinPrefixReqOutput(
+                success=False,
+                nodes_pinned=0,
+                message="PIN requires --enable-hierarchical-cache",
+            )
+        if getattr(self.tree_cache, "_max_pinned_tokens", 0) <= 0:
+            return PinPrefixReqOutput(
+                success=False,
+                nodes_pinned=0,
+                message="Pinning is disabled (SGLANG_HICACHE_MAX_PINNED_RATIO is 0)",
+            )
+        nodes_pinned, reject_reason = self.tree_cache.pin_prefix(
+            recv_req.token_ids, recv_req.ttl_seconds
         )
-        if self.disaggregation_mode == DisaggregationMode.PREFILL:
-            no_request &= (
-                len(self.disagg_prefill_bootstrap_queue.queue) == 0
-                and len(self.disagg_prefill_inflight_queue) == 0
+        if nodes_pinned == 0:
+            return PinPrefixReqOutput(
+                success=False,
+                nodes_pinned=0,
+                message=reject_reason or "No matching prefix found in cache to pin",
             )
-        if self.disaggregation_mode == DisaggregationMode.DECODE:
-            no_request &= (
-                len(self.disagg_decode_prealloc_queue.queue) == 0
-                and len(self.disagg_decode_transfer_queue.queue) == 0
-            )
-        return no_request
+        msg = f"Pinned {nodes_pinned} nodes (ttl={recv_req.ttl_seconds}s)"
+        if reject_reason:
+            msg += f"; {reject_reason}"
+        return PinPrefixReqOutput(
+            success=True,
+            nodes_pinned=nodes_pinned,
+            message=msg,
+        )
 
     def flush_cache(self):
         """Flush the memory pool and cache."""
-        if self._is_no_request():
+        if self.is_fully_idle():
             self.cur_batch = None
             self.last_batch = None
             self.tree_cache.reset()

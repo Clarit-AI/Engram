@@ -46,12 +46,26 @@ import orjson
 import requests
 import uvicorn
 import uvloop
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse, Response, StreamingResponse
 
 from sglang.srt.disaggregation.utils import FAKE_BOOTSTRAP_HOST, DisaggregationMode
+from sglang.srt.entrypoints.anthropic.protocol import (
+    AnthropicCountTokensRequest,
+    AnthropicMessagesRequest,
+)
+from sglang.srt.entrypoints.anthropic.serving import AnthropicServing
 from sglang.srt.entrypoints.engine import (
     _launch_subprocesses,
     init_tokenizer_manager,
@@ -87,6 +101,9 @@ from sglang.srt.entrypoints.openai.serving_score import OpenAIServingScore
 from sglang.srt.entrypoints.openai.serving_tokenize import (
     OpenAIServingDetokenize,
     OpenAIServingTokenize,
+)
+from sglang.srt.entrypoints.openai.serving_transcription import (
+    OpenAIServingTranscription,
 )
 from sglang.srt.entrypoints.warmup import execute_warmups
 from sglang.srt.environ import envs
@@ -301,9 +318,17 @@ async def lifespan(fast_api_app: FastAPI):
     fast_api_app.state.openai_serving_detokenize = OpenAIServingDetokenize(
         _global_state.tokenizer_manager
     )
+    fast_api_app.state.openai_serving_transcription = OpenAIServingTranscription(
+        _global_state.tokenizer_manager
+    )
 
     # Initialize Ollama-compatible serving handler
     fast_api_app.state.ollama_serving = OllamaServing(_global_state.tokenizer_manager)
+
+    # Initialize Anthropic-compatible serving handler
+    fast_api_app.state.anthropic_serving = AnthropicServing(
+        fast_api_app.state.openai_serving_chat
+    )
 
     # Launch tool server
     tool_server = None
@@ -716,12 +741,18 @@ async def classify_request(obj: EmbeddingReqInput, request: Request):
 
 @app.api_route("/flush_cache", methods=["GET", "POST"])
 @auth_level(AuthLevel.ADMIN_OPTIONAL)
-async def flush_cache():
+async def flush_cache(timeout: float = Query(0.0, ge=0.0)):
     """Flush the radix cache."""
-    ret = await _global_state.tokenizer_manager.flush_cache()
+    ret = await _global_state.tokenizer_manager.flush_cache(timeout_s=timeout)
+    if ret.success:
+        content = (
+            "Cache flushed.\nPlease check backend logs for more details. "
+            "(When there are running or waiting requests, the operation will not be performed.)\n"
+        )
+    else:
+        content = ret.message or "Flush cache failed.\n"
     return Response(
-        content="Cache flushed.\nPlease check backend logs for more details. "
-        "(When there are running or waiting requests, the operation will not be performed.)\n",
+        content=content,
         status_code=200 if ret.success else HTTPStatus.BAD_REQUEST,
     )
 
@@ -1588,6 +1619,46 @@ async def openai_v1_detokenize(request: DetokenizeRequest, raw_request: Request)
     )
 
 
+@app.post("/v1/audio/transcriptions")
+async def openai_v1_audio_transcriptions(
+    raw_request: Request,
+    file: UploadFile = File(...),
+    model: str = Form(default="default"),
+    language: Optional[str] = Form(default=None),
+    response_format: str = Form(default="json"),
+    temperature: float = Form(default=0.0),
+    stream: bool = Form(default=False),
+    timestamp_granularities: Optional[List[str]] = Form(
+        default=None, alias="timestamp_granularities[]"
+    ),
+):
+    """OpenAI-compatible audio transcription endpoint."""
+    if response_format not in ["json", "text", "verbose_json"]:
+        return ORJSONResponse(
+            content={
+                "error": {
+                    "message": "Only 'json', 'text', and 'verbose_json' formats supported"
+                }
+            },
+            status_code=400,
+        )
+
+    audio_data = await file.read()
+
+    return (
+        await raw_request.app.state.openai_serving_transcription.create_transcription(
+            audio_data=audio_data,
+            model=model,
+            language=language,
+            response_format=response_format,
+            temperature=temperature,
+            stream=stream,
+            timestamp_granularities=timestamp_granularities,
+            raw_request=raw_request,
+        )
+    )
+
+
 @app.get("/v1/models", response_class=ORJSONResponse)
 async def available_models():
     """Show available models. OpenAI-compatible endpoint."""
@@ -1735,6 +1806,29 @@ async def ollama_show(request: OllamaShowRequest, raw_request: Request):
     return raw_request.app.state.ollama_serving.get_show(request.model)
 
 
+##### Anthropic-compatible API endpoints #####
+
+
+@app.post("/v1/messages", dependencies=[Depends(validate_json_request)])
+async def anthropic_v1_messages(
+    request: AnthropicMessagesRequest, raw_request: Request
+):
+    """Anthropic-compatible Messages API endpoint."""
+    return await raw_request.app.state.anthropic_serving.handle_messages(
+        request, raw_request
+    )
+
+
+@app.post("/v1/messages/count_tokens", dependencies=[Depends(validate_json_request)])
+async def anthropic_v1_count_tokens(
+    request: AnthropicCountTokensRequest, raw_request: Request
+):
+    """Anthropic-compatible token counting endpoint."""
+    return await raw_request.app.state.anthropic_serving.handle_count_tokens(
+        request, raw_request
+    )
+
+
 ## SageMaker API
 @app.get("/ping")
 async def sagemaker_health() -> Response:
@@ -1817,12 +1911,16 @@ def _execute_server_warmup(server_args: ServerArgs):
     if server_args.api_key:
         headers["Authorization"] = f"Bearer {server_args.api_key}"
 
+    ssl_verify = server_args.ssl_verify()
+
     # Wait until the server is launched
     success = False
     for _ in range(120):
         time.sleep(1)
         try:
-            res = requests.get(url + "/model_info", timeout=5, headers=headers)
+            res = requests.get(
+                url + "/model_info", timeout=5, headers=headers, verify=ssl_verify
+            )
             assert res.status_code == 200, f"{res=}, {res.text=}"
             success = True
             break
@@ -1911,6 +2009,7 @@ def _execute_server_warmup(server_args: ServerArgs):
                 json=json_data,
                 headers=headers,
                 timeout=warmup_timeout if warmup_timeout > 0 else 600,
+                verify=ssl_verify,
             )
             assert res.status_code == 200, f"{res.text}"
             _global_state.tokenizer_manager.server_status = ServerStatus.Up
@@ -1939,6 +2038,7 @@ def _execute_server_warmup(server_args: ServerArgs):
                 timeout=(
                     warmup_timeout if warmup_timeout > 0 else 1800
                 ),  # because of deep gemm precache is very long if not precache.
+                verify=ssl_verify,
             )
             if res.status_code == 200:
                 logger.info(
@@ -2107,18 +2207,68 @@ def launch_server(
         # Update logging configs
         set_uvicorn_logging_configs(server_args)
 
+        # Delay listen() until uvicorn startup to avoid accepting probe traffic
+        # while model/subprocess initialization is still in progress.
+        reserved_socket.listen(128)
+
+        if server_args.ssl_certfile:
+            logger.info(
+                f"SSL enabled: certfile={server_args.ssl_certfile}, "
+                f"keyfile={server_args.ssl_keyfile}"
+            )
+
         # Listen for HTTP requests
         if server_args.tokenizer_worker_num == 1:
-            # Default case, one tokenizer process
-            uvicorn.run(
-                app,
-                host=server_args.host,
-                port=server_args.port,
-                root_path=server_args.fastapi_root_path,
-                log_level=server_args.log_level_http or server_args.log_level,
-                timeout_keep_alive=5,
-                loop="uvloop",
-            )
+            if server_args.enable_ssl_refresh:
+                # Use Config/Server API for access to the SSLContext.
+                config = uvicorn.Config(
+                    app,
+                    fd=reserved_socket.fileno(),
+                    root_path=server_args.fastapi_root_path,
+                    log_level=server_args.log_level_http or server_args.log_level,
+                    timeout_keep_alive=5,
+                    loop="uvloop",
+                    ssl_keyfile=server_args.ssl_keyfile,
+                    ssl_certfile=server_args.ssl_certfile,
+                    ssl_ca_certs=server_args.ssl_ca_certs,
+                    ssl_keyfile_password=server_args.ssl_keyfile_password,
+                )
+                config.load()  # Creates the SSLContext
+
+                from sglang.srt.entrypoints.ssl_utils import SSLCertRefresher
+
+                server = uvicorn.Server(config)
+
+                async def _run_with_ssl_refresh():
+                    refresher = SSLCertRefresher(
+                        config.ssl,
+                        server_args.ssl_keyfile,
+                        server_args.ssl_certfile,
+                        server_args.ssl_ca_certs,
+                    )
+                    logger.info("SSL certificate auto-refresh enabled.")
+                    try:
+                        await server.serve()
+                    finally:
+                        refresher.stop()
+
+                import asyncio
+
+                asyncio.run(_run_with_ssl_refresh())
+            else:
+                # Default case, one tokenizer process
+                uvicorn.run(
+                    app,
+                    fd=reserved_socket.fileno(),
+                    root_path=server_args.fastapi_root_path,
+                    log_level=server_args.log_level_http or server_args.log_level,
+                    timeout_keep_alive=5,
+                    loop="uvloop",
+                    ssl_keyfile=server_args.ssl_keyfile,
+                    ssl_certfile=server_args.ssl_certfile,
+                    ssl_ca_certs=server_args.ssl_ca_certs,
+                    ssl_keyfile_password=server_args.ssl_keyfile_password,
+                )
         else:
             # Multiple tokenizer and http processes
             from uvicorn.config import LOGGING_CONFIG
@@ -2130,6 +2280,13 @@ def launch_server(
             }
             monkey_patch_uvicorn_multiprocessing()
 
+            if server_args.enable_ssl_refresh:
+                logger.warning(
+                    "--enable-ssl-refresh is not supported with multiple "
+                    "tokenizer workers (--tokenizer-worker-num > 1). "
+                    "SSL refresh will be disabled."
+                )
+
             uvicorn.run(
                 "sglang.srt.entrypoints.http_server:app",
                 host=server_args.host,
@@ -2139,6 +2296,10 @@ def launch_server(
                 timeout_keep_alive=5,
                 loop="uvloop",
                 workers=server_args.tokenizer_worker_num,
+                ssl_keyfile=server_args.ssl_keyfile,
+                ssl_certfile=server_args.ssl_certfile,
+                ssl_ca_certs=server_args.ssl_ca_certs,
+                ssl_keyfile_password=server_args.ssl_keyfile_password,
             )
     finally:
         if server_args.tokenizer_worker_num > 1:

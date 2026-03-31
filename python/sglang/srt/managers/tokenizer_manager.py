@@ -114,7 +114,6 @@ from sglang.srt.utils import (
     freeze_gc,
     get_bool_env_var,
     get_or_create_event_loop,
-    get_zmq_socket,
     kill_process_tree,
 )
 from sglang.srt.utils.aio_rwlock import RWLock
@@ -123,6 +122,7 @@ from sglang.srt.utils.hf_transformers_utils import (
     get_tokenizer,
     get_tokenizer_from_processor,
 )
+from sglang.srt.utils.network import get_zmq_socket
 from sglang.srt.utils.request_logger import RequestLogger
 from sglang.srt.utils.watchdog import Watchdog
 from sglang.utils import TypeBasedDispatcher, get_exception_traceback
@@ -717,9 +717,15 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                     "the engine with skip_tokenizer_init=False."
                 )
 
-            input_ids, token_type_ids = await self._tokenize_texts(
-                input_text, is_cross_encoder_request
-            )
+            # For audio-only requests (e.g., Whisper), text may be empty.
+            # The multimodal processor will provide input_ids later.
+            if not input_text and self.mm_processor and obj.contains_mm_input():
+                # Use empty placeholder - multimodal processor will override
+                input_ids = []
+            else:
+                input_ids, token_type_ids = await self._tokenize_texts(
+                    input_text, is_cross_encoder_request
+                )
 
         if self.mm_processor and obj.contains_mm_input():
             if obj.image_data is not None and not isinstance(obj.image_data, list):
@@ -739,9 +745,10 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
             ):
                 if self.server_args.language_only:
                     mm_inputs = await self.mm_receiver.recv_mm_data(
-                        img_data=obj.image_data,
+                        request_obj=obj,
                         mm_processor=self.mm_processor,
                         prompt=(input_text or input_ids),
+                        need_wait_for_mm_inputs=obj.need_wait_for_mm_inputs,
                     )
                 if mm_inputs is None:
                     mm_inputs: Dict = await self.mm_data_processor.process(
@@ -751,6 +758,20 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                         request_obj=obj,
                         max_req_input_len=self.max_req_input_len,
                     )
+            elif (
+                self.server_args.language_only
+                and self.server_args.encoder_transfer_backend == "zmq_to_scheduler"
+                and not obj.need_wait_for_mm_inputs
+            ):
+                # In language_only mode with zmq_to_scheduler, if we didn't dispatch
+                # to encoder (e.g., only one image), process locally like non-language_only mode
+                mm_inputs: Dict = await self.mm_data_processor.process(
+                    image_data=obj.image_data,
+                    audio_data=obj.audio_data,
+                    input_text_or_ids=(input_text or input_ids),
+                    request_obj=obj,
+                    max_req_input_len=self.max_req_input_len,
+                )
 
             if mm_inputs and "input_ids" in mm_inputs:
                 input_ids = mm_inputs["input_ids"]
@@ -966,7 +987,7 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                 priority=obj.priority,
                 extra_key=obj.extra_key,
                 routing_key=obj.routing_key,
-                need_wait_for_image=obj.need_wait_for_image,
+                need_wait_for_mm_inputs=obj.need_wait_for_mm_inputs,
                 num_items_assigned=obj.num_items_assigned,
             )
         elif isinstance(obj, EmbeddingReqInput):
@@ -1586,7 +1607,7 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                 state.text += recv_obj.output_strs[i]
                 # Not all request types have `stream` (e.g., EmbeddingReqInput). Default to non-streaming.
                 is_stream = getattr(state.obj, "stream", False)
-                if self.server_args.stream_output and is_stream:
+                if self.server_args.incremental_streaming_output and is_stream:
                     state.output_ids.extend(recv_obj.output_ids[i])
                     output_token_ids = state.output_ids[state.last_output_offset :]
                     state.last_output_offset = len(state.output_ids)
@@ -1602,7 +1623,7 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
 
             elif isinstance(recv_obj, BatchTokenIDOutput):
                 is_stream = getattr(state.obj, "stream", False)
-                if self.server_args.stream_output and is_stream:
+                if self.server_args.incremental_streaming_output and is_stream:
                     state.output_ids.extend(recv_obj.output_ids[i])
                     output_token_ids = state.output_ids[state.last_output_offset :]
                     state.last_output_offset = len(state.output_ids)
@@ -2303,12 +2324,20 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
         self, obj: Union[GenerateReqInput, EmbeddingReqInput]
     ):
         """Handle EPD-disaggregation mode encoding request."""
-        if (
-            isinstance(obj, GenerateReqInput)
-            and self.server_args.encoder_transfer_backend == "zmq_to_scheduler"
-            and obj.contains_mm_input()
-        ):
-            self.mm_receiver.send_encode_request(obj)
+        if isinstance(obj, GenerateReqInput) and obj.contains_mm_input():
+            # dispatch to encoder by default
+            should_dispatch = True
+            if self.server_args.enable_adaptive_dispatch_to_encoder:
+                should_dispatch = self._should_dispatch_to_encoder(obj)
+
+            # Set need_wait_for_mm_inputs flag based on whether we dispatch to encoder
+            # This flag will be used in _tokenize_one_request to determine processing path
+            if should_dispatch:
+                obj.need_wait_for_mm_inputs = True
+                if self.server_args.encoder_transfer_backend == "zmq_to_scheduler":
+                    self.mm_receiver.send_encode_request(obj)
+            else:
+                obj.need_wait_for_mm_inputs = False
 
     def convert_to_span_attrs(
         self,

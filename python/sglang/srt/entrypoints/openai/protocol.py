@@ -1389,3 +1389,72 @@ class ResponseReasoningTextContent(BaseModel):
 ResponseInputOutputItem: TypeAlias = Union[
     ResponseInputItemParam, "ResponseReasoningItem", ResponseFunctionToolCall
 ]
+
+
+# ================== Transcription API Protocol Definitions ==================
+
+
+class TranscriptionRequest(BaseModel):
+    """Request model for audio transcription (OpenAI-compatible)."""
+
+    model: str = DEFAULT_MODEL_NAME
+    language: Optional[str] = None
+    response_format: str = "json"
+    temperature: float = 0.0
+    timestamp_granularities: Optional[List[str]] = None
+    stream: bool = False
+    # Internal fields (not from API)
+    audio_data: Optional[bytes] = None
+    audio_duration_s: float = 0.0
+
+
+class TranscriptionUsage(BaseModel):
+    """Usage info for transcription response (duration-based)."""
+
+    type: Literal["duration"] = "duration"
+    seconds: int  # Audio duration in seconds (rounded up)
+
+
+class TranscriptionResponse(BaseModel):
+    """Non-streaming transcription response (OpenAI-compatible)."""
+
+    text: str
+    usage: Optional[TranscriptionUsage] = None
+
+
+class TranscriptionSegment(BaseModel):
+    """A segment with timestamp information."""
+
+    id: int
+    start: float
+    end: float
+    text: str
+
+
+class TranscriptionVerboseResponse(BaseModel):
+    """Verbose transcription response with timestamps (OpenAI-compatible)."""
+
+    task: str = "transcribe"
+    language: Optional[str] = None
+    duration: Optional[float] = None
+    text: str
+    segments: List[TranscriptionSegment] = []
+    usage: Optional[TranscriptionUsage] = None
+
+
+class TranscriptionStreamChoice(BaseModel):
+    """Delta content for streaming transcription."""
+
+    delta: DeltaMessage
+    finish_reason: Optional[str] = None
+
+
+class TranscriptionStreamResponse(BaseModel):
+    """Streaming transcription chunk (OpenAI-compatible)."""
+
+    id: str = Field(default_factory=lambda: f"trsc-{uuid.uuid4().hex}")
+    object: Literal["transcription.chunk"] = "transcription.chunk"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    model: str
+    choices: List[TranscriptionStreamChoice]
+    usage: Optional[UsageInfo] = None

@@ -30,8 +30,8 @@ from sglang.srt.layers.dp_attention import (
     get_attention_tp_size,
 )
 from sglang.srt.server_args import ServerArgs
-from sglang.srt.utils import (
-    format_tcp_address,
+from sglang.srt.utils.network import (
+    NetworkAddress,
     get_local_ip_auto,
     get_zmq_socket_on_host,
     is_valid_ipv6_address,

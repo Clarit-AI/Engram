@@ -18,7 +18,8 @@ from sglang.srt.observability.trace import (
     set_global_trace_level,
     trace_set_thread_info,
 )
-from sglang.srt.utils import get_zmq_socket, kill_process_tree
+from sglang.srt.utils import kill_process_tree
+from sglang.srt.utils.network import get_zmq_socket
 from sglang.test.test_utils import (
     DEFAULT_SMALL_MODEL_NAME_FOR_TEST,
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,

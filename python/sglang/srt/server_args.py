@@ -36,7 +36,6 @@ from sglang.srt.utils.common import (
     LORA_TARGET_ALL_MODULES,
     SUPPORTED_LORA_TARGET_MODULES,
     check_pkg_version_at_least,
-    configure_ipv6,
     cpu_has_amx_support,
     get_bool_env_var,
     get_device,
@@ -52,21 +51,26 @@ from sglang.srt.utils.common import (
     is_hopper_with_cuda_12_3,
     is_no_spec_infer_or_topk_one,
     is_npu,
-    is_port_available,
     is_remote_url,
     is_sm90_supported,
     is_sm100_supported,
     is_sm120_supported,
     is_triton_kernels_available,
-    is_valid_ipv6_address,
     json_list_type,
     nullable_str,
     parse_connector_type,
     torch_release,
-    wait_port_available,
     xpu_has_xmx_support,
 )
 from sglang.srt.utils.hf_transformers_utils import check_gguf_file
+from sglang.srt.utils.network import (
+    NetworkAddress,
+    configure_ipv6,
+    get_free_port,
+    is_port_available,
+    is_valid_ipv6_address,
+    wait_port_available,
+)
 from sglang.utils import is_in_ci
 
 logger = logging.getLogger(__name__)
@@ -307,6 +311,13 @@ class ServerArgs:
     nccl_port: Optional[int] = None
     checkpoint_engine_wait_weights_before_ready: bool = False
 
+    # SSL/TLS
+    ssl_keyfile: Optional[str] = None
+    ssl_certfile: Optional[str] = None
+    ssl_ca_certs: Optional[str] = None
+    ssl_keyfile_password: Optional[str] = None
+    enable_ssl_refresh: bool = False
+
     # Quantization and data type
     dtype: str = "auto"
     quantization: Optional[str] = None
@@ -352,7 +363,7 @@ class ServerArgs:
     pp_max_micro_batch_size: Optional[int] = None
     pp_async_batch_depth: int = 0
     stream_interval: int = 1
-    stream_output: bool = False
+    incremental_streaming_output: bool = False
     enable_streaming_session: bool = False
     random_seed: Optional[int] = None
     constrained_json_whitespace_pattern: Optional[str] = None
@@ -738,6 +749,9 @@ class ServerArgs:
         # Normalize load balancing defaults early (before dummy-model short-circuit).
         self._handle_load_balance_method()
 
+        # Validate SSL arguments early (before dummy-model short-circuit).
+        self._handle_ssl_validation()
+
         if self.model_path.lower() in ["none", "dummy"]:
             # Skip for dummy models
             return
@@ -855,6 +869,47 @@ class ServerArgs:
                 "Falling back to 'follow_bootstrap_room' for backward compatibility."
             )
             self.load_balance_method = "follow_bootstrap_room"
+
+    def _handle_ssl_validation(self):
+        """Ensure SSL arguments are consistent and referenced files exist."""
+        if self.ssl_keyfile and not self.ssl_certfile:
+            raise ValueError(
+                "--ssl-keyfile requires --ssl-certfile to be specified as well."
+            )
+        if self.ssl_certfile and not self.ssl_keyfile:
+            raise ValueError(
+                "--ssl-certfile requires --ssl-keyfile to be specified as well."
+            )
+        if not self.ssl_certfile and not self.ssl_keyfile:
+            if self.ssl_ca_certs:
+                raise ValueError(
+                    "--ssl-ca-certs has no effect without --ssl-certfile and --ssl-keyfile."
+                )
+            if self.ssl_keyfile_password:
+                raise ValueError(
+                    "--ssl-keyfile-password has no effect without --ssl-certfile and --ssl-keyfile."
+                )
+        # Validate files exist early to avoid late failures after model loading.
+        if self.ssl_keyfile and not os.path.isfile(self.ssl_keyfile):
+            raise ValueError(
+                f"SSL key file not found: '{self.ssl_keyfile}'. "
+                f"Please check the --ssl-keyfile path."
+            )
+        if self.ssl_certfile and not os.path.isfile(self.ssl_certfile):
+            raise ValueError(
+                f"SSL certificate file not found: '{self.ssl_certfile}'. "
+                f"Please check the --ssl-certfile path."
+            )
+        if self.ssl_ca_certs and not os.path.isfile(self.ssl_ca_certs):
+            raise ValueError(
+                f"SSL CA certificates file not found: '{self.ssl_ca_certs}'. "
+                f"Please check the --ssl-ca-certs path."
+            )
+        if self.enable_ssl_refresh and not (self.ssl_certfile and self.ssl_keyfile):
+            raise ValueError(
+                "--enable-ssl-refresh requires --ssl-certfile and --ssl-keyfile "
+                "to be specified."
+            )
 
     def _handle_deprecated_args(self):
         # Handle deprecated tool call parsers
@@ -1798,6 +1853,68 @@ class ServerArgs:
                 "flashinfer" if is_flashinfer_available() else "pytorch"
             )
 
+
+    def _get_default_attn_backend(self, use_mla_backend: bool, model_config):
+        """
+        Auto select the fastest attention backend.
+
+        1. Models with MHA Architecture (e.g: Llama, QWen)
+            1.1 We will turn on FA3 on hopper unless user use spec decode with topk > 1 or page_size > 1.
+            1.2 Use trtllm_mha for SM100/SM103 (Blackwell B200/GB200/B300) excluding spec with topk > 1.
+               Note: trtllm_mha does not support SM120, which will fall back to flashinfer.
+            1.3 In other cases, we will use flashinfer if available, otherwise use triton.
+        2. Models with MLA Architecture and using FA3
+            2.1 We will use FA3 backend on hopper.
+            2.2 We will use Flashinfer backend on blackwell.
+            2.3 Otherwise, we will use triton backend.
+        """
+        # Whisper requires flashinfer for cross-attention CUDA graph support
+        if "WhisperForConditionalGeneration" in (
+            model_config.hf_config.architectures or []
+        ):
+            return "flashinfer"
+
+        if not use_mla_backend:
+            # MHA architecture
+            if is_hopper_with_cuda_12_3() and is_no_spec_infer_or_topk_one(self):
+                # Note: flashinfer 0.6.1 caused performance regression on Hopper attention kernel
+                # Before the kernel is fixed, we choose fa3 as the default backend on Hopper MHA
+                # ref: https://github.com/sgl-project/sglang/issues/17411
+                return "fa3"
+            elif (
+                is_sm100_supported()
+                and is_no_spec_infer_or_topk_one(self)
+                and (
+                    self.speculative_algorithm is None
+                    or self.speculative_eagle_topk is not None
+                )
+            ):
+                return "trtllm_mha"
+            elif is_hip():
+                return "aiter"
+            elif is_mps():
+                return "torch_native"
+            else:
+                return "flashinfer" if is_flashinfer_available() else "triton"
+        else:
+            # MLA architecture
+            if is_hopper_with_cuda_12_3():
+                return "fa3"
+            elif is_sm100_supported():
+                return "flashinfer"
+            elif is_hip():
+                head_num = model_config.get_num_kv_heads(self.tp_size)
+                # TODO current aiter only support head number 16 or 128 head number
+                if head_num == 128 or head_num == 16:
+                    return "aiter"
+                else:
+                    return "triton"
+            elif is_mps():
+                return "torch_native"
+            else:
+                return "triton"
+
+
     def _handle_attention_backend_compatibility(self):
         model_config = self.get_model_config()
         use_mla_backend = self.use_mla_backend()
@@ -1880,6 +1997,17 @@ class ServerArgs:
             assert (
                 self.speculative_algorithm is None
             ), "Speculative decoding is currently not supported with Flex Attention backend"
+
+        # Whisper's encoder token padding conflicts with prefix caching.
+        # Only disable for Whisper; other encoder-decoder models (e.g., mllama) use radix cache.
+        if (
+            model_config.is_encoder_decoder
+            and not self.disable_radix_cache
+            and "WhisperForConditionalGeneration"
+            in (model_config.hf_config.architectures or [])
+        ):
+            logger.info("Radix cache is disabled for Whisper")
+            self.disable_radix_cache = True
 
         # Major NVIDIA platforms backends
         if (
@@ -2625,6 +2753,22 @@ class ServerArgs:
                 self.disaggregation_ib_device
             )
 
+        # Validate model type: only support Qwen models for now
+        hf_config = self.get_model_config().hf_config
+        model_arch = hf_config.architectures[0]
+        if (self.encoder_only or self.language_only) and model_arch not in [
+            "Qwen2VLForConditionalGeneration",
+            "Qwen3VLForConditionalGeneration",
+            "Qwen2_5_VLForConditionalGeneration",
+            "Qwen3VLMoeForConditionalGeneration",
+            "Qwen3OmniMoeForConditionalGeneration",
+            "Qwen2AudioForConditionalGeneration",
+            "Qwen2_5OmniForConditionalGeneration",
+        ]:
+            raise ValueError(
+                f"Model type {model_arch} is not supported for encoder disaggregation, only Qwen models are supported for now."
+            )
+
     def _validate_ib_devices(self, device_str: str) -> Optional[str]:
         """
         Validate IB devices before passing to mooncake.
@@ -3074,6 +3218,39 @@ class ServerArgs:
             "before serving inference requests.",
         )
 
+        # SSL/TLS
+        parser.add_argument(
+            "--ssl-keyfile",
+            type=str,
+            default=ServerArgs.ssl_keyfile,
+            help="The file path to the SSL key file.",
+        )
+        parser.add_argument(
+            "--ssl-certfile",
+            type=str,
+            default=ServerArgs.ssl_certfile,
+            help="The file path to the SSL certificate file.",
+        )
+        parser.add_argument(
+            "--ssl-ca-certs",
+            type=str,
+            default=ServerArgs.ssl_ca_certs,
+            help="The CA certificates file.",
+        )
+        parser.add_argument(
+            "--ssl-keyfile-password",
+            type=str,
+            default=ServerArgs.ssl_keyfile_password,
+            help="The password to decrypt the SSL keyfile.",
+        )
+        parser.add_argument(
+            "--enable-ssl-refresh",
+            action="store_true",
+            default=ServerArgs.enable_ssl_refresh,
+            help="Enable automatic SSL certificate hot-reloading when cert/key "
+            "files change on disk. Requires --ssl-certfile and --ssl-keyfile.",
+        )
+
         # Quantization and data type
         parser.add_argument(
             "--dtype",
@@ -3374,9 +3551,16 @@ class ServerArgs:
             help="The interval (or buffer size) for streaming in terms of the token length. A smaller value makes streaming smoother, while a larger value makes the throughput higher",
         )
         parser.add_argument(
-            "--stream-output",
+            "--incremental-streaming-output",
             action="store_true",
             help="Whether to output as a sequence of disjoint segments.",
+        )
+        parser.add_argument(
+            "--stream-output",
+            action=DeprecatedStoreTrueAction,
+            dest="incremental_streaming_output",
+            new_flag="--incremental-streaming-output",
+            help="[Deprecated] Use --incremental-streaming-output instead.",
         )
         parser.add_argument(
             "--enable-streaming-session",
@@ -5274,10 +5458,43 @@ class ServerArgs:
         return cls(**{attr: getattr(args, attr) for attr in attrs})
 
     def url(self):
-        if is_valid_ipv6_address(self.host):
-            return f"http://[{self.host}]:{self.port}"
+        scheme = "https" if self.ssl_certfile else "http"
+        # When binding to all interfaces, use loopback for internal requests.
+        host = self.host
+        if not host or host == "0.0.0.0":
+            host = "127.0.0.1"
+        elif host == "::":
+            host = "::1"
+        if is_valid_ipv6_address(host):
+            return f"{scheme}://[{host}]:{self.port}"
         else:
-            return f"http://{self.host}:{self.port}"
+            return f"{scheme}://{host}:{self.port}"
+
+    def ssl_verify(self):
+        """Return the value for the requests library's ``verify=`` parameter.
+
+        When SSL is configured:
+          - If a CA certificate file is provided, return its path so requests
+            validates the server certificate against that CA.
+          - Otherwise, return False to disable certificate verification
+            (suitable for self-signed certificates in development/testing).
+            A warning is logged once when this happens.
+        When SSL is not configured, return True to use the system's default
+        CA bundle.
+        """
+        if self.ssl_ca_certs:
+            return self.ssl_ca_certs
+        if self.ssl_certfile:
+            if not getattr(self, "_ssl_verify_warned", False):
+                logger.warning(
+                    "SSL is enabled but --ssl-ca-certs was not provided. "
+                    "Certificate verification is DISABLED for internal "
+                    "health checks. For production deployments, provide "
+                    "--ssl-ca-certs or use CA-signed certificates."
+                )
+                self._ssl_verify_warned = True
+            return False
+        return True
 
     def get_model_config(self):
         # Lazy init to avoid circular import
@@ -5939,6 +6156,32 @@ class DeprecatedAction(argparse.Action):
         print_deprecated_warning(
             f"The command line argument '{option_string}' is deprecated and will be removed in future versions."
         )
+
+
+class DeprecatedStoreTrueAction(argparse.Action):
+    """Deprecated flag that still stores True and prints a warning."""
+
+    def __init__(
+        self,
+        option_strings,
+        dest,
+        new_flag=None,
+        nargs=0,
+        const=True,
+        default=False,
+        **kwargs,
+    ):
+        self.new_flag = new_flag
+        super().__init__(
+            option_strings, dest, nargs=nargs, const=const, default=default, **kwargs
+        )
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        replacement = f" Use '{self.new_flag}' instead." if self.new_flag else ""
+        print_deprecated_warning(
+            f"'{option_string}' is deprecated and will be removed in a future release.{replacement}"
+        )
+        setattr(namespace, self.dest, True)
 
 
 def auto_choose_speculative_params(self: ServerArgs):
