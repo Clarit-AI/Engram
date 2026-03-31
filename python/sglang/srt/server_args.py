@@ -36,7 +36,6 @@ from sglang.srt.utils.common import (
     LORA_TARGET_ALL_MODULES,
     SUPPORTED_LORA_TARGET_MODULES,
     check_pkg_version_at_least,
-    configure_ipv6,
     cpu_has_amx_support,
     get_bool_env_var,
     get_device,
@@ -52,13 +51,11 @@ from sglang.srt.utils.common import (
     is_hopper_with_cuda_12_3,
     is_no_spec_infer_or_topk_one,
     is_npu,
-    is_port_available,
     is_remote_url,
     is_sm90_supported,
     is_sm100_supported,
     is_sm120_supported,
     is_triton_kernels_available,
-    is_valid_ipv6_address,
     json_list_type,
     nullable_str,
     parse_connector_type,
@@ -66,7 +63,14 @@ from sglang.srt.utils.common import (
     xpu_has_xmx_support,
 )
 from sglang.srt.utils.hf_transformers_utils import check_gguf_file
-from sglang.srt.utils.network import NetworkAddress, get_free_port, wait_port_available
+from sglang.srt.utils.network import (
+    NetworkAddress,
+    configure_ipv6,
+    get_free_port,
+    is_port_available,
+    is_valid_ipv6_address,
+    wait_port_available,
+)
 from sglang.utils import is_in_ci
 
 logger = logging.getLogger(__name__)

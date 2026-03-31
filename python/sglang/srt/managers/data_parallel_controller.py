@@ -51,7 +51,12 @@ from sglang.srt.utils.common import (
     kill_itself_when_parent_died,
     maybe_reindex_device_id,
 )
-from sglang.srt.utils.network import NetworkAddress, bind_port, get_zmq_socket
+from sglang.srt.utils.network import (
+    NetworkAddress,
+    bind_port,
+    configure_ipv6,
+    get_zmq_socket,
+)
 from sglang.srt.utils.torch_memory_saver_adapter import TorchMemorySaverAdapter
 from sglang.srt.utils.watchdog import Watchdog
 from sglang.utils import TypeBasedDispatcher, get_exception_traceback
