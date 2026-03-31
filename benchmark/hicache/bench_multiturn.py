@@ -363,12 +363,43 @@ class WorkloadGenerator:
                             next_round_reqs = []
                     else:
                         self.ready_queue.append(new_req)
+
+                # Barrier logic: release next round when all clients for
+                # current barrier round have completed
+                if (
+                    self.enable_round_barrier
+                    and current_barrier_round < self.max_rounds
+                ):
+                    barrier_round_completed += 1
+                    expected = self.clients_per_round[current_barrier_round]
+                    if barrier_round_completed == expected:
+                        print(
+                            f"\n  Barrier: round {current_barrier_round} complete "
+                            f"({expected} clients), releasing {len(next_round_reqs)} "
+                            f"requests for round {current_barrier_round + 1}"
+                        )
+                        self._send_heartbeat(input_len=100, output_len=100)
+                        time.sleep(10)
+                        for req in next_round_reqs:
+                            self.ready_queue.append(req)
+                        next_round_reqs = []
+                        current_barrier_round += 1
+                        barrier_round_completed = 0
             except queue.Empty:
                 if self.pbar.n == self.pbar.total:
                     break
             except ValueError as e:
                 print(f"Error processing response for client {client_id}: {e}")
                 continue
+
+    def _send_heartbeat(self, input_len=100, output_len=20):
+        """Send a small heartbeat request to the server."""
+        heartbeat_input = [1] * input_len
+        payload = gen_payload(heartbeat_input, output_len, self.lora_path)
+        try:
+            requests.post(self.url, json=payload, timeout=30)
+        except Exception as e:
+            print(f"Heartbeat request failed: {e}")
 
     def run(self):
         request_thread = threading.Thread(target=self.request_sender, daemon=True)

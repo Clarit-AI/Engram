@@ -88,6 +88,38 @@ class EvictResult:
     mamba_num_evicted: int = 0
 
 
+@dataclasses.dataclass
+class IncLockRefResult:
+    """Result of an inc_lock_ref operation."""
+
+    delta: Optional[int] = None
+    swa_uuid_for_lock: Optional[int] = None
+
+
+@dataclasses.dataclass
+class DecLockRefParams:
+    """Parameters for dec_lock_ref operation."""
+
+    swa_uuid_for_lock: Optional[int] = None
+
+
+@dataclasses.dataclass
+class DecLockRefResult:
+    """Result of an dec_lock_ref operation."""
+
+    delta: Optional[int] = None
+
+
+@dataclasses.dataclass
+class InitLoadBackParams:
+    """Unified parameters for init_load_back across different cache types"""
+
+    last_host_node: Any
+    host_hit_length: int
+    mem_quota: Optional[int] = None
+    req: Optional[Req] = None
+
+
 class MatchResult(NamedTuple):
     """Result of a prefix match operation.
 
@@ -97,8 +129,10 @@ class MatchResult(NamedTuple):
         last_host_node  :   The last TreeNode on the host that was matched.
                             Note that if HiCache is not enabled,
                             this **must** be the same as `last_device_node`.
-        last_host_backup_node: The deepest backuped node for prefetch from storage.
-        host_hit_length :   Length of the KV cache hit on the host, if applicable.
+        host_hit_length :   Length of the host cache hit. For pure-KV caches this is the
+                            number of evicted KV tokens on CPU. For hybrid Mamba models this
+                            is max(kv_host_tokens, 1-if-mamba-on-host) so that a mamba-only
+                            host hit still triggers load-back without adding a separate field.
                             0 if HiCache is not enabled.
         mamba_branching_seqlen: The mamba radix cache branching point, which is the longest
                                 page-aligned position that could've been cache hit if there
@@ -108,7 +142,6 @@ class MatchResult(NamedTuple):
     device_indices: torch.Tensor
     last_device_node: Any
     last_host_node: Any
-    last_host_backup_node: Any = None
     host_hit_length: int = 0
     mamba_branching_seqlen: Optional[int] = None
 
