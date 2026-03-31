@@ -260,6 +260,7 @@ class WorkloadGenerator:
                 }
         self.num_clients = args.num_clients
 
+        self.lora_path = args.lora_path
         self.num_rounds = args.num_rounds
         self.max_parallel = args.max_parallel
         self.output_length = args.output_length
@@ -309,6 +310,8 @@ class WorkloadGenerator:
 
     def response_handler(self):
         next_round_reqs = []
+        current_barrier_round = 0
+        barrier_round_completed = 0
         while True:
             try:
                 client_id, response = self.response_queue.get(
@@ -352,7 +355,7 @@ class WorkloadGenerator:
                         gen_payload(
                             self.client_records[client_id]["history"],
                             self.output_length,
-                            args.lora_path,
+                            self.lora_path,
                         ),
                     )
                     if self.enable_round_barrier:
@@ -368,10 +371,10 @@ class WorkloadGenerator:
                 # current barrier round have completed
                 if (
                     self.enable_round_barrier
-                    and current_barrier_round < self.max_rounds
+                    and current_barrier_round < self.num_rounds
                 ):
                     barrier_round_completed += 1
-                    expected = self.clients_per_round[current_barrier_round]
+                    expected = self.num_clients
                     if barrier_round_completed == expected:
                         print(
                             f"\n  Barrier: round {current_barrier_round} complete "

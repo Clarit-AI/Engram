@@ -48,7 +48,7 @@ This section explains how to configure the request tracing and export the trace 
 
 6. Dynamically adjust trace level
     The trace level accepts configurable values from `0` to `3`. The meanings of different trace level values are as follows:
-    ```
+    ```text
     0: disable tracing
     1: Trace important slices
     2: Trace all slices except nested ones
@@ -65,7 +65,7 @@ This section explains how to configure the request tracing and export the trace 
 ## How to add Tracing for slices you're interested in?(API introduction)
 We have already inserted instrumentation points in the tokenizer and scheduler main threads. If you wish to trace additional request execution segments or perform finer-grained tracing, please use the APIs from the tracing package as described below.
 
-**All of the following implementations are done in python/sglang/srt/observability/req_time_stats.py. If you want to add another slice, please do it here.**
+**All of the following implementations are done in `python/sglang/srt/observability/trace.py`. Key symbols: `process_tracing_init`, `trace_set_thread_info`, `TraceReqContext`, `TraceSliceContext`. If you want to add another slice, please do it here.**
 
 1. Initialization
 
@@ -85,8 +85,8 @@ We have already inserted instrumentation points in the tokenizer and scheduler m
     Each request needs to call `TraceReqContext()` to initialize a request context, which is used to generate slice spans and record request stage info. You can either store it within the request object or maintain it as a global variable.
 
 3. Mark the beginning and end of a request
-    ```
-    trace_ctx.trace_req_start().
+    ```python
+    trace_ctx.trace_req_start()
     trace_ctx.trace_req_finish()
     ```
     trace_req_start() and trace_req_finish() must be called within the same process, for example, in the tokenizer.
@@ -119,7 +119,7 @@ We have already inserted instrumentation points in the tokenizer and scheduler m
 The currently provided tracing package still has potential for further development. If you wish to build more advanced features upon it, you must first understand its existing design principles.
 
 The core of the tracing framework's implementation lies in the design of the span structure and the trace context. To aggregate scattered slices and enable concurrent tracking of multiple requests, we have designed a three-level trace context structure or span structure: `TraceReqContext`, `TraceThreadContext` and `TraceSliceContext`. Their relationship is as follows:
-```
+```text
 TraceReqContext (req_id="req-123")
 ├── TraceThreadContext(thread_label="scheduler", tp_rank=0)
 |     └── TraceSliceContext(slice_name="prefill")

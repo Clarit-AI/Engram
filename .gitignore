@@ -275,5 +275,8 @@ sgl-kernel/csrc/**/*_musa/
 # VM migration context (local only, not for commit)
 docs/migration-prep/
 
+# Runtime state files
+.remember/tmp/
+
 # Beads / Dolt files (added by bd init)
 *.db

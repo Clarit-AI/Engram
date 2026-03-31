@@ -9,6 +9,7 @@ Complete index of all documentation for the Stateful Mamba snapshot system.
 | **Get an overview** | [README.md](README.md) |
 | **Learn how to use snapshots** | [User Guide](user_guide.md) |
 | **Look up API details** | [API Reference](api_reference.md) |
+| **Integrate against the HTTP endpoints** | [HTTP API Spec](http_api_spec.md) |
 | **Understand the architecture** | [Architecture](architecture.md) |
 | **See complete examples** | [Examples](examples.md) |
 | **Enable snapshots in my app** | [Migration Guide](migration_guide.md) |
@@ -110,6 +111,30 @@ Complete index of all documentation for the Stateful Mamba snapshot system.
   - [SnapshotNotFoundError](api_reference.md#snapshotnotfounderror)
   - [OutOfMemoryError](api_reference.md#outofmemoryerror)
 - [Utility Functions](api_reference.md#utility-functions)
+
+---
+
+### 3.5 http_api_spec.md
+**Purpose**: Server-facing HTTP snapshot endpoint specification
+**Audience**: Client and platform developers integrating with Mamba SGLang over HTTP
+**Topics**:
+- Snapshot endpoint request and response schemas
+- Auth behavior for snapshot routes
+- Restore-only vs restore-and-generate modes
+- Status code behavior
+- Client configuration examples
+- Chat-template tokenization requirements for `continuation_ids`
+
+**Key Sections**:
+- [Server Prerequisites](http_api_spec.md#server-prerequisites)
+- [Authentication](http_api_spec.md#authentication)
+- [Endpoint Specification](http_api_spec.md#endpoint-specification)
+  - [POST /save_snapshot](http_api_spec.md#post-save_snapshot)
+  - [POST /list_snapshots](http_api_spec.md#post-list_snapshots)
+  - [POST /get_snapshot_info](http_api_spec.md#post-get_snapshot_info)
+  - [POST /restore_snapshot](http_api_spec.md#post-restore_snapshot)
+  - [POST /delete_snapshot](http_api_spec.md#post-delete_snapshot)
+- [Client Configuration Examples](http_api_spec.md#client-configuration-examples)
 
 ---
 
