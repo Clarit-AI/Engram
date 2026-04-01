@@ -2,7 +2,7 @@
 
 This document tracks all models validated against the Engram snapshot infrastructure. Each row represents a completed run of the [Model Compatibility Protocol](MODEL_COMPAT_PROTOCOL.md).
 
-**Last updated:** 2026-04-01
+**Last updated:** 2026-04-01 (stateful recall re-run post PR #20)
 
 ---
 
@@ -11,17 +11,19 @@ This document tracks all models validated against the Engram snapshot infrastruc
 | Model | Vendor | Architecture | Recurrent Type | Format | Params (Total/Active) | Test Protocol | Pass Rate | Stateful Recall | Verdict | Date | Issue |
 |-------|--------|-------------|----------------|--------|----------------------|---------------|-----------|-----------------|---------|------|-------|
 | Granite 4.0-H-tiny | IBM | `GraniteMoeHybridForCausalLM` | Mamba2 SSM | BF16 | 4B | Full phases 0–8 + 10 | 77/82 (93.9%) | PASS | COMPATIBLE | 2026-03-31 | — |
-| Granite 4.0-H-small | IBM | `GraniteMoeHybridForCausalLM` | Mamba2 SSM | BF16 | 32B | Compat protocol (full)⁵ | 0 model-specific failures | BLOCKED² | COMPATIBLE | 2026-04-01 | — |
-| Nemotron-Cascade-2-30B | NVIDIA | `NemotronHForCausalLM` | Mamba2 SSM | BF16 | 30B / 3B active | Phase 10 cross-model⁴ | 5/5 (100%) | BLOCKED² | COMPATIBLE | 2026-03-29 | — |
-| Nemotron-3-Super-120B-A12B | NVIDIA | `NemotronHForCausalLM` | Mamba2 SSM | FP8 | 120B / 12B active | Ad-hoc (partial)¹ | 54/56 (96.4%) | BLOCKED² | COMPATIBLE | 2026-04-01 | KHA-203 |
-| Qwen3-Coder-Next | Alibaba | `Qwen3NextForCausalLM` | Gated Linear Attention | FP8 | ~75B / 3.9B active | Compat protocol (full) | 62/62 (100%) | BLOCKED² | COMPATIBLE | 2026-04-01 | KHA-204 |
+| Granite 4.0-H-small | IBM | `GraniteMoeHybridForCausalLM` | Mamba2 SSM | BF16 | 32B | Compat protocol (full)⁵ | 0 model-specific failures | PASS⁶ | COMPATIBLE | 2026-04-01 | — |
+| Nemotron-Cascade-2-30B | NVIDIA | `NemotronHForCausalLM` | Mamba2 SSM | BF16 | 30B / 3B active | Phase 10 cross-model⁴ | 5/5 (100%) | PASS⁶ | COMPATIBLE | 2026-04-01 | — |
+| Nemotron-3-Super-120B-A12B | NVIDIA | `NemotronHForCausalLM` | Mamba2 SSM | FP8 | 120B / 12B active | Ad-hoc (partial)¹ | 54/56 (96.4%) | PASS (4/4)⁶ | COMPATIBLE | 2026-04-01 | KHA-203 |
+| Qwen3-Coder-Next | Alibaba | `Qwen3NextForCausalLM` | Gated Linear Attention | FP8 | ~75B / 3.9B active | Compat protocol (full) | 62/62 (100%) | PASS (4/4)⁶ | COMPATIBLE | 2026-04-01 | KHA-204 |
 | Codestral Mamba 7B | Mistral | `Mamba2ForCausalLM` | Mamba2 SSM (pure) | BF16 | 7B | Gate 1 only | 0/0 | — | BLOCKED³ | 2026-03-31 | KHA-185 |
 
 ### Footnotes
 
 ¹ **Ad-hoc (partial):** Ran registered test suites (phases 2, 3, 5, 7, 8 equivalent) plus manual baseline checks. Did NOT run formal phase 0 environment verification, phase 4 log-line inspection, or phase 6 extra_buffer strategy. Stateful recall (phase 8 semantic) not validated. Future runs should use the [Model Compatibility Protocol](MODEL_COMPAT_PROTOCOL.md).
 
-² **BLOCKED (stateful recall):** Restore API gap — the restore endpoint succeeds but the subsequent generate call doesn't use the restored state for inline generation. This is a pre-existing infrastructure limitation tracked since PR #6, not a model-specific issue.
+² **BLOCKED (stateful recall):** ~~Restore API gap — fixed in PR #20.~~ No longer applicable — see footnote ⁶.
+
+⁶ **PASS (stateful recall, post PR #20):** Re-validated 2026-04-01 after PR #20 merged. `restore_snapshot` with `continuation_ids` + `create_new_request=true` now correctly runs stateful generation and returns `output_text`. All 4 previously-blocked models recalled a fact established in a prior turn using only the new continuation tokens. Results in `results/stateful-recall-rerun-20260401.md`.
 
 ³ **BLOCKED (no model class):** SGLang has no native `Mamba2ForCausalLM` model class for pure Mamba2 architectures. Only HuggingFace Transformers fallback exists. Tracked in upstream sglang issues #7429 and #18458.
 
