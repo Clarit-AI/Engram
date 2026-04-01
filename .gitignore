@@ -230,6 +230,7 @@ work_dirs/
 .vscode
 
 # Autoenv
+.envrc
 .env.leave
 
 # Rust lib
@@ -286,3 +287,6 @@ docs/migration-prep/
 
 # Beads / Dolt files (added by bd init)
 *.db
+
+# VM-generated skills (local only)
+.claude/skills/
