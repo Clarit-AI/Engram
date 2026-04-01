@@ -178,6 +178,9 @@ class ModelConfig:
         self.is_multimodal = enable_multimodal and is_multimodal_model(
             self.hf_config.architectures
         )
+        # True only for models that generate multimodal content (e.g. images).
+        # Text-only and vision-understanding models are False.
+        self.is_multimodal_gen = False
         self.is_audio_model = enable_multimodal and is_audio_model(
             self.hf_config.architectures
         )
