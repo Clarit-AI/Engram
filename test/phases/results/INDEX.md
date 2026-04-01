@@ -24,6 +24,9 @@ All results for the SGLang-Mamba snapshot persistence testing program. Each phas
 | 10d | Scaling: pure Mamba2 compat | **INCOMPATIBLE** | Mamba-Codestral-7B | 2026-03-30 |
 | 10e | Context scaling: 2K-128K | **PASS** (5/5 tiers) | granite-4.0-h-tiny | 2026-03-30 |
 | 10f | Resilience testing | **PASS** (4/5) | granite-4.0-h-tiny | 2026-03-30 |
+| compat | Nemotron-3-Super-120B-A12B FP8 | **PASS** (54/56, 96.4%) | NemotronHForCausalLM | 2026-04-01 |
+| compat | Qwen3-Coder-Next FP8 (ad-hoc) | **PASS** (56/59) | Qwen3NextForCausalLM | 2026-04-01 |
+| compat | Qwen3-Coder-Next FP8 (protocol) | **PASS** (62/62, 100%) | Qwen3NextForCausalLM | 2026-04-01 |
 
 ---
 
@@ -157,6 +160,20 @@ Five adverse-condition tests: (1) client disconnect mid-stream — server recove
 | WARM restore at 128K | **2ms** | N/A | N/A |
 | Save latency at 128K | **193ms** | N/A | N/A |
 
+### H200 Model Compat Runs (2026-04-01)
+
+New models validated using the [Model Compatibility Protocol](../MODEL_COMPAT_PROTOCOL.md). See [MODEL_MATRIX.md](../MODEL_MATRIX.md) for the full cross-model compatibility table.
+
+#### Nemotron-3-Super-120B-A12B FP8 (ad-hoc)
+**Result**: PASS (54/56, 96.4% effective) | **File**: `compat-nemotron-3-super-120b-fp8-20260401.md`
+
+88-layer NemotronH hybrid (Mamba2 SSM + Attention + LatentMoE), FP8 via ModelOpt. Bug found and fixed: `is_multimodal_gen` missing from ModelConfig (commit `e224e2512`). 2 model-specific failures (temperature=1.0 default + CoT output format), 4 infra failures (hardcoded granite path), 2 pre-existing restore API. VRAM: 133.4GB / 143GB on H200.
+
+#### Qwen3-Coder-Next FP8 — Formal Protocol Run
+**Result**: PASS (62/62, 100% model-specific) | **File**: `compat-qwen3-coder-next-fp8-2026-04-01.md`
+
+48-layer GLA + MoE hybrid, FP8 via HF-native block quantization. Key finding: GLA recurrent state routes through Mamba cache — snapshot infrastructure captures it with zero code changes. Requires `SGLANG_ENABLE_JIT_DEEPGEMM=0`. Zero model-specific failures under the protocol. Stateful recall BLOCKED (pre-existing restore API gap, all models).
+
 ---
 
 ## Supporting Files
@@ -165,9 +182,11 @@ Five adverse-condition tests: (1) client disconnect mid-stream — server recove
 |------|---------|
 | `phase-10-logs/*.json` | Detailed test run logs for Phase 10 |
 | `phase-10-logs/*.csv` | Resource monitoring CSV data |
-| `phase-10-scaling.py` | Load test + resource monitor tool |
-| `phase-10-h-small-test.py` | Granite-specific test script |
-| `../infra/config.sh` | Single source of truth for model paths, ports, dirs |
-| `../infra/codemap.md` | File/line/method reference for all source code touched |
-| `../prompts/` | Phase definition docs (agent prompts) |
-| `../scripts/` | Runnable test scripts |
+| `../scripts/phase-10-scaling.py` | Load test + resource monitor tool |
+| `../scripts/phase-10-h-small-test.py` | Granite-specific test script |
+| `../scripts/phase-10-resilience.py` | Resilience/adversarial test script |
+| `../scripts/phase-10-context-scaling.py` | 2K-128K context window scaling script |
+| `../scripts/download-model.sh` | Model download helper |
+| `../config.sh` | Single source of truth for model paths, ports, dirs |
+| `../MODEL_COMPAT_PROTOCOL.md` | Standardized agent prompt for new model validation |
+| `../MODEL_MATRIX.md` | Cross-model compatibility reference |
