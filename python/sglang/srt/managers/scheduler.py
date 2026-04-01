@@ -1547,14 +1547,37 @@ class Scheduler(
                     )
                 origin_input_ids = metadata.fill_ids
 
+                # Stateful generation: append new tokens after the restored context.
+                # When continuation_ids are provided, generation happens async and the
+                # result is routed back via RestoreSnapshotReqOutput (not BatchTokenIDOut).
+                stateful_generate = bool(recv_req.continuation_ids)
+                if stateful_generate:
+                    origin_input_ids = list(origin_input_ids) + list(
+                        recv_req.continuation_ids
+                    )
+                    # Guard against context overflow before allocating
+                    if len(origin_input_ids) >= self.max_req_input_len:
+                        mamba_pool.free(new_pool_idx_scalar)
+                        return RestoreSnapshotReqOutput(
+                            success=False,
+                            message=(
+                                f"Input length ({len(origin_input_ids)}) meets or exceeds "
+                                f"max_req_input_len ({self.max_req_input_len}). "
+                                "Reduce continuation_ids length or increase max_req_input_len."
+                            ),
+                        )
+
                 _sp = SamplingParams()
                 _sp.normalize(None)  # initialize stop_strs etc. (no tokenizer needed)
+                if recv_req.max_new_tokens is not None:
+                    _sp.max_new_tokens = recv_req.max_new_tokens
                 new_req = Req(
                     rid=new_rid,
                     origin_input_text="",  # We don't have original text
                     origin_input_ids=origin_input_ids,
                     sampling_params=_sp,
                     vocab_size=self.model_config.vocab_size,
+                    http_worker_ipc=recv_req.http_worker_ipc,
                 )
                 new_req.conversation_id = effective_conv_id
                 new_req.mamba_pool_idx = (
@@ -1567,6 +1590,9 @@ class Scheduler(
                     if origin_input_ids
                     else torch.tensor([], dtype=torch.int64, device=self.device)
                 )
+                # Signal the output processor to route finished output back via the
+                # snapshot result channel instead of the normal BatchTokenIDOut path.
+                new_req._stateful_generate = stateful_generate
 
                 # Register the new request in the waiting queue so it can be found by _find_request_by_rid
                 try:
@@ -1574,8 +1600,14 @@ class Scheduler(
                     self._add_request_to_queue(new_req)
                     logger.info(
                         f"Created new request from snapshot: conversation={recv_req.conversation_id}, "
-                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}"
+                        f"turn={recv_req.turn_number}, rid={new_rid}, mamba_pool_idx={new_pool_idx_scalar}, "
+                        f"stateful_generate={stateful_generate}"
                     )
+
+                    if stateful_generate:
+                        # Output will be sent after generation completes via the
+                        # _stateful_generate hook in scheduler_output_processor_mixin.
+                        return None
 
                     return RestoreSnapshotReqOutput(
                         success=True,
