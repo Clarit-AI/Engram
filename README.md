@@ -54,7 +54,7 @@ All models validated on H200 with stateful recall confirmed (PR #20).
 | Nemotron-3-Super-120B-A12B | NVIDIA | 120B / 12B active | LatentMoE Mamba2 hybrid | ✓ PASS (4/4) | FP8; requires H200 (133 GB VRAM) |
 | Nemotron-Cascade-2-30B | NVIDIA | 30B / 3B active | MoE Mamba2 hybrid | ✓ PASS | BF16 |
 | Qwen3-Coder-Next | Alibaba | ~75B / 3.9B active | GLA + MoE hybrid | ✓ PASS (4/4) | FP8; set `SGLANG_ENABLE_JIT_DEEPGEMM=0` |
-| Codestral Mamba 7B | Mistral | 7B | Pure Mamba2 | — Blocked | Needs native SGLang model class ([KHA-185](https://linear.app/khaentertainment/issue/KHA-185)) |
+| Codestral Mamba 7B | Mistral | 7B | Pure Mamba2 | — Blocked | Needs native SGLang model class ([upstream issue](https://github.com/sgl-project/sglang/issues/7429)) |
 
 ## Quick Start
 
