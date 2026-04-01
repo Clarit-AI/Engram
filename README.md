@@ -1,6 +1,5 @@
 <div align="center">
 
-<!-- Replace with final Engram logo when ready -->
 <img src="assets/engram-logo-banner.png" alt="Engram" width="400"></img>
 
 ### Stateful inference for Mamba SSM models
@@ -46,12 +45,16 @@ Validated on H200 across the full test suite (77/82 pass, 0 regressions):
 
 ### Tested Models
 
-| Model | Vendor | Architecture | Status |
-|-------|--------|-------------|--------|
-| Granite 4.0-H-tiny (4B) | IBM | Dense Mamba2 hybrid | Full suite (Phases 0–10) |
-| Granite 4.0-H-small | IBM | Dense Mamba2 hybrid | Compatibility confirmed |
-| Nemotron-Cascade-2-30B | NVIDIA | MoE Mamba2 hybrid | Phase 10c compatibility |
-| Codestral Mamba 7B | Mistral | Pure Mamba2 | Blocked — needs native SGLang model class ([tracking](https://linear.app/khaentertainment/issue/KHA-185)) |
+All models validated on H200 with stateful recall confirmed (PR #20).
+
+| Model | Vendor | Params | Architecture | Stateful Recall | Notes |
+|-------|--------|--------|-------------|-----------------|-------|
+| Granite 4.0-H-tiny | IBM | 4B | Dense Mamba2 hybrid | ✓ PASS (4/4) | Primary validation model — full phases 0–10 |
+| Granite 4.0-H-small | IBM | 32B | Dense Mamba2 hybrid | ✓ PASS | Base model (no chat template) — use `/v1/completions` |
+| Nemotron-3-Super-120B-A12B | NVIDIA | 120B / 12B active | LatentMoE Mamba2 hybrid | ✓ PASS (4/4) | FP8; requires H200 (133 GB VRAM) |
+| Nemotron-Cascade-2-30B | NVIDIA | 30B / 3B active | MoE Mamba2 hybrid | ✓ PASS | BF16 |
+| Qwen3-Coder-Next | Alibaba | ~75B / 3.9B active | GLA + MoE hybrid | ✓ PASS (4/4) | FP8; set `SGLANG_ENABLE_JIT_DEEPGEMM=0` |
+| Codestral Mamba 7B | Mistral | 7B | Pure Mamba2 | — Blocked | Needs native SGLang model class ([KHA-185](https://linear.app/khaentertainment/issue/KHA-185)) |
 
 ## Quick Start
 
@@ -188,4 +191,4 @@ Engram is built on [SGLang](https://github.com/sgl-project/sglang) by the [LMSYS
 
 We also build on the broader ecosystem that SGLang acknowledges: [vLLM](https://github.com/vllm-project/vllm), [FlashInfer](https://github.com/flashinfer-ai/flashinfer), [Guidance](https://github.com/guidance-ai/guidance), [LightLLM](https://github.com/ModelTC/lightllm), [Outlines](https://github.com/outlines-dev/outlines), and [LMQL](https://github.com/eth-sri/lmql).
 
-The Mamba architecture was developed by Albert Gu and Tri Dao. Mamba2 was developed by Tri Dao and Albert Gu at Carnegie Mellon University.gp
+The Mamba architecture was developed by Albert Gu and Tri Dao. Mamba2 was developed by Tri Dao and Albert Gu at Carnegie Mellon University.
