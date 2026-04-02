@@ -563,6 +563,8 @@ class ServerArgs:
     snapshot_min_interval_seconds: float = 1.0
     snapshot_keep_named_branches: bool = True
     snapshot_auto_restore: bool = True
+    snapshot_health_check_interval: int = 0
+    snapshot_health_failure_policy: str = "log_and_continue"
 
     # Mamba memory tier management (Phase 2.5)
     enable_memory_tiers: bool = True
@@ -5157,6 +5159,19 @@ class ServerArgs:
             action="store_true",
             default=ServerArgs.snapshot_auto_restore,
             help="Automatically restore latest snapshots on server startup. Default: True.",
+        )
+        parser.add_argument(
+            "--snapshot-health-check-interval",
+            type=int,
+            default=ServerArgs.snapshot_health_check_interval,
+            help="Run state health check every N snapshots. 0 = disabled (default: 0).",
+        )
+        parser.add_argument(
+            "--snapshot-health-failure-policy",
+            type=str,
+            choices=["log_and_continue", "skip_snapshot", "kill_session"],
+            default=ServerArgs.snapshot_health_failure_policy,
+            help="Action when health anomaly detected (default: log_and_continue).",
         )
 
         # Mamba memory tier management (Phase 2.5)

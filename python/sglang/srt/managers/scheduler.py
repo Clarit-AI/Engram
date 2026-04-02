@@ -910,6 +910,10 @@ class Scheduler(
         self.conversation_tracker = None
         self.tier_manager = None
 
+        # Tier 2: State health monitoring
+        self.state_health_monitor = None
+        self._health_check_counter = {}  # conversation_id → snapshot count
+
         # Only initialize if snapshot persistence is enabled
         if not server_args.enable_snapshot_persistence:
             logger.info("Snapshot persistence disabled (standard mode)")
@@ -1039,6 +1043,17 @@ class Scheduler(
                 self.conversation_tracker = None
                 self.tier_manager = None
 
+        # Tier 2: Initialize state health monitor if interval > 0
+        if getattr(server_args, "snapshot_health_check_interval", 0) > 0:
+            from sglang.srt.snapshot.state_health import StateHealthMonitor
+
+            self.state_health_monitor = StateHealthMonitor()
+            logger.info(
+                "State health monitoring enabled (interval=%d, policy=%s)",
+                server_args.snapshot_health_check_interval,
+                server_args.snapshot_health_failure_policy,
+            )
+
         # Register post-forward hook
         def post_forward_snapshot_callback(trigger):
             """Callback triggered after forward pass to save snapshot."""
@@ -1068,6 +1083,43 @@ class Scheduler(
             except Exception as e:
                 logger.error(f"Failed to extract Mamba state for snapshot: {e}")
                 return
+
+            # Tier 2: Health monitoring (if enabled)
+            if self.state_health_monitor is not None:
+                try:
+                    conv_count = self._health_check_counter.get(conversation_id, 0) + 1
+                    self._health_check_counter[conversation_id] = conv_count
+                    interval = self.server_args.snapshot_health_check_interval
+                    if conv_count % interval == 0:
+                        health = self.state_health_monitor.check_state_health(
+                            conversation_id, conv_states, temporal_states, turn_number
+                        )
+                        if not health.healthy:
+                            policy = self.server_args.snapshot_health_failure_policy
+                            logger.warning(
+                                "State health anomaly for %s at turn %d: "
+                                "%d anomalous layers. Policy: %s",
+                                conversation_id,
+                                turn_number,
+                                len(health.anomalous_layers),
+                                policy,
+                            )
+                            if policy == "skip_snapshot":
+                                return
+                            elif policy == "kill_session":
+                                # TODO: product decision — stub for now
+                                logger.warning(
+                                    "kill_session policy not yet implemented, "
+                                    "falling back to skip_snapshot"
+                                )
+                                return
+                            # else: log_and_continue — fall through to save
+                except Exception:
+                    logger.error(
+                        "State health check failed for %s, continuing with save",
+                        conversation_id,
+                        exc_info=True,
+                    )
 
             # Build metadata
             from sglang.srt.snapshot import MambaSnapshotMetadata
