@@ -506,7 +506,7 @@ class MambaSnapshotManager:
         conversation_id: str,
         turn_number: Optional[int] = None,
         branch_name: Optional[str] = None,
-    ) -> None:
+    ) -> bool:
         """
         Delete a snapshot.
 
@@ -514,20 +514,26 @@ class MambaSnapshotManager:
             conversation_id: Conversation identifier
             turn_number: Turn number to delete
             branch_name: Branch name to delete
+
+        Returns:
+            True if the snapshot existed and was deleted, False if not found.
         """
         metadata_path, state_path = self._get_snapshot_paths(
             conversation_id, turn_number, branch_name
         )
 
+        found = metadata_path.exists() or state_path.exists()
         if metadata_path.exists():
             metadata_path.unlink()
         if state_path.exists():
             state_path.unlink()
 
-        logger.info(
-            f"Snapshot deleted: conversation={conversation_id}, "
-            f"turn={turn_number}, branch={branch_name}"
-        )
+        if found:
+            logger.info(
+                f"Snapshot deleted: conversation={conversation_id}, "
+                f"turn={turn_number}, branch={branch_name}"
+            )
+        return found
 
     def get_snapshot_size(
         self,
