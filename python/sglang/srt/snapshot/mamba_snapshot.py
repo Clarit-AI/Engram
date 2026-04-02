@@ -7,7 +7,7 @@ using safetensors format, along with associated metadata tracking.
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -69,6 +69,111 @@ class MambaSnapshotMetadata:
         with open(path, "r") as f:
             data = json.load(f)
         return cls.from_dict(data)
+
+
+@dataclass
+class ValidationResult:
+    """Result of state tensor validation checks."""
+
+    is_valid: bool
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return self.is_valid
+
+
+# FP8 (float8_e4m3fn) included for H200/Nemotron compatibility.
+# SSM state is typically stored in bf16/fp32 even for quantized models,
+# but we accept FP8 in case future models store SSM state natively in FP8.
+# Note: torch.isnan()/isinf() may not support FP8 — we upcast if needed.
+ALLOWED_DTYPES = {torch.float32, torch.bfloat16, torch.float16}
+if hasattr(torch, "float8_e4m3fn"):
+    ALLOWED_DTYPES.add(torch.float8_e4m3fn)
+
+
+def validate_state_tensors(
+    conv_states: List[torch.Tensor],
+    temporal_states: torch.Tensor,
+    metadata: Optional[MambaSnapshotMetadata] = None,
+    strict: bool = False,
+) -> ValidationResult:
+    """
+    Validate SSM state tensors for corruption indicators.
+
+    Detects hidden state poisoning by checking for NaN, Inf, all-zeros,
+    invalid dtype, and empty tensors. This is critical for persistent state
+    systems where corrupted state would be snapshotted and carried forward
+    across all future restores.
+
+    Args:
+        conv_states: List of convolution state tensors
+        temporal_states: Temporal SSM state tensor
+        metadata: Optional metadata for additional context in messages
+        strict: If True, all-zeros is an error (not just warning)
+
+    Returns:
+        ValidationResult with is_valid, warnings, and errors
+    """
+    errors: List[str] = []
+    warnings: List[str] = []
+
+    conv_id = metadata.conversation_id if metadata else "unknown"
+
+    # Check conv_states list is non-empty
+    if not conv_states:
+        errors.append(f"[{conv_id}] conv_states list is empty")
+        return ValidationResult(is_valid=False, warnings=warnings, errors=errors)
+
+    def _check_tensor(t: torch.Tensor, name: str) -> None:
+        """Run all checks on a single tensor."""
+        # Shape plausibility
+        if t.numel() == 0:
+            errors.append(f"[{conv_id}] {name}: empty tensor (0 elements)")
+            return
+
+        # dtype check
+        if t.dtype not in ALLOWED_DTYPES:
+            errors.append(
+                f"[{conv_id}] {name}: invalid dtype {t.dtype}, "
+                f"expected one of {ALLOWED_DTYPES}"
+            )
+            return  # Can't do numeric checks on unsupported dtype
+
+        # For FP8 tensors, upcast to float16 for numeric checks since
+        # torch.isnan/isinf may not support FP8 dtypes directly
+        check_t = t
+        if hasattr(torch, "float8_e4m3fn") and t.dtype == torch.float8_e4m3fn:
+            check_t = t.to(torch.float16)
+
+        # NaN detection
+        if torch.isnan(check_t).any():
+            errors.append(f"[{conv_id}] {name}: contains NaN values")
+
+        # Inf detection
+        if torch.isinf(check_t).any():
+            errors.append(f"[{conv_id}] {name}: contains Inf values")
+
+        # All-zeros detection
+        if check_t.abs().sum() == 0:
+            msg = f"[{conv_id}] {name}: all-zero tensor (possibly uninitialized)"
+            if strict:
+                errors.append(msg)
+            else:
+                warnings.append(msg)
+
+    # Validate each conv state tensor
+    for i, conv_state in enumerate(conv_states):
+        _check_tensor(conv_state, f"conv_state[{i}]")
+
+    # Validate temporal state
+    _check_tensor(temporal_states, "temporal_states")
+
+    return ValidationResult(
+        is_valid=len(errors) == 0,
+        warnings=warnings,
+        errors=errors,
+    )
 
 
 class MambaSnapshotManager:
@@ -251,6 +356,19 @@ class MambaSnapshotManager:
         if not conv_states:
             raise ValueError("conv_states must not be empty")
 
+        # Validate state tensors before persisting to disk
+        result = validate_state_tensors(conv_states, temporal_states, metadata)
+        if not result.is_valid:
+            error_msg = (
+                f"State validation failed before save "
+                f"(conversation={metadata.conversation_id}, "
+                f"turn={metadata.turn_number}): {'; '.join(result.errors)}"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        for w in result.warnings:
+            logger.warning(f"State validation warning (save): {w}")
+
         # Get save paths
         metadata_path, state_path = self._get_snapshot_paths(
             metadata.conversation_id,
@@ -373,6 +491,19 @@ class MambaSnapshotManager:
                 f"Conv state count ({len(conv_states)}) doesn't match "
                 f"metadata num_layers ({num_layers})"
             )
+
+        # Validate loaded state tensors for corruption
+        result = validate_state_tensors(conv_states, temporal_states, metadata)
+        if not result.is_valid:
+            error_msg = (
+                f"Loaded snapshot failed validation: "
+                f"conversation={conversation_id}, turn={turn_number}: "
+                f"{'; '.join(result.errors)}"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        for w in result.warnings:
+            logger.warning(f"State validation warning (load): {w}")
 
         logger.info(
             f"Snapshot loaded: conversation={conversation_id}, "
@@ -598,6 +729,18 @@ class MambaSnapshotManager:
             mamba_pool.mamba_cache.temporal[:, mamba_pool_idx].clone().cpu()
         )
 
+        # Validate extracted state before returning
+        result = validate_state_tensors(conv_states, temporal_states)
+        if not result.is_valid:
+            error_msg = (
+                f"Extracted state from pool idx {mamba_pool_idx} failed "
+                f"validation: {'; '.join(result.errors)}"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        for w in result.warnings:
+            logger.warning(f"State validation warning (extract): {w}")
+
         logger.debug(
             f"Extracted state from pool idx {mamba_pool_idx}: "
             f"{len(conv_states)} conv tensors, "
@@ -648,6 +791,16 @@ class MambaSnapshotManager:
                 f"Conv state count mismatch: got {len(conv_states)}, "
                 f"expected {len(mamba_pool.mamba_cache.conv)}"
             )
+
+        # Content validation before GPU injection
+        result = validate_state_tensors(conv_states, temporal_states)
+        if not result.is_valid:
+            raise ValueError(
+                f"State validation failed before GPU injection at pool idx "
+                f"{mamba_pool_idx}: {'; '.join(result.errors)}"
+            )
+        for w in result.warnings:
+            logger.warning(f"State validation warning (inject): {w}")
 
         # Inject conv states
         for i, conv_state in enumerate(conv_states):

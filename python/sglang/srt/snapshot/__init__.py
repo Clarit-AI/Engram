@@ -24,6 +24,8 @@ Key Components:
 from sglang.srt.snapshot.mamba_snapshot import (
     MambaSnapshotManager,
     MambaSnapshotMetadata,
+    ValidationResult,
+    validate_state_tensors,
 )
 
 try:
@@ -44,6 +46,8 @@ __all__ = [
     # Phase 2: Core snapshots
     "MambaSnapshotManager",
     "MambaSnapshotMetadata",
+    "ValidationResult",
+    "validate_state_tensors",
     "SnapshotHookManager",
     "SnapshotRetentionPolicy",
     # Phase 2.5: Memory tiers

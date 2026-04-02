@@ -1508,6 +1508,28 @@ class Scheduler(
 
                 conv_states, temporal_states, metadata = snapshot
 
+                # Model compatibility check — prevent injecting state from a
+                # different model which would produce garbage output
+                running_model = getattr(self.server_args, "model_path", None)
+                if (
+                    running_model
+                    and metadata.model_name
+                    and metadata.model_name != running_model
+                ):
+                    logger.warning(
+                        f"Snapshot model mismatch: snapshot saved with "
+                        f"'{metadata.model_name}' but server running "
+                        f"'{running_model}'"
+                    )
+                    return RestoreSnapshotReqOutput(
+                        success=False,
+                        message=(
+                            f"Model mismatch: snapshot from "
+                            f"'{metadata.model_name}', server running "
+                            f"'{running_model}'"
+                        ),
+                    )
+
                 # Allocate a new Mamba pool slot
                 new_pool_idx = mamba_pool.alloc(1)
                 if new_pool_idx is None:
@@ -1694,6 +1716,22 @@ class Scheduler(
                 )
 
             conv_states, temporal_states, metadata = snapshot
+
+            # Model compatibility check — same guard as Path A
+            running_model = getattr(self.server_args, "model_path", None)
+            if (
+                running_model
+                and metadata.model_name
+                and metadata.model_name != running_model
+            ):
+                return RestoreSnapshotReqOutput(
+                    success=False,
+                    message=(
+                        f"Model mismatch: snapshot from "
+                        f"'{metadata.model_name}', server running "
+                        f"'{running_model}'"
+                    ),
+                )
 
             # Validate fill_ids BEFORE mutating the live request — if missing the
             # request would be left with new Mamba state but stale token history.
