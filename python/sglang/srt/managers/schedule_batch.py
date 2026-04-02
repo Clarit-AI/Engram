@@ -555,9 +555,11 @@ class Req(ReqDllmMixin):
         time_stats: Optional[
             Union[APIServerReqTimeStats, DPControllerReqTimeStats]
         ] = None,
+        conversation_id: Optional[str] = None,
     ):
         # Input and output info
         self.rid = rid
+        self.conversation_id = conversation_id
         self.origin_input_text = origin_input_text
         self.origin_input_ids_unpadded = (
             origin_input_ids_unpadded
