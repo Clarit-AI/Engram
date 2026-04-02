@@ -308,6 +308,8 @@ class CompletionRequest(BaseModel):
 
     # For request id
     rid: Optional[Union[List[str], str]] = None
+    # Conversation id for snapshot grouping across turns
+    conversation_id: Optional[str] = None
     # Extra key for classifying the request (e.g. cache_salt)
     extra_key: Optional[Union[List[str], str]] = None
     # Cache salt for request caching
@@ -626,6 +628,8 @@ class ChatCompletionRequest(BaseModel):
 
     # For request id
     rid: Optional[Union[List[str], str]] = None
+    # Conversation id for snapshot grouping across turns
+    conversation_id: Optional[str] = None
     # Extra key for classifying the request (e.g. cache_salt)
     extra_key: Optional[Union[List[str], str]] = None
     # Cache salt for request caching

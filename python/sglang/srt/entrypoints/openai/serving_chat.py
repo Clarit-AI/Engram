@@ -312,6 +312,7 @@ class OpenAIServingChat(OpenAIServingBase):
             return_hidden_states=request.return_hidden_states,
             return_routed_experts=request.return_routed_experts,
             rid=request.rid,
+            conversation_id=request.conversation_id,
             extra_key=self._compute_extra_key(request),
             require_reasoning=self._get_reasoning_from_request(request),
             priority=request.priority,

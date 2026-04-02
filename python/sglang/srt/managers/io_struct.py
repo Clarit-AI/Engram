@@ -769,6 +769,9 @@ class TokenizedGenerateReqInput(BaseReq):
     need_wait_for_mm_inputs: bool = False
     num_items_assigned: Optional[Dict[Modality, List[int]]] = None
 
+    # Conversation id for snapshot grouping across turns
+    conversation_id: Optional[str] = None
+
     # For observability
     time_stats: Optional[Union[APIServerReqTimeStats, DPControllerReqTimeStats]] = None
 

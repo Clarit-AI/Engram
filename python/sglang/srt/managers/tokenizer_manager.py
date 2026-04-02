@@ -1021,6 +1021,7 @@ class TokenizerManager(TokenizerCommunicatorMixin, TokenizerManagerMultiItemMixi
                 routing_key=obj.routing_key,
                 need_wait_for_mm_inputs=obj.need_wait_for_mm_inputs,
                 num_items_assigned=obj.num_items_assigned,
+                conversation_id=obj.conversation_id,
             )
         elif isinstance(obj, EmbeddingReqInput):
             tokenized_obj = TokenizedEmbeddingReqInput(

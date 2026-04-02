@@ -257,12 +257,17 @@ class TestMambaSnapshotManager:
             snapshots = manager.list_snapshots(conv_id)
             assert 1 in snapshots
 
-            # Delete it
-            manager.delete_snapshot(conv_id, turn_number=1)
+            # Delete it — should return True (snapshot existed)
+            result = manager.delete_snapshot(conv_id, turn_number=1)
+            assert result is True, "delete_snapshot should return True when snapshot existed"
 
             # Verify it's gone
             snapshots = manager.list_snapshots(conv_id)
             assert 1 not in snapshots
+
+            # Delete again — should return False (already gone)
+            result = manager.delete_snapshot(conv_id, turn_number=1)
+            assert result is False, "delete_snapshot should return False when snapshot not found"
 
     def test_branch_creation(self):
         """Test creating named branches."""
