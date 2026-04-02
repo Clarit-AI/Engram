@@ -341,4 +341,4 @@ python -m sglang.launch_server --model-path <model>
 
 - [Stateful Mamba Guide](./Stateful-Mamba-Guide.md) - Snapshot persistence system
 - [Upstream Sync](./Upstream-Sync-Q1-2026.md) - Q1 2026 upstream synchronization history
-- [GitHub Repo](https://github.com/KHAEntertainment/sglang-mamba)
+- [GitHub Repo](https://github.com/clarit-ai/engram)

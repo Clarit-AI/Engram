@@ -1,4 +1,4 @@
-# New VM Setup — SGLang-Mamba Server Phase Testing
+# New VM Setup — Engram Server Phase Testing
 
 Use this doc when spinning up a fresh VM to resume server phases (1/4/6/7/8).
 
@@ -15,7 +15,7 @@ V100 (sm70) is **incompatible** — FLA Mamba2 kernels and FlashInfer both requi
 ## 1. Clone & Install
 
 ```bash
-git clone https://github.com/KHAEntertainment/sglang-mamba.git
+git clone https://github.com/clarit-ai/engram.git
 cd sglang-mamba
 git checkout main
 
@@ -163,7 +163,7 @@ MODEL_PATH=$NEMOTRON_MODEL_PATH MODEL_NAME=$NEMOTRON_MODEL_NAME source test/phas
 
 ## 9. Files to Copy Off the Old VM Before Shutdown
 
-Everything in the repo itself is safe — it's all committed and pushed to `KHAEntertainment/sglang-mamba`. The items below are **local-only** (gitignored or outside the repo) and will be lost if the VM is deleted.
+Everything in the repo itself is safe — it's all committed and pushed to `clarit-ai/engram`. The items below are **local-only** (gitignored or outside the repo) and will be lost if the VM is deleted.
 
 ### High priority (context you'd otherwise reconstruct from scratch)
 

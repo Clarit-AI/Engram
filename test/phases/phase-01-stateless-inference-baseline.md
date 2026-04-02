@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Verify the SGLang-Mamba server boots and serves correct outputs **without activating `MambaRadixCache` or snapshot machinery**. The `--disable-radix-cache` flag bypasses the `MambaRadixCache` prefix-avoidance code path, but `HybridReqToTokenPool` (the Mamba-aware memory pool) remains active and will emit its log lines on startup.
+Verify the Engram server boots and serves correct outputs **without activating `MambaRadixCache` or snapshot machinery**. The `--disable-radix-cache` flag bypasses the `MambaRadixCache` prefix-avoidance code path, but `HybridReqToTokenPool` (the Mamba-aware memory pool) remains active and will emit its log lines on startup.
 
 ## Prerequisites
 

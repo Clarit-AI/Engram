@@ -2,7 +2,7 @@
 
 ## Your Role
 
-You are reviewing ~1,400 commits from upstream `sgl-project/sglang` that our fork `KHAEntertainment/sglang-mamba` has fallen behind on. Your job is to triage these commits into actionable categories so we can plan a safe merge that preserves our custom Mamba state persistence features.
+You are reviewing ~1,400 commits from upstream `sgl-project/sglang` that our fork `clarit-ai/engram` has fallen behind on. Your job is to triage these commits into actionable categories so we can plan a safe merge that preserves our custom Mamba state persistence features.
 
 This is a READ-ONLY investigation. Do not modify any files. Produce a structured report.
 

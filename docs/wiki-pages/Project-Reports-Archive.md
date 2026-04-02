@@ -18,7 +18,7 @@
 
 ### Executive Summary
 
-Sync-mode audit of the sglang-mamba project. All 10 Linear issues (KHA-5 through KHA-14) reviewed against codebase reality.
+Sync-mode audit of the Engram project. All 10 Linear issues (KHA-5 through KHA-14) reviewed against codebase reality.
 
 **Key findings:**
 - KHA-5 is done in code but still in Backlog — PR #6 merged the startup snapshot warm restore into `main`

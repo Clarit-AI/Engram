@@ -6,7 +6,7 @@ type: project
 
 ## Repository
 
-- **GitHub**: https://github.com/KHAEntertainment/sglang-mamba
+- **GitHub**: https://github.com/clarit-ai/engram
 - **Primary branch**: `main`
 - **Local clone** (on GCloud instance): the working directory is typically `/home/bbrenner/sglang-mamba` when cloned fresh; the GCloud instance is at `<INSTANCE_NAME>` / `<ZONE>` / `<PROJECT_ID>` (see CLAUDE.md for placeholder values)
 - **Install**: `pip install -e python/ [--break-system-packages]` — `.venv` was empty as of 2026-03-24; system-wide install was used

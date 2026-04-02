@@ -6,7 +6,7 @@ Prove that a multi-turn conversation can be held without the client resending fu
 conversation history on every turn.  The server reconstructs prior context from a
 saved Mamba SSM snapshot; the client sends only new tokens per turn.
 
-This is the core novel capability of the SGLang-Mamba system: snapshot persistence
+This is the core novel capability of the Engram system: snapshot persistence
 enables multi-turn inference where token transmission per turn is O(new_tokens),
 not O(total_conversation).
 

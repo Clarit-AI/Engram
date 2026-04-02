@@ -1,0 +1,312 @@
+# Automated upstream sync for clarit-ai/engram
+# Fetches sgl-project/sglang:main, attempts merge, and creates a PR.
+#
+# SAFE commits (no fork-file conflicts) → PR labeled "auto-sync"
+# RISKY commits (fork-file conflicts)   → PR labeled "needs-review" with conflict report
+#
+# Runs every Monday and Thursday at 06:00 UTC, or manually via workflow_dispatch.
+
+name: Upstream Sync
+
+on:
+  schedule:
+    - cron: "0 6 * * 1,4"   # Mon + Thu 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — report drift without creating a PR"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: sgl-project/sglang
+  UPSTREAM_BRANCH: main
+  FORK_BRANCH: main
+  SYNC_BRANCH_PREFIX: auto-sync/upstream
+
+  # Fork-differentiated paths (pipe-separated for grep -E).
+  # Changes touching these require manual review.
+  FORK_PATHS: "python/sglang/srt/snapshot/|python/sglang/srt/agents/|python/sglang/srt/mem_cache/mamba_radix_cache.py|python/sglang/srt/mem_cache/memory_pool.py|python/sglang/srt/managers/scheduler.py|python/sglang/srt/layers/attention/mamba/mamba2_metadata.py|python/sglang/snapshot.py|test/sglang/snapshot/|test/sglang/agents/|test/phases/|CLAUDE.md|AGENTS.md|docs/migration-prep/"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    outputs:
+      commits_behind: ${{ steps.drift.outputs.commits_behind }}
+      pr_url: ${{ steps.create-pr.outputs.pr_url }}
+      risk_level: ${{ steps.classify.outputs.risk_level }}
+    steps:
+
+      # ── 1. Checkout fork ──────────────────────────────────────────────
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.FORK_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Add upstream remote ────────────────────────────────────────
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
+          git fetch upstream ${{ env.UPSTREAM_BRANCH }} --no-tags
+
+      # ── 3. Measure drift ──────────────────────────────────────────────
+      - name: Measure drift
+        id: drift
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/${{ env.UPSTREAM_BRANCH }})
+          echo "commits_behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "::notice::Fork is $BEHIND commits behind upstream"
+
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Exit if up to date
+        if: steps.drift.outputs.skip == 'true'
+        run: echo "Already up to date with upstream. Nothing to do."
+
+      # ── 4. Attempt merge ──────────────────────────────────────────────
+      - name: Create sync branch and attempt merge
+        if: steps.drift.outputs.skip == 'false'
+        id: merge
+        run: |
+          BRANCH="${{ env.SYNC_BRANCH_PREFIX }}-$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          echo "sync_branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          # Save pre-merge HEAD for later diff
+          echo "pre_merge_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          # Attempt the merge
+          MERGE_MSG="chore: sync with upstream sgl-project/sglang ($(date +%Y-%m-%d))"
+          MERGE_MSG="${MERGE_MSG}
+
+          Merges ${{ steps.drift.outputs.commits_behind }} commits from upstream."
+
+          if git merge upstream/${{ env.UPSTREAM_BRANCH }} --no-edit -m "$MERGE_MSG"; then
+            echo "merge_clean=true" >> "$GITHUB_OUTPUT"
+            echo "conflicts=" >> "$GITHUB_OUTPUT"
+          else
+            echo "merge_clean=false" >> "$GITHUB_OUTPUT"
+            # Capture conflicting files
+            CONFLICTS=$(git diff --name-only --diff-filter=U | tr '\n' '|' | sed 's/|$//')
+            echo "conflicts=$CONFLICTS" >> "$GITHUB_OUTPUT"
+            # Abort — we'll report but not push a broken merge
+            git merge --abort
+          fi
+
+      # ── 5. Classify risk ──────────────────────────────────────────────
+      - name: Classify risk level
+        if: steps.drift.outputs.skip == 'false'
+        id: classify
+        run: |
+          PATTERN="${{ env.FORK_PATHS }}"
+
+          if [ "${{ steps.merge.outputs.merge_clean }}" = "false" ]; then
+            # Check if conflicts overlap with fork paths
+            if echo "${{ steps.merge.outputs.conflicts }}" | grep -qE "$PATTERN"; then
+              echo "risk_level=high" >> "$GITHUB_OUTPUT"
+              echo "risk_reason=Merge conflicts in fork-differentiated files" >> "$GITHUB_OUTPUT"
+            else
+              echo "risk_level=medium" >> "$GITHUB_OUTPUT"
+              echo "risk_reason=Merge conflicts in upstream-only files (likely resolvable)" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # Clean merge — check if any upstream changes touch fork paths
+            TOUCHED=$(git diff --name-only ${{ steps.merge.outputs.pre_merge_sha }}..HEAD | grep -E "$PATTERN" || true)
+            if [ -n "$TOUCHED" ]; then
+              echo "risk_level=medium" >> "$GITHUB_OUTPUT"
+              echo "risk_reason=Clean merge but upstream changed files near fork differentiators" >> "$GITHUB_OUTPUT"
+              echo "touched_fork_files<<EOF" >> "$GITHUB_OUTPUT"
+              echo "$TOUCHED" >> "$GITHUB_OUTPUT"
+              echo "EOF" >> "$GITHUB_OUTPUT"
+            else
+              echo "risk_level=low" >> "$GITHUB_OUTPUT"
+              echo "risk_reason=Clean merge, no fork-differentiated files affected" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # ── 6. Build PR body ──────────────────────────────────────────────
+      - name: Build PR description
+        if: steps.drift.outputs.skip == 'false' && steps.merge.outputs.merge_clean == 'true'
+        id: pr-body
+        run: |
+          PRE_SHA=${{ steps.merge.outputs.pre_merge_sha }}
+          BEHIND=${{ steps.drift.outputs.commits_behind }}
+          RISK=${{ steps.classify.outputs.risk_level }}
+          REASON="${{ steps.classify.outputs.risk_reason }}"
+
+          # Get commit summary (first line of each, last 50)
+          COMMIT_LOG=$(git log --oneline ${PRE_SHA}..HEAD | head -50)
+
+          # Get changed file summary
+          FILES_CHANGED=$(git diff --stat ${PRE_SHA}..HEAD | tail -1)
+
+          {
+            echo "## Upstream Sync — sgl-project/sglang"
+            echo ""
+            echo "**Commits merged:** ${BEHIND}"
+            echo "**Risk level:** ${RISK}"
+            echo "**Assessment:** ${REASON}"
+            echo "**Files changed:** ${FILES_CHANGED}"
+            echo ""
+            echo "### Upstream commits (latest 50)"
+            echo '```'
+            echo "${COMMIT_LOG}"
+            echo '```'
+            echo ""
+            if [ "$RISK" = "medium" ]; then
+              echo "### Fork-adjacent files changed"
+              echo '```'
+              echo "${{ steps.classify.outputs.touched_fork_files }}"
+              echo '```'
+              echo "> These files are near fork differentiators. Please verify no regressions."
+              echo ""
+            fi
+            echo "---"
+            echo "*Auto-generated by upstream-sync workflow. See \`.github/workflows/upstream-sync.yml\`.*"
+          } > /tmp/pr_body.md
+
+      # ── 7. Push and create PR ─────────────────────────────────────────
+      - name: Push sync branch
+        if: >
+          steps.drift.outputs.skip == 'false'
+          && steps.merge.outputs.merge_clean == 'true'
+          && inputs.dry_run != 'true'
+        run: |
+          git push origin ${{ steps.merge.outputs.sync_branch }}
+
+      - name: Create pull request
+        if: >
+          steps.drift.outputs.skip == 'false'
+          && steps.merge.outputs.merge_clean == 'true'
+          && inputs.dry_run != 'true'
+        id: create-pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/pr_body.md', 'utf8');
+            const risk = '${{ steps.classify.outputs.risk_level }}';
+            const behind = '${{ steps.drift.outputs.commits_behind }}';
+            const branch = '${{ steps.merge.outputs.sync_branch }}';
+
+            const labels = ['upstream-sync'];
+            if (risk === 'low') {
+              labels.push('auto-sync');
+            } else {
+              labels.push('needs-review');
+            }
+
+            // Ensure labels exist
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                });
+              } catch {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: label === 'auto-sync' ? '0e8a16' : 'e11d48',
+                  description: label === 'auto-sync'
+                    ? 'Safe upstream sync — no fork conflicts'
+                    : 'Upstream sync requires manual review',
+                });
+              }
+            }
+
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `chore: upstream sync — ${behind} commits (${new Date().toISOString().slice(0, 10)})`,
+              head: branch,
+              base: 'main',
+              body: body,
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.data.number,
+              labels: labels,
+            });
+
+            core.setOutput('pr_url', pr.data.html_url);
+            core.setOutput('pr_number', pr.data.number);
+
+            console.log(`Created PR #${pr.data.number}: ${pr.data.html_url}`);
+
+      # ── 8. Auto-merge low-risk PRs ────────────────────────────────────
+      - name: Enable auto-merge for low-risk PRs
+        if: >
+          steps.drift.outputs.skip == 'false'
+          && steps.merge.outputs.merge_clean == 'true'
+          && steps.classify.outputs.risk_level == 'low'
+          && inputs.dry_run != 'true'
+        run: |
+          gh pr merge ${{ steps.create-pr.outputs.pr_number }} \
+            --auto --merge \
+            --subject "chore: upstream sync (auto-merged)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 9. Report conflicts (no PR for broken merges) ─────────────────
+      - name: Report merge conflicts
+        if: >
+          steps.drift.outputs.skip == 'false'
+          && steps.merge.outputs.merge_clean == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const behind = '${{ steps.drift.outputs.commits_behind }}';
+            const conflicts = '${{ steps.merge.outputs.conflicts }}';
+            const risk = '${{ steps.classify.outputs.risk_level }}';
+
+            // Create an issue instead of a PR when merge fails
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ Upstream sync blocked — ${behind} commits, merge conflicts`,
+              body: `## Upstream Sync Failed\n\n` +
+                `**Commits behind:** ${behind}\n` +
+                `**Risk level:** ${risk}\n\n` +
+                `### Conflicting files\n\`\`\`\n${conflicts.replace(/\|/g, '\n')}\n\`\`\`\n\n` +
+                `### Next steps\n` +
+                `1. Create a local branch: \`git checkout -b upstream-sync-manual\`\n` +
+                `2. Merge upstream: \`git fetch upstream && git merge upstream/main\`\n` +
+                `3. Resolve conflicts in the files above\n` +
+                `4. Run fork test suite: \`pytest test/sglang/snapshot/ -v\`\n` +
+                `5. Push and open PR\n\n` +
+                `---\n*Auto-generated by upstream-sync workflow.*`,
+              labels: ['upstream-sync', 'needs-review'],
+            });
+
+            console.log(`Created issue #${issue.data.number}: ${issue.data.html_url}`);
+
+      # ── 10. Summary ───────────────────────────────────────────────────
+      - name: Workflow summary
+        if: always()
+        run: |
+          echo "## Upstream Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Commits behind | ${{ steps.drift.outputs.commits_behind }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Merge clean | ${{ steps.merge.outputs.merge_clean }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Risk level | ${{ steps.classify.outputs.risk_level }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| PR created | ${{ steps.create-pr.outputs.pr_url || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry run | ${{ inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY

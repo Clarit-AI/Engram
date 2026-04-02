@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Before any test is written or server is launched, verify that the SGLang-Mamba installation is healthy and the existing baseline test suites pass clean. This phase catches broken installs, missing dependencies, or upstream regressions before they contaminate later phases. It produces no new test files — only a pass/fail signal for the environment.
+Before any test is written or server is launched, verify that the Engram installation is healthy and the existing baseline test suites pass clean. This phase catches broken installs, missing dependencies, or upstream regressions before they contaminate later phases. It produces no new test files — only a pass/fail signal for the environment.
 
 ## Prerequisites
 

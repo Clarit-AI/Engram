@@ -93,4 +93,4 @@ Full pytest run not executed separately (redundant given inline results above).
 
 The 2 model-specific failures are behavioral differences (reasoning model vs. instruction model) that require test updates to handle CoT output format and temperature-based sampling — not bugs in the snapshot infrastructure.
 
-**Verdict: NemotronHForCausalLM FP8 is compatible with sglang-mamba snapshot infrastructure.**
+**Verdict: NemotronHForCausalLM FP8 is compatible with Engram snapshot infrastructure.**

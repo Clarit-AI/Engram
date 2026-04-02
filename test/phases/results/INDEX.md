@@ -1,6 +1,6 @@
 # Test Results Index
 
-All results for the SGLang-Mamba snapshot persistence testing program. Each phase builds on the prior. Run order follows the dependency graph in `test/phases/README.md`.
+All results for the Engram snapshot persistence testing program. Each phase builds on the prior. Run order follows the dependency graph in `test/phases/README.md`.
 
 ---
 
