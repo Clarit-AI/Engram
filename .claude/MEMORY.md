@@ -5,7 +5,7 @@
 
 ## Project Context
 
-### Engram Fork
+### Engram Fork (formerly sglang-mamba)
 **Purpose**: Add snapshot persistence for Mamba SSM hidden states to enable fast multi-turn conversations (25x+ speedup)
 
 **Key Files**:

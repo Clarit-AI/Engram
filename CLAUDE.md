@@ -1,7 +1,9 @@
 # CLAUDE.md — Engram
 
-Fork of [SGLang](https://github.com/sgl-project/sglang) adding **Mamba SSM snapshot persistence** for fast multi-turn inference.
-Repo: `github.com/clarit-ai/engram`
+**Engram** (formerly **sglang-mamba**) — fork of [SGLang](https://github.com/sgl-project/sglang) adding **Mamba SSM snapshot persistence** for fast multi-turn inference.
+Repo: `github.com/clarit-ai/engram` (formerly `KHAEntertainment/sglang-mamba`)
+
+> **Agent note:** You may encounter legacy references to "sglang-mamba" in directory paths (e.g. `~/sglang-mamba` on the A100), git history, import paths, and test phases. These all refer to this same project. The product name is **Engram**.
 
 ---
 
