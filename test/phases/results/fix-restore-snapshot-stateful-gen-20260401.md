@@ -1,8 +1,8 @@
 # Fix: restore_snapshot Stateful Generation — Discovery, Root Cause, Resolution
 
 **Date**: 2026-04-01
-**Issue**: KHAEntertainment/sglang-mamba#19
-**PR**: KHAEntertainment/sglang-mamba#20
+**Issue**: clarit-ai/engram#19
+**PR**: clarit-ai/engram#20
 **Branch**: `fix/restore-snapshot-stateful-gen-19`
 **Hardware**: H200 (143.8 GB VRAM)
 **Model**: granite-4.0-h-tiny (GraniteMoeHybridForCausalLM, 4B)

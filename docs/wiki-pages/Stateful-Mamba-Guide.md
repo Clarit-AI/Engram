@@ -188,5 +188,5 @@ python -m sglang.launch_server \
 
 - [Agent Framework](./Agent-Framework.md) - Tool-calling system with 3-tier memory management
 - [Upstream Sync](./Upstream-Sync-Q1-2026.md) - Q1 2026 upstream synchronization history
-- [GitHub Repo](https://github.com/KHAEntertainment/sglang-mamba)
-- [DeepWiki](https://deepwiki.com/KHAEntertainment/sglang-mamba)
+- [GitHub Repo](https://github.com/clarit-ai/engram)
+- [DeepWiki](https://deepwiki.com/clarit-ai/engram)

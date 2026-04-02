@@ -1,4 +1,4 @@
-# SGLang-Mamba Test Suite — Phase Documents
+# Engram Test Suite — Phase Documents
 
 Each file in this directory is a self-contained agent prompt for one phase of the test plan. A fresh Claude Code session can pick up any phase document and execute it autonomously.
 

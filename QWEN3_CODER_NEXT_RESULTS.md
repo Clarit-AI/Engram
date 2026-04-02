@@ -80,7 +80,7 @@ No model-specific behavioral failures (contrast with Nemotron's 2 reasoning-mode
 
 ## Summary
 
-**Verdict: Qwen3NextForCausalLM FP8 is fully compatible with sglang-mamba snapshot infrastructure.**
+**Verdict: Qwen3NextForCausalLM FP8 is fully compatible with Engram snapshot infrastructure.**
 
 The only failures are the 2 pre-existing restore API gaps present across all models. The linear attention (GLA) recurrent state is handled transparently by the Mamba cache subsystem — no architecture-specific changes required.
 

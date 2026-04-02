@@ -4,7 +4,7 @@
 
 Mamba SSM state is a compact fixed-size representation of all tokens processed in a conversation. Unlike attention KV caches, it cannot be reconstructed by reprocessing — once overwritten, the prior state is gone.
 
-In stateless inference this property is harmless: each request starts from a zero state, so any corruption is automatically discarded at request end. In a persistent snapshot system like sglang-mamba, the situation is qualitatively different. A corrupted state written to disk will be restored on every future turn for that conversation, and on every server restart that pre-loads the WARM tier. Corruption is sticky.
+In stateless inference this property is harmless: each request starts from a zero state, so any corruption is automatically discarded at request end. In a persistent snapshot system like Engram, the situation is qualitatively different. A corrupted state written to disk will be restored on every future turn for that conversation, and on every server restart that pre-loads the WARM tier. Corruption is sticky.
 
 Three failure modes produce corrupted hidden states:
 

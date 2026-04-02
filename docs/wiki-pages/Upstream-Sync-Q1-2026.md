@@ -4,7 +4,7 @@
 
 ## Context
 
-- **Fork:** `KHAEntertainment/sglang-mamba`
+- **Fork:** `clarit-ai/engram`
 - **Upstream:** `sgl-project/sglang`
 - **Delta:** 1,327 commits behind upstream, 97 ahead
 - **Merge risk:** CRITICAL
@@ -136,4 +136,4 @@ Pre-load latest snapshots to WARM tier on server restart. Implemented in PR #6.
 
 - [Stateful Mamba Guide](./Stateful-Mamba-Guide.md) - Snapshot persistence system
 - [Agent Framework](./Agent-Framework.md) - Tool-calling system
-- [GitHub Repo](https://github.com/KHAEntertainment/sglang-mamba)
+- [GitHub Repo](https://github.com/clarit-ai/engram)

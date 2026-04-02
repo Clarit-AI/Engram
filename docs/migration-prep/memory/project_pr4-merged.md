@@ -6,7 +6,7 @@ type: project
 
 ## PR #4: fix/snapshot-restore-state-sync
 
-**Merged**: 2026-03-28T03:25:03Z into `main` at KHAEntertainment/sglang-mamba
+**Merged**: 2026-03-28T03:25:03Z into `main` at clarit-ai/engram
 
 ### What it fixed
 

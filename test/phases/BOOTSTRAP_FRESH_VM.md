@@ -43,7 +43,7 @@ nvcc --version   # should show release 12.x
 ## 3. Clone the repo
 
 ```bash
-git clone https://github.com/KHAEntertainment/sglang-mamba.git
+git clone https://github.com/clarit-ai/engram.git
 cd sglang-mamba
 # main branch — all test fixes and docs are here
 ```

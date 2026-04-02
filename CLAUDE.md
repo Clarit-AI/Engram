@@ -1,7 +1,7 @@
-# CLAUDE.md — SGLang-Mamba
+# CLAUDE.md — Engram
 
 Fork of [SGLang](https://github.com/sgl-project/sglang) adding **Mamba SSM snapshot persistence** for fast multi-turn inference.
-Repo: `github.com/KHAEntertainment/sglang-mamba`
+Repo: `github.com/clarit-ai/engram`
 
 ---
 
@@ -85,7 +85,7 @@ Phase docs + config: `test/phases/` | Results: `test/phases/results/`
 ## Open Work
 
 - **PR #7** (open): docs resync — update agent instructions, create AGENTS.md, fix stale docs
-  `https://github.com/KHAEntertainment/sglang-mamba/pull/7`
+  `https://github.com/clarit-ai/engram/pull/7`
 - **KHA-6** (Backlog): Phase 3.4 — Final Audit
   `https://linear.app/khaentertainment/issue/KHA-6`
 - **KHA-5 / KHA-15 / KHA-16** — show Backlog in Linear but work is shipped in PR #6 (needs status update)
@@ -108,7 +108,7 @@ execute_integration_action(
 execute_integration_action(
   accountId="a1b3e383-1a13-4e4c-ace4-55797d394674",
   action="list_pull_requests",
-  parameters={"owner": "KHAEntertainment", "repo": "sglang-mamba", "state": "all"}
+  parameters={"owner": "clarit-ai", "repo": "engram", "state": "all"}
 )
 ```
 
