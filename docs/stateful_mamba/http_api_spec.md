@@ -3,9 +3,8 @@
 Canonical technical draft for Engram's snapshot and statefulness HTTP surface.
 
 This document covers the additional snapshot endpoints implemented in this
-repository on top of SGLang's standard serving APIs. It is the source of truth
-for Engram-specific HTTP integration until a final public-facing API guide is
-written.
+repository on top of SGLang's standard serving APIs. This specification and
+api_guide.md complement each other for Engram-specific HTTP integration.
 
 The standard SGLang APIs such as `/v1/chat/completions` are documented
 elsewhere. This document focuses only on the snapshot/statefulness layer added

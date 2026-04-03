@@ -5,8 +5,8 @@
 > the current production API surface.
 >
 > Do not use this file for implementation, integration, or product decisions.
-> Use [`../http_api_spec.md`](../http_api_spec.md) as the more accurate current
-> reference until the new canonical HTTP API document is created.
+> Use [`../http_api_spec.md`](../http_api_spec.md) as the canonical HTTP API
+> reference.
 
 Complete API documentation for the snapshot system in SGLang.
 
