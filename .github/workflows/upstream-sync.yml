@@ -1,8 +1,8 @@
 # Automated upstream sync for clarit-ai/engram
 # Fetches sgl-project/sglang:main, attempts merge, and creates a PR.
 #
-# SAFE commits (no fork-file conflicts) → PR labeled "auto-sync"
-# RISKY commits (fork-file conflicts)   → PR labeled "needs-review" with conflict report
+# SAFE commits (no protected fork-path touches) → PR labeled "auto-sync"
+# RISKY commits (protected fork-path touches or conflicts) → PR labeled "needs-review"
 #
 # Runs every Monday and Thursday at 06:00 UTC, or manually via workflow_dispatch.
 
@@ -115,28 +115,29 @@ jobs:
         id: classify
         run: |
           PATTERN="${{ env.FORK_PATHS }}"
+          UPSTREAM_TOUCHED=$(git diff --name-only ${{ steps.merge.outputs.pre_merge_sha }}..upstream/${{ env.UPSTREAM_BRANCH }} | grep -E "$PATTERN" || true)
+
+          if [ -n "$UPSTREAM_TOUCHED" ]; then
+            echo "touched_fork_files<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$UPSTREAM_TOUCHED" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
 
           if [ "${{ steps.merge.outputs.merge_clean }}" = "false" ]; then
-            # Check if conflicts overlap with fork paths
-            if echo "${{ steps.merge.outputs.conflicts }}" | grep -qE "$PATTERN"; then
+            if [ -n "$UPSTREAM_TOUCHED" ]; then
               echo "risk_level=high" >> "$GITHUB_OUTPUT"
-              echo "risk_reason=Merge conflicts in fork-differentiated files" >> "$GITHUB_OUTPUT"
+              echo "risk_reason=Merge is blocked and upstream touched protected fork files" >> "$GITHUB_OUTPUT"
             else
               echo "risk_level=medium" >> "$GITHUB_OUTPUT"
               echo "risk_reason=Merge conflicts in upstream-only files (likely resolvable)" >> "$GITHUB_OUTPUT"
             fi
           else
-            # Clean merge — check if any upstream changes touch fork paths
-            TOUCHED=$(git diff --name-only ${{ steps.merge.outputs.pre_merge_sha }}..HEAD | grep -E "$PATTERN" || true)
-            if [ -n "$TOUCHED" ]; then
-              echo "risk_level=medium" >> "$GITHUB_OUTPUT"
-              echo "risk_reason=Clean merge but upstream changed files near fork differentiators" >> "$GITHUB_OUTPUT"
-              echo "touched_fork_files<<EOF" >> "$GITHUB_OUTPUT"
-              echo "$TOUCHED" >> "$GITHUB_OUTPUT"
-              echo "EOF" >> "$GITHUB_OUTPUT"
+            if [ -n "$UPSTREAM_TOUCHED" ]; then
+              echo "risk_level=high" >> "$GITHUB_OUTPUT"
+              echo "risk_reason=Clean merge, but upstream touched protected fork files" >> "$GITHUB_OUTPUT"
             else
               echo "risk_level=low" >> "$GITHUB_OUTPUT"
-              echo "risk_reason=Clean merge, no fork-differentiated files affected" >> "$GITHUB_OUTPUT"
+              echo "risk_reason=Clean merge, no protected fork files affected" >> "$GITHUB_OUTPUT"
             fi
           fi
 
@@ -169,12 +170,12 @@ jobs:
             echo "${COMMIT_LOG}"
             echo '```'
             echo ""
-            if [ "$RISK" = "medium" ]; then
-              echo "### Fork-adjacent files changed"
+            if [ -n "${{ steps.classify.outputs.touched_fork_files }}" ]; then
+              echo "### Protected fork files touched upstream"
               echo '```'
               echo "${{ steps.classify.outputs.touched_fork_files }}"
               echo '```'
-              echo "> These files are near fork differentiators. Please verify no regressions."
+              echo "> Review required: upstream touched files that are explicitly protected in this fork."
               echo ""
             fi
             echo "---"
@@ -280,6 +281,7 @@ jobs:
             const behind = '${{ steps.drift.outputs.commits_behind }}';
             const conflicts = '${{ steps.merge.outputs.conflicts }}';
             const risk = '${{ steps.classify.outputs.risk_level }}';
+            const touchedForkFiles = `${{ steps.classify.outputs.touched_fork_files }}`.trim();
             const labels = ['upstream-sync', 'needs-review'];
 
             // Ensure labels exist before issue creation tries to attach them.
@@ -311,6 +313,9 @@ jobs:
               body: `## Upstream Sync Failed\n\n` +
                 `**Commits behind:** ${behind}\n` +
                 `**Risk level:** ${risk}\n\n` +
+                (touchedForkFiles
+                  ? `### Protected fork files touched upstream\n\`\`\`\n${touchedForkFiles}\n\`\`\`\n\n`
+                  : '') +
                 `### Conflicting files\n\`\`\`\n${conflicts.replace(/\|/g, '\n')}\n\`\`\`\n\n` +
                 `### Next steps\n` +
                 `1. Create a local branch: \`git checkout -b upstream-sync-manual\`\n` +
@@ -337,6 +342,14 @@ jobs:
           echo "| Risk level | ${{ steps.classify.outputs.risk_level }} |" >> $GITHUB_STEP_SUMMARY
           echo "| PR created | ${{ steps.create-pr.outputs.pr_url || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Dry run | ${{ inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "${{ steps.classify.outputs.touched_fork_files }}" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Protected fork files touched upstream" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.classify.outputs.touched_fork_files }}" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
           if [ "${{ steps.merge.outputs.merge_clean }}" = "false" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
