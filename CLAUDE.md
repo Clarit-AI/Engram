@@ -98,6 +98,19 @@ Phase docs + config: `test/phases/` | Results: `test/phases/results/`
 
 **All Linear and GitHub access goes through Core Memory MCP — never the native Linear MCP, Linear CLI, or direct gh calls for project tracking.**
 
+For repo-level GitHub actions that still require `gh` locally, verify the active
+account first:
+
+```bash
+gh auth status
+gh auth switch --hostname github.com --user Clarit-AI
+```
+
+This repository's `origin` is `Clarit-AI/Engram`. If `gh auth status` shows
+`KHAEntertainment` as the active account, switch to `Clarit-AI` before creating
+or editing pull requests, commenting on PRs, or doing other repo-scoped GitHub
+operations.
+
 ```python
 # Linear — list/search issues
 execute_integration_action(
