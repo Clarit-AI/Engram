@@ -273,6 +273,7 @@ jobs:
         if: >
           steps.drift.outputs.skip == 'false'
           && steps.merge.outputs.merge_clean == 'false'
+          && inputs.dry_run != 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -336,3 +337,16 @@ jobs:
           echo "| Risk level | ${{ steps.classify.outputs.risk_level }} |" >> $GITHUB_STEP_SUMMARY
           echo "| PR created | ${{ steps.create-pr.outputs.pr_url || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Dry run | ${{ inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.merge.outputs.merge_clean }}" = "false" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Conflicting files" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.merge.outputs.conflicts }}" | tr '|' '\n' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+
+            if [ "${{ inputs.dry_run || 'false' }}" = "true" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "_Dry run: conflict issue creation skipped._" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
