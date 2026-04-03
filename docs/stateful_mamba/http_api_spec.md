@@ -70,7 +70,7 @@ Notes:
 
 - `--mamba-scheduler-strategy` defaults to `auto`.
 - `auto` currently resolves to `no_buffer`.
-- `extra_buffer` should only be forced on models and backends that support it.
+- The `extra_buffer` strategy should only be forced on models and backends that support it.
 - Chat-style clients should use the same tokenizer and chat template as the
   server when producing `continuation_ids` for stateful generation.
 
