@@ -559,6 +559,7 @@ class TestApiGuideMd(unittest.TestCase):
             r"`(/(?:save|list|get|restore|delete)_snapshot[^`]*)`\s*\|\s*`(\w+)`",
             self.text,
         )
+        self.assertTrue(endpoint_rows, "expected endpoint table rows to be found by regex")
         for endpoint, method in endpoint_rows:
             self.assertEqual(
                 method,
@@ -708,7 +709,7 @@ class TestArchitectureMd(unittest.TestCase):
 class TestNoStaleReferencesInActiveDocs(unittest.TestCase):
     """Active docs must not reference files that have been deleted or archived."""
 
-    ACTIVE_DOC_PATHS = [
+    ACTIVE_DOC_PATHS = (
         REPO_ROOT / "AGENTS.md",
         REPO_ROOT / "CLAUDE.md",
         REPO_ROOT / "README.md",
@@ -716,7 +717,7 @@ class TestNoStaleReferencesInActiveDocs(unittest.TestCase):
         DOCS_DIR / "SUMMARY.md",
         DOCS_DIR / "api_guide.md",
         DOCS_DIR / "architecture.md",
-    ]
+    )
 
     def _assert_no_bare_reference(self, filename: str, description: str):
         """filename must not appear in active docs except via .archive/ prefix."""
@@ -806,11 +807,11 @@ class TestRegressionAndEdgeCases(unittest.TestCase):
     def test_agents_md_does_not_reference_native_linear_cli(self):
         """AGENTS.md must warn against native Linear CLI usage."""
         text = _read(REPO_ROOT / "AGENTS.md")
-        # Should mention not using native Linear CLI/MCP
-        self.assertIn(
-            "Core Memory MCP",
+        # Should mention not using native Linear CLI/MCP with a discouraging warning
+        self.assertRegex(
             text,
-            "AGENTS.md must direct users to Core Memory MCP, not native Linear CLI",
+            r"(do not use|never use|avoid).{0,50}native Linear (CLI|MCP)",
+            "AGENTS.md must contain a clear discouraging warning about native Linear CLI",
         )
 
     def test_claude_md_does_not_contradict_agents_md_on_gh(self):
