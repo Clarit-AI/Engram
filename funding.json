@@ -48,6 +48,7 @@
         "status": "active",
         "name": "Support Engram",
         "description": "Support development, benchmarking, and infrastructure costs for Engram.",
+        "amount": 0,
         "currency": "USD",
         "frequency": "one-time",
         "channels": ["direct"]

@@ -93,6 +93,12 @@ repos:
         language: system
         files: ^(\.engram/policy/protected-paths\.json|scripts/policy/check_protected_paths\.py|\.github/workflows/upstream-sync\.yml|AGENTS\.md|CLAUDE\.md)$
         pass_filenames: false
+      - id: validate-funding-json
+        name: validate funding.json schema
+        entry: python scripts/validate_funding_json.py
+        language: python
+        additional_dependencies: [jsonschema==4.25.1]
+        files: ^funding\.json$
   - repo: https://github.com/lycheeverse/lychee.git
     rev: lychee-v0.22.0
     hooks:
