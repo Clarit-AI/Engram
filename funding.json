@@ -1,0 +1,57 @@
+{
+  "$schema": "https://fundingjson.org/schema/v1.1.0.json",
+  "version": "v1.1.0",
+  "entity": {
+    "type": "organisation",
+    "role": "owner",
+    "name": "Clarit AI",
+    "email": "hello@clarit.ai",
+    "description": "Clarit AI builds tooling and infrastructure for more efficient AI systems. Engram is an open-source inference engine for true stateful inference.",
+    "webpageUrl": {
+      "url": "https://clarit.ai"
+    }
+  },
+  "projects": [
+    {
+      "guid": "engram",
+      "name": "Engram",
+      "description": "Engram is an open-source inference engine for true stateful inference, enabling models to restore internal state instead of replaying prompt history.",
+      "webpageUrl": {
+        "url": "https://clarit.ai"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/clarit-ai/engram"
+      },
+      "licenses": [
+        "spdx:Apache-2.0"
+      ],
+      "tags": [
+        "ai-infrastructure",
+        "stateful-inference",
+        "developer-tools",
+        "open-source"
+      ]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "direct",
+        "type": "other",
+        "address": "https://clarit.ai",
+        "description": "Contact Clarit AI for sponsorship, compute support, or partnerships."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "support",
+        "status": "active",
+        "name": "Support Engram",
+        "description": "Support development, benchmarking, and infrastructure costs for Engram.",
+        "currency": "USD",
+        "frequency": "one-time",
+        "channels": ["direct"]
+      }
+    ]
+  }
+}

@@ -226,3 +226,11 @@ Engram is built on [SGLang](https://github.com/sgl-project/sglang) by the [LMSYS
 We also build on the broader ecosystem that SGLang acknowledges: [vLLM](https://github.com/vllm-project/vllm), [FlashInfer](https://github.com/flashinfer-ai/flashinfer), [Guidance](https://github.com/guidance-ai/guidance), [LightLLM](https://github.com/ModelTC/lightllm), [Outlines](https://github.com/outlines-dev/outlines), and [LMQL](https://github.com/eth-sri/lmql).
 
 The Mamba architecture was developed by Albert Gu and Tri Dao. Mamba2 was developed by Tri Dao and Albert Gu at Carnegie Mellon University.
+
+## Support Engram
+
+Engram is an open-source project focused on building more efficient AI infrastructure through true stateful inference.
+
+If you're interested in supporting development, contributing compute resources, or exploring partnerships, feel free to reach out:
+
+👉 https://clarit.ai
