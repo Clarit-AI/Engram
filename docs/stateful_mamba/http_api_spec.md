@@ -208,10 +208,11 @@ Behavior notes:
 
 - saving a live active request really depends on `rid`
 - `conversation_id` alone does not identify a live request
-- saving without `turn_number` and `branch_name` only reliably works in the
-  WARM-tier fallback path where metadata is reconstructed for you
-- the lower storage layer effectively needs one of `turn_number` or
-  `branch_name`
+- for deterministic client-driven saves, provide `turn_number` or `branch_name`
+- when the scheduler saves through the WARM-tier fallback path, it can
+  reconstruct missing selector metadata for you in some cases
+- the lower storage layer still needs one of `turn_number` or `branch_name`
+  before it can resolve the on-disk snapshot path
 
 #### Success Response
 

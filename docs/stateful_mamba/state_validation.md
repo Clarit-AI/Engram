@@ -65,7 +65,13 @@ Runs immediately after `.clone().cpu()` on the pool tensors, before any serializ
 
 ### Startup restore — quarantine gate
 
-`restore_snapshots_on_startup()` in `tier_manager.py` calls `restore_conversation()` for each snapshot found on disk. If that call raises `ValueError` (which includes validation failures from `load_snapshot()` and `inject_state_to_pool()`), the snapshot is quarantined:
+Startup restore is initiated from `restore_snapshots_on_startup()` in
+`scheduler.py`, which delegates to the tier-manager startup restore helper to
+load the latest snapshots into the WARM tier.
+
+If that restore path raises a validation-related `ValueError`
+(including `SnapshotValidationError` from `load_snapshot()`), the snapshot is
+quarantined:
 
 ```python
 except ValueError as e:
@@ -77,11 +83,19 @@ except ValueError as e:
     )
 ```
 
-The server continues startup normally. Remaining valid snapshots are loaded to the WARM tier. The quarantined snapshot files remain on disk and are not deleted automatically.
+The server continues startup normally. Remaining valid snapshots are loaded to
+the WARM tier. The quarantined snapshot files remain on disk and are not deleted
+automatically.
 
 ### Model compatibility check
 
-`MambaSnapshotMetadata` stores `model_name` (e.g., `"ibm-granite/granite-4.0-h-small"`) at save time. Before injecting restored state, callers should verify `metadata.model_name` matches the running model. Injecting state from a different model into a mismatched pool produces incorrect inference without triggering numeric checks, because the values are numerically valid — they are simply wrong. Shape mismatches are caught by `inject_state_to_pool()` as a `ValueError`; semantic mismatches (same shape, different model) require the caller to enforce the model name check.
+`MambaSnapshotMetadata` stores `model_name` (e.g.,
+`"ibm-granite/granite-4.0-h-small"`) at save time. The current restore paths in
+the scheduler and tier manager actively enforce this check before injecting
+restored state. Injecting state from a different model into a mismatched pool
+would otherwise produce incorrect inference without triggering numeric checks,
+because the values are numerically valid even when they are semantically wrong.
+Shape mismatches are still caught separately by `inject_state_to_pool()`.
 
 ---
 
@@ -93,9 +107,10 @@ A quarantined snapshot:
 - Is not loaded into the WARM tier
 - Stays on disk unchanged
 - Does not block server startup or affect other conversations
-- Is not retried on the next startup (same `ValueError` will be raised again)
+- Will be retried on the next startup unless it is deleted or replaced
 
-To recover a quarantined snapshot, either delete it manually from the snapshot directory or fix the underlying data corruption and replace the file.
+To recover a quarantined snapshot, either delete it manually from the snapshot
+directory or fix the underlying data corruption and replace the file.
 
 ---
 
@@ -146,7 +161,11 @@ class ValidationResult:
 
 `errors` are populated for conditions that indicate definite corruption (NaN, Inf, empty tensor, bad dtype). `warnings` are populated for conditions that may indicate a problem but are not necessarily corrupt (all-zeros in non-strict mode).
 
-The four pipeline integration points (`save_snapshot`, `load_snapshot`, `inject_state_to_pool`, `extract_state_from_pool`) all treat `not result.is_valid` as a hard failure and raise `ValueError`.
+The four pipeline integration points (`save_snapshot`, `load_snapshot`,
+`inject_state_to_pool`, `extract_state_from_pool`) all treat
+`not result.is_valid` as a hard failure. In practice that surfaces as
+`ValueError`-family exceptions, including `SnapshotValidationError` on some load
+paths.
 
 ---
 
