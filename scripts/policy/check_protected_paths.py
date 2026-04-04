@@ -77,6 +77,16 @@ def git_changed_files(refspec: str) -> list[str]:
     return split_nonempty_lines(run_git(["diff", "--name-only", refspec]))
 
 
+def git_ref_exists(ref: str) -> bool:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
 def compute_sync_policy(
     policy: dict,
     *,
@@ -182,7 +192,33 @@ def cmd_check_local_edits(args: argparse.Namespace) -> int:
         path for path in candidate_files if not matches_any(path, local_only_globs)
     ]
 
-    fork_owned_files = set(git_changed_files(f"{args.upstream_ref}...{args.fork_ref}"))
+    if not candidate_files:
+        return 0
+
+    missing_refs = [
+        ref for ref in (args.upstream_ref, args.fork_ref) if not git_ref_exists(ref)
+    ]
+    if missing_refs:
+        print(
+            "Protected-path policy fallback: missing git ref(s) "
+            + ", ".join(missing_refs)
+            + ". Treating all candidate files as fork-owned because "
+            + f"{args.upstream_ref}...{args.fork_ref} cannot be compared."
+        )
+        fork_owned_files = set(candidate_files)
+    else:
+        try:
+            fork_owned_files = set(
+                git_changed_files(f"{args.upstream_ref}...{args.fork_ref}")
+            )
+        except subprocess.CalledProcessError:
+            print(
+                "Protected-path policy fallback: unable to diff "
+                + f"{args.upstream_ref}...{args.fork_ref}. "
+                + "Treating all candidate files as fork-owned."
+            )
+            fork_owned_files = set(candidate_files)
+
     protected_files = unique_sorted(
         path
         for path in candidate_files
