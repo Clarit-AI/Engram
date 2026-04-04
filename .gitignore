@@ -298,3 +298,6 @@ docs/migration-prep/
 .antigravity/
 .gemini/
 .kilo/
+
+# Vercel AI SDK provider (will move to own repo)
+vercel_sdk_provider/
