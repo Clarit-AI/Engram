@@ -231,6 +231,8 @@ The Mamba architecture was developed by Albert Gu and Tri Dao. Mamba2 was develo
 
 Engram is an open-source project focused on building more efficient AI infrastructure through true stateful inference.
 
+We're exploring ways to scale development, expand model support, and validate performance in larger production environments.
+
 If you're interested in supporting development, contributing compute resources, or exploring partnerships, feel free to reach out:
 
 👉 https://clarit.ai
