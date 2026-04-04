@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -18,13 +19,20 @@ def load_json(path: Path) -> object:
 
 
 def load_remote_json(url: str) -> object:
-    with urllib.request.urlopen(url) as response:  # noqa: S310
+    parsed_url = urllib.parse.urlparse(url)
+    if parsed_url.scheme != "https":
+        raise ValueError(f"schema URL must use https: {url}")
+
+    with urllib.request.urlopen(url, timeout=5) as response:  # noqa: S310
         return json.load(response)
 
 
 def validate_file(path: Path) -> int:
     try:
         instance = load_json(path)
+    except OSError as exc:
+        print(f"{path}: failed to read JSON: {exc}", file=sys.stderr)
+        return 1
     except json.JSONDecodeError as exc:
         print(f"{path}: invalid JSON: {exc}", file=sys.stderr)
         return 1
@@ -40,10 +48,19 @@ def validate_file(path: Path) -> int:
 
     try:
         schema = load_remote_json(schema_url)
+        if not isinstance(schema, (dict, bool)):
+            print(
+                f"{path}: schema at {schema_url} must be a JSON object or boolean",
+                file=sys.stderr,
+            )
+            return 1
         validator_cls = validator_for(schema)
         validator_cls.check_schema(schema)
         validator = validator_cls(schema)
         validator.validate(instance)
+    except ValueError as exc:
+        print(f"{path}: invalid schema URL {schema_url}: {exc}", file=sys.stderr)
+        return 1
     except OSError as exc:
         print(f"{path}: failed to load schema {schema_url}: {exc}", file=sys.stderr)
         return 1
