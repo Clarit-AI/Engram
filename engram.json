@@ -1,0 +1,64 @@
+{
+  "name": "Engram",
+  "version": "0.1.0",
+  "description": "Open-source inference infrastructure for true stateful AI. Engram enables models to persist and restore internal state instead of replaying prompt history.",
+  "organization": {
+    "name": "Clarit AI",
+    "url": "https://clarit.ai"
+  },
+  "repository": {
+    "url": "https://github.com/clarit-ai/engram"
+  },
+  "website": {
+    "url": "https://clarit.ai/engram"
+  },
+  "capabilities": [
+    "stateful inference",
+    "snapshot persistence",
+    "constant-size memory",
+    "multi-turn conversation optimization",
+    "agent checkpointing"
+  ],
+  "technical": {
+    "base": "SGLang fork",
+    "supported_architectures": [
+      "Mamba",
+      "Mamba2",
+      "Hybrid SSM",
+      "Gated Linear Attention"
+    ],
+    "memory_model": "fixed-size recurrent state",
+    "snapshot_restore_latency_ms": 2,
+    "token_reduction_percent": 94
+  },
+  "interfaces": {
+    "api": "OpenAI-compatible",
+    "endpoints": [
+      "/v1/chat/completions",
+      "/save_snapshot",
+      "/restore_snapshot",
+      "/list_snapshots",
+      "/delete_snapshot"
+    ]
+  },
+  "use_cases": [
+    "AI agents",
+    "long-running conversations",
+    "enterprise assistants",
+    "edge AI deployments"
+  ],
+  "differentiation": {
+    "vs_rag": "Restores model-native internal state instead of injecting retrieved text",
+    "vs_kv_cache": "Constant-size snapshots instead of context-length scaling memory",
+    "vs_finetuning": "Persists inference-time state without modifying model weights"
+  },
+  "status": {
+    "stage": "early",
+    "validated_models": 5,
+    "vendors": ["IBM", "NVIDIA", "Alibaba"]
+  },
+  "links": {
+    "docs": "https://clarit.ai/engram",
+    "code": "https://github.com/clarit-ai/engram"
+  }
+}
