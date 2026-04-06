@@ -1373,7 +1373,7 @@ jobs:
           exit ${TEST_EXIT_CODE:-0}
 
   check-all-jobs:
-    if: always() && (github.repository == 'sgl-project/sglang' || github.event_name == 'workflow_dispatch')
+    if: always() && (github.repository == 'sgl-project/sglang')
     needs:
       # MI30x ROCm 7.2 Unit Tests
       - nightly-test-1-gpu-unit-rocm720

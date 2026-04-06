@@ -340,7 +340,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   finish:
-    if: github.repository == 'sgl-project/sglang'
+    if: github.repository == 'sgl-project/sglang' && always()
     needs: [build-wheel, python-unit-tests, unit-tests, gateway-e2e, docker-build-test]
     runs-on: ubuntu-latest
     steps:
