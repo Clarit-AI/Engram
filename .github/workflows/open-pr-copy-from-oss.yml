@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   copy:
+    if: github.repository == 'sgl-project/sglang'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

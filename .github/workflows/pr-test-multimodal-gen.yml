@@ -49,12 +49,13 @@ env:
 jobs:
   multimodal-gen-test-1-gpu:
     if: |
-      (inputs.target_stage == 'multimodal-gen-test-1-gpu') ||
+      (github.repository == 'sgl-project/sglang') &&
+      ((inputs.target_stage == 'multimodal-gen-test-1-gpu') ||
       (
         !inputs.target_stage &&
         ((github.event_name == 'schedule' || inputs.test_parallel_dispatch == 'true') || (inputs.caller_needs_failure != 'true' && !cancelled())) &&
         inputs.multimodal_gen == 'true'
-      )
+      ))
     runs-on: 1-gpu-h100
     timeout-minutes: 240
     strategy:
@@ -103,12 +104,13 @@ jobs:
 
   multimodal-gen-test-2-gpu:
     if: |
-      (inputs.target_stage == 'multimodal-gen-test-2-gpu') ||
+      (github.repository == 'sgl-project/sglang') &&
+      ((inputs.target_stage == 'multimodal-gen-test-2-gpu') ||
       (
         !inputs.target_stage &&
         ((github.event_name == 'schedule' || inputs.test_parallel_dispatch == 'true') || (inputs.caller_needs_failure != 'true' && !cancelled())) &&
         inputs.multimodal_gen == 'true'
-      )
+      ))
     runs-on: 2-gpu-h100
     timeout-minutes: 240
     strategy:
@@ -158,12 +160,13 @@ jobs:
 
   multimodal-gen-unit-test:
     if: |
-      (inputs.target_stage == 'multimodal-gen-unit-test') ||
+      (github.repository == 'sgl-project/sglang') &&
+      ((inputs.target_stage == 'multimodal-gen-unit-test') ||
       (
         !inputs.target_stage &&
         ((github.event_name == 'schedule' || inputs.test_parallel_dispatch == 'true') || (inputs.caller_needs_failure != 'true' && !cancelled())) &&
         inputs.multimodal_gen == 'true'
-      )
+      ))
     runs-on: 1-gpu-h100
     timeout-minutes: 120
     steps:

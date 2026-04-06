@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   cancel-unfinished-pr-runs:
+    if: github.repository == 'sgl-project/sglang'
     runs-on: ubuntu-latest
     steps:
       - name: Install GitHub CLI

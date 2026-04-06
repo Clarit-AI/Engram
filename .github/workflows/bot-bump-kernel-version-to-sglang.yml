@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   bump-kernel-version-to-sglang:
+    if: github.repository == 'sgl-project/sglang'
     runs-on: ubuntu-latest
     outputs:
       branch_name: ${{ steps.set_output.outputs.branch_name }}
@@ -61,7 +62,7 @@ jobs:
 
   run-nightly-tests-nvidia:
     needs: bump-kernel-version-to-sglang
-    if: needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
+    if: github.repository == 'sgl-project/sglang' && needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
     uses: ./.github/workflows/nightly-test-nvidia.yml
     with:
       ref: ${{ needs.bump-kernel-version-to-sglang.outputs.branch_name }}
@@ -69,7 +70,7 @@ jobs:
 
   run-nightly-tests-amd:
     needs: bump-kernel-version-to-sglang
-    if: needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
+    if: github.repository == 'sgl-project/sglang' && needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
     uses: ./.github/workflows/nightly-test-amd.yml
     with:
       ref: ${{ needs.bump-kernel-version-to-sglang.outputs.branch_name }}
@@ -77,7 +78,7 @@ jobs:
 
   run-nightly-tests-npu:
     needs: bump-kernel-version-to-sglang
-    if: needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
+    if: github.repository == 'sgl-project/sglang' && needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
     uses: ./.github/workflows/nightly-test-npu.yml
     with:
       ref: ${{ needs.bump-kernel-version-to-sglang.outputs.branch_name }}
@@ -85,7 +86,7 @@ jobs:
 
   run-pr-tests-xeon:
     needs: bump-kernel-version-to-sglang
-    if: needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
+    if: github.repository == 'sgl-project/sglang' && needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
     uses: ./.github/workflows/pr-test-xeon.yml
     with:
       ref: ${{ needs.bump-kernel-version-to-sglang.outputs.branch_name }}
@@ -93,7 +94,7 @@ jobs:
 
   run-pr-tests-xpu:
     needs: bump-kernel-version-to-sglang
-    if: needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
+    if: github.repository == 'sgl-project/sglang' && needs.bump-kernel-version-to-sglang.outputs.needs_sync == 'true'
     uses: ./.github/workflows/pr-test-xpu.yml
     with:
       ref: ${{ needs.bump-kernel-version-to-sglang.outputs.branch_name }}

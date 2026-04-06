@@ -45,6 +45,7 @@ permissions:
 
 jobs:
   rerun-ut-cuda:
+    if: github.repository == 'sgl-project/sglang'
     runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 120
     env:

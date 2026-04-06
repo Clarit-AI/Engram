@@ -26,6 +26,7 @@ permissions:
 
 jobs:
   benchmark-compile-check:
+    if: github.repository == 'sgl-project/sglang'
     name: Benchmark Compilation Check
     runs-on: ubuntu-latest
     steps:
@@ -151,7 +152,7 @@ jobs:
   benchmark-summary:
     name: Benchmark Summary
     needs: [benchmark]
-    if: always() && (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request')
+    if: always() && (github.repository == 'sgl-project/sglang')
     runs-on: ubuntu-latest
     steps:
       - name: Download all benchmark results

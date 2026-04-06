@@ -95,7 +95,7 @@ jobs:
 
   # Temporarily disable docker cache seeding until performant storage is in place
   cache:
-    if: false
+    if: github.repository == 'sgl-project/sglang' && false
     # if: always() && github.repository == 'sgl-project/sglang'
     runs-on: linux-mi300-gpu-1
     environment: 'prod'

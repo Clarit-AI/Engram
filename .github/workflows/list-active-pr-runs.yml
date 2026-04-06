@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   list-active-runs:
+    if: github.repository == 'sgl-project/sglang'
     runs-on: ubuntu-latest
     steps:
       - name: Install GitHub CLI

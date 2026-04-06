@@ -81,6 +81,7 @@ jobs:
           path: sgl-kernel/dist/*
 
   release-cu129:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-cu129-matrix
     runs-on: ubuntu-latest
     steps:
@@ -174,6 +175,7 @@ jobs:
           path: sgl-kernel/dist/*
 
   release-cu130:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-cu130-matrix
     runs-on: ubuntu-latest
     steps:
@@ -258,6 +260,7 @@ jobs:
           path: sgl-kernel/dist/*
 
   release-rocm700:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-rocm-matrix
     runs-on: ubuntu-latest
     steps:
@@ -309,6 +312,7 @@ jobs:
           git push
 
   release-rocm720:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-rocm-matrix
     runs-on: ubuntu-latest
     steps:
@@ -390,6 +394,7 @@ jobs:
           path: sgl-kernel/dist/*
 
   release-musa43:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-musa43
     runs-on: ubuntu-latest
     steps:

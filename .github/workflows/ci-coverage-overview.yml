@@ -21,6 +21,7 @@ on:
 
 jobs:
   summary:
+    if: github.repository == 'sgl-project/sglang'
     name: Summary
     runs-on: ubuntu-latest
     steps:
@@ -37,6 +38,7 @@ jobs:
           python scripts/ci/utils/ci_coverage_report.py --section summary
 
   by-folder:
+    if: github.repository == 'sgl-project/sglang'
     name: Tests by Folder
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +55,7 @@ jobs:
           python scripts/ci/utils/ci_coverage_report.py --section by-folder
 
   by-suite:
+    if: github.repository == 'sgl-project/sglang'
     name: Tests by Suite
     runs-on: ubuntu-latest
     steps:
@@ -70,7 +73,7 @@ jobs:
 
   unit-test-coverage:
     name: Unit Test Code Coverage
-    if: github.event_name != 'pull_request'
+    if: github.repository == 'sgl-project/sglang' && github.event_name != 'pull_request'
     runs-on: 1-gpu-h100
     timeout-minutes: 30
     steps:
@@ -133,7 +136,7 @@ jobs:
   json-export:
     name: JSON Export
     runs-on: ubuntu-latest
-    if: inputs.output_format == 'json'
+    if: github.repository == 'sgl-project/sglang' && inputs.output_format == 'json'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

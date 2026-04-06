@@ -107,6 +107,7 @@ jobs:
           retention-days: 7
 
   release-nightly:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-nightly-wheel
     runs-on: ubuntu-latest
     environment: 'prod'

@@ -21,6 +21,7 @@ on:
 
 jobs:
   report:
+    if: github.repository == 'sgl-project/sglang'
     name: Generate Report
     runs-on: ubuntu-latest
     steps:

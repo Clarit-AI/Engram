@@ -105,6 +105,7 @@ jobs:
           retention-days: 30
 
   release-pr-wheel:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-pr-wheel
     runs-on: ubuntu-latest
     environment: 'prod'

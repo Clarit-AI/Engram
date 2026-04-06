@@ -14,6 +14,7 @@ permissions:
 
 jobs:
   bump-kernel-version:
+    if: github.repository == 'sgl-project/sglang'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

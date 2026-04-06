@@ -24,9 +24,10 @@ env:
 jobs:
   build-wheel:
     if: |
-      github.event_name != 'pull_request' ||
+      github.repository == 'sgl-project/sglang' &&
+      (github.event_name != 'pull_request' ||
       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'run-ci')) ||
-      (github.event.action == 'labeled' && github.event.label.name == 'run-ci')
+      (github.event.action == 'labeled' && github.event.label.name == 'run-ci'))
     runs-on: 4-gpu-a10
     steps:
       - name: Checkout code
@@ -77,6 +78,7 @@ jobs:
           python3 -m sglang_router.launch_router --help > /dev/null && echo "Entry point: OK"
 
   python-unit-tests:
+    if: github.repository == 'sgl-project/sglang'
     needs: build-wheel
     runs-on: ubuntu-latest
     steps:
@@ -111,9 +113,10 @@ jobs:
 
   unit-tests:
     if: |
-      github.event_name != 'pull_request' ||
+      github.repository == 'sgl-project/sglang' &&
+      (github.event_name != 'pull_request' ||
       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'run-ci')) ||
-      (github.event.action == 'labeled' && github.event.label.name == 'run-ci')
+      (github.event.action == 'labeled' && github.event.label.name == 'run-ci'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -177,9 +180,10 @@ jobs:
     name: ${{ matrix.name }}
     needs: build-wheel
     if: |
-      github.event_name != 'pull_request' ||
+      github.repository == 'sgl-project/sglang' &&
+      (github.event_name != 'pull_request' ||
       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'run-ci')) ||
-      (github.event.action == 'labeled' && github.event.label.name == 'run-ci')
+      (github.event.action == 'labeled' && github.event.label.name == 'run-ci'))
     strategy:
       fail-fast: false
       matrix:
@@ -313,9 +317,10 @@ jobs:
 
   docker-build-test:
     if: |
-      github.event_name != 'pull_request' ||
+      github.repository == 'sgl-project/sglang' &&
+      (github.event_name != 'pull_request' ||
       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'run-ci')) ||
-      (github.event.action == 'labeled' && github.event.label.name == 'run-ci')
+      (github.event.action == 'labeled' && github.event.label.name == 'run-ci'))
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -335,6 +340,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   finish:
+    if: github.repository == 'sgl-project/sglang' && always()
     needs: [build-wheel, python-unit-tests, unit-tests, gateway-e2e, docker-build-test]
     runs-on: ubuntu-latest
     steps:
@@ -344,7 +350,7 @@ jobs:
   summarize-benchmarks:
     needs: gateway-e2e
     runs-on: ubuntu-latest
-    if: success()
+    if: github.repository == 'sgl-project/sglang' && success()
 
     steps:
     - name: Checkout code

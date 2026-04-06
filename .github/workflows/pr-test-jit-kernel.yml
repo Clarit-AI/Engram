@@ -39,6 +39,7 @@ env:
 jobs:
   jit-kernel-unit-test:
     if: |
+      github.repository == 'sgl-project/sglang' &&
       github.event_name != 'schedule' &&
       inputs.test_parallel_dispatch != 'true' &&
       !inputs.target_stage
@@ -66,6 +67,7 @@ jobs:
 
   jit-kernel-multigpu-unit-test:
     if: |
+      github.repository == 'sgl-project/sglang' &&
       github.event_name != 'schedule' &&
       inputs.test_parallel_dispatch != 'true' &&
       !inputs.target_stage
@@ -91,6 +93,7 @@ jobs:
 
   jit-kernel-benchmark-test:
     if: |
+      github.repository == 'sgl-project/sglang' &&
       github.event_name != 'schedule' &&
       inputs.test_parallel_dispatch != 'true' &&
       !inputs.target_stage
