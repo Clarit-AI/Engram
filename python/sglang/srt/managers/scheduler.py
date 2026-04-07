@@ -135,6 +135,7 @@ from sglang.srt.managers.io_struct import (
     RpcReqInput,
     RpcReqOutput,
     SaveSnapshotReqInput,
+    RemoveExternalCorpusReqInput,
     RemoveExternalCorpusReqOutput,
     SendWeightsToRemoteInstanceReqInput,
     SendWeightsToRemoteInstanceReqOutput,
@@ -2954,6 +2955,7 @@ class Scheduler(
                 http_worker_ipc=recv_req.http_worker_ipc,
                 dllm_config=self.dllm_config,
                 time_stats=recv_req.time_stats,
+                conversation_id=getattr(recv_req, "conversation_id", None),
             )
             req.tokenizer = self.tokenizer
 

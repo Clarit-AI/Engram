@@ -841,3 +841,5 @@ class MambaSnapshotManager:
             f"temporal shape {temporal_states.shape} "
             f"(moved to {mamba_pool.device})"
         )
+
+MambaSnapshot = MambaSnapshotManager
