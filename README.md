@@ -5,7 +5,11 @@
 ### AI models that remember
 
 [![Built on SGLang](https://img.shields.io/badge/built%20on-SGLang-blue)](https://github.com/sgl-project/sglang)
-[![License](https://img.shields.io/github/license/sgl-project/sglang.svg)](LICENSE) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Clarit-AI/Engram)
+[![License](https://img.shields.io/github/license/sgl-project/sglang.svg)](LICENSE) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Clarit-AI/Engram) ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Clarit-AI/Engram?logo=CodeRabbit&logoColor=%23FFFFFF&color=%23FF570A)
+
+
+
+
 
 Stop re-reading every conversation from scratch.
 Save model state. Restore in 2ms. Cut token costs by 94%.
