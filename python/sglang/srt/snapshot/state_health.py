@@ -36,9 +36,7 @@ class NormBaseline:
 
     def update(self, layer_idx: int, norm_value: float) -> None:
         if layer_idx not in self._windows:
-            self._windows[layer_idx] = collections.deque(
-                maxlen=self._window_size
-            )
+            self._windows[layer_idx] = collections.deque(maxlen=self._window_size)
         self._windows[layer_idx].append(norm_value)
 
     def is_anomalous(
@@ -173,18 +171,12 @@ class StateHealthMonitor:
         num_temporal_layers = temporal_states.shape[0]
         for i in range(num_temporal_layers):
             norm = torch.linalg.norm(temporal_states[i].float()).item()
-            is_anomalous = baseline.is_anomalous(
-                layer_idx, norm, self._sigma_threshold
-            )
+            is_anomalous = baseline.is_anomalous(layer_idx, norm, self._sigma_threshold)
             mean, std, count = baseline.get_stats(layer_idx)
 
             if is_anomalous:
                 anomalous_layers.append(layer_idx)
-                sigma_dev = (
-                    abs(norm - mean) / std
-                    if std > 0
-                    else float("inf")
-                )
+                sigma_dev = abs(norm - mean) / std if std > 0 else float("inf")
                 details[layer_idx] = {
                     "norm": norm,
                     "mean": mean,
@@ -206,9 +198,7 @@ class StateHealthMonitor:
             turn_number=turn_number,
         )
 
-    def get_conversation_health(
-        self, conversation_id: str
-    ) -> Optional[NormBaseline]:
+    def get_conversation_health(self, conversation_id: str) -> Optional[NormBaseline]:
         """Return the baseline for a conversation, or None."""
         return self._baselines.get(conversation_id)
 

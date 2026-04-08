@@ -5,6 +5,7 @@ Phase 10: granite-4.0-h-small scaling tests.
 Uses /v1/completions (no chat template) and snapshot persistence API.
 Records detailed results to test/phases/results/phase-10-logs/.
 """
+
 import json
 import os
 import subprocess
@@ -27,7 +28,9 @@ def get_gpu_vram():
     try:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
         return int(r.stdout.strip()) if r.returncode == 0 else 0
     except Exception:
@@ -68,7 +71,9 @@ def snapshot_save(rid: str) -> dict:
     return r.json()
 
 
-def snapshot_restore(snapshot_id: str, prompt: str = "Continue: ", max_tokens: int = 30) -> dict:
+def snapshot_restore(
+    snapshot_id: str, prompt: str = "Continue: ", max_tokens: int = 30
+) -> dict:
     payload = {
         "snapshot_id": snapshot_id,
         "prompt": prompt,
@@ -118,7 +123,9 @@ def run_tests():
         "pass": len(text) > 0,
     }
     results["tests"].append(test1)
-    print(f"  Response: '{text}' ({resp['usage']['completion_tokens']} tokens, {elapsed:.3f}s)")
+    print(
+        f"  Response: '{text}' ({resp['usage']['completion_tokens']} tokens, {elapsed:.3f}s)"
+    )
 
     # --- Test 2: Multi-turn without snapshots ---
     print("\n=== Test 2: Multi-turn without snapshots (10 turns) ===")
@@ -129,17 +136,31 @@ def run_tests():
         resp = completion(conversation, max_tokens=40)
         elapsed = time.time() - t0
         reply = resp["choices"][0]["text"].strip()
-        turns.append({"turn": i + 1, "response": reply, "latency_s": round(elapsed, 3), "tokens": resp["usage"]["completion_tokens"]})
+        turns.append(
+            {
+                "turn": i + 1,
+                "response": reply,
+                "latency_s": round(elapsed, 3),
+                "tokens": resp["usage"]["completion_tokens"],
+            }
+        )
         conversation += reply + f"\nUser: Turn {i+2}: What is my name?\nAssistant: "
         print(f"  Turn {i+1}: {reply[:50]}... ({elapsed:.3f}s)")
 
-    test2 = {"name": "multi_turn_no_snapshot", "turns": turns, "pass": all(t["tokens"] > 0 for t in turns)}
+    test2 = {
+        "name": "multi_turn_no_snapshot",
+        "turns": turns,
+        "pass": all(t["tokens"] > 0 for t in turns),
+    }
     results["tests"].append(test2)
 
     # --- Test 3: Snapshot save/restore ---
     print("\n=== Test 3: Snapshot Save & Restore ===")
     # 3a: Establish conversation
-    resp = completion("User: My favorite number is 42 and my color is green. Remember these.\nAssistant: ", max_tokens=40)
+    resp = completion(
+        "User: My favorite number is 42 and my color is green. Remember these.\nAssistant: ",
+        max_tokens=40,
+    )
     rid = resp.get("id", "unknown")
     initial_reply = resp["choices"][0]["text"].strip()
     print(f"  Initial response: {initial_reply[:80]}...")
@@ -149,7 +170,9 @@ def run_tests():
     save_result = snapshot_save(rid)
     save_latency = time.time() - t0
     snapshot_id = save_result.get("snapshot_id")
-    print(f"  Save: id={snapshot_id}, success={save_result.get('success')}, latency={save_latency:.3f}s")
+    print(
+        f"  Save: id={snapshot_id}, success={save_result.get('success')}, latency={save_latency:.3f}s"
+    )
 
     test3a = {
         "name": "snapshot_save",
@@ -163,7 +186,11 @@ def run_tests():
     if snapshot_id:
         # 3c: Restore snapshot
         t0 = time.time()
-        restore_result = snapshot_restore(snapshot_id, prompt="User: What is my favorite number?\nAssistant: ", max_tokens=30)
+        restore_result = snapshot_restore(
+            snapshot_id,
+            prompt="User: What is my favorite number?\nAssistant: ",
+            max_tokens=30,
+        )
         restore_latency = time.time() - t0
         restored_reply = ""
         if "choices" in restore_result:
@@ -184,7 +211,10 @@ def run_tests():
         print("\n=== Test 3d: Multiple Snapshot Saves ===")
         snap_ids = [snapshot_id]
         for i in range(5):
-            resp = completion(f"User: Fact {i+1}: The capital of France is Paris.\nAssistant: ", max_tokens=20)
+            resp = completion(
+                f"User: Fact {i+1}: The capital of France is Paris.\nAssistant: ",
+                max_tokens=20,
+            )
             rid = resp.get("id", f"turn-{i}")
             save = snapshot_save(rid)
             if save.get("success"):
@@ -218,13 +248,25 @@ def run_tests():
         "name": "rapid_fire",
         "total": 50,
         "errors": errors,
-        "avg_latency_s": round(sum(l for l in latencies if l > 0) / max(1, sum(1 for l in latencies if l > 0)), 3),
-        "max_latency_s": round(max(l for l in latencies if l > 0) if any(l > 0 for l in latencies) else 0, 3),
-        "min_latency_s": round(min(l for l in latencies if l > 0) if any(l > 0 for l in latencies) else 0, 3),
+        "avg_latency_s": round(
+            sum(l for l in latencies if l > 0)
+            / max(1, sum(1 for l in latencies if l > 0)),
+            3,
+        ),
+        "max_latency_s": round(
+            max(l for l in latencies if l > 0) if any(l > 0 for l in latencies) else 0,
+            3,
+        ),
+        "min_latency_s": round(
+            min(l for l in latencies if l > 0) if any(l > 0 for l in latencies) else 0,
+            3,
+        ),
         "pass": errors == 0,
     }
     results["tests"].append(test4)
-    print(f"  {50 - errors}/50 successful, avg={test4['avg_latency_s']}s, max={test4['max_latency_s']}s")
+    print(
+        f"  {50 - errors}/50 successful, avg={test4['avg_latency_s']}s, max={test4['max_latency_s']}s"
+    )
 
     # --- Test 5: Long context ---
     print("\n=== Test 5: Long Context (2K tokens) ===")
@@ -244,7 +286,9 @@ def run_tests():
         "pass": len(long_reply) > 0 and prompt_tokens > 500,
     }
     results["tests"].append(test5)
-    print(f"  {prompt_tokens} prompt tokens, response: '{long_reply[:60]}...', {elapsed:.3f}s")
+    print(
+        f"  {prompt_tokens} prompt tokens, response: '{long_reply[:60]}...', {elapsed:.3f}s"
+    )
 
     # --- Final resource snapshot ---
     gpu_end = get_gpu_vram()

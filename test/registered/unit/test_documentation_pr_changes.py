@@ -25,6 +25,7 @@ ARCHIVE_DIR = DOCS_DIR / ".archive"
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -32,6 +33,7 @@ def _read(path: Path) -> str:
 # ---------------------------------------------------------------------------
 # File existence tests
 # ---------------------------------------------------------------------------
+
 
 class TestFileExistence(unittest.TestCase):
     """New files must exist; deleted/moved files must not be in old locations."""
@@ -113,6 +115,7 @@ class TestFileExistence(unittest.TestCase):
 # Archive file integrity
 # ---------------------------------------------------------------------------
 
+
 class TestArchiveFileIntegrity(unittest.TestCase):
     """Files in .archive/ must carry a visible archival warning."""
 
@@ -182,6 +185,7 @@ class TestArchiveFileIntegrity(unittest.TestCase):
 # AGENTS.md (repo root)
 # ---------------------------------------------------------------------------
 
+
 class TestAgentsMd(unittest.TestCase):
     """Root AGENTS.md must contain the correct canonical-doc pointers."""
 
@@ -244,6 +248,7 @@ class TestAgentsMd(unittest.TestCase):
 # CLAUDE.md additions
 # ---------------------------------------------------------------------------
 
+
 class TestClaudeMdGhAuthSection(unittest.TestCase):
     """CLAUDE.md must contain the new gh-auth guidance."""
 
@@ -289,6 +294,7 @@ class TestClaudeMdGhAuthSection(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # README.md endpoint table
 # ---------------------------------------------------------------------------
+
 
 class TestReadmeEndpointTable(unittest.TestCase):
     """README.md endpoint table must reflect the current HTTP API."""
@@ -377,6 +383,7 @@ class TestReadmeEndpointTable(unittest.TestCase):
 # INDEX.md
 # ---------------------------------------------------------------------------
 
+
 class TestIndexMd(unittest.TestCase):
     """INDEX.md must reference active docs and not stale ones."""
 
@@ -412,7 +419,8 @@ class TestIndexMd(unittest.TestCase):
         # Should only appear in archive context if at all
         # The index must not navigate users there as an active doc
         lines_with_docstring = [
-            ln for ln in self.text.splitlines()
+            ln
+            for ln in self.text.splitlines()
             if "DOCSTRING_TEMPLATES.md" in ln and ".archive" not in ln
         ]
         self.assertEqual(
@@ -424,7 +432,8 @@ class TestIndexMd(unittest.TestCase):
     def test_does_not_reference_active_api_reference(self):
         """api_reference.md moved to .archive/ — INDEX must not link active path."""
         lines_with_api_ref = [
-            ln for ln in self.text.splitlines()
+            ln
+            for ln in self.text.splitlines()
             if "api_reference.md" in ln and ".archive" not in ln
         ]
         self.assertEqual(
@@ -434,7 +443,9 @@ class TestIndexMd(unittest.TestCase):
         )
 
     def test_mentions_archive_directory(self):
-        self.assertIn(".archive", self.text, "INDEX.md must reference .archive/ section")
+        self.assertIn(
+            ".archive", self.text, "INDEX.md must reference .archive/ section"
+        )
 
     def test_title_is_engram_not_stateful_mamba(self):
         """Title was updated to Engram Docs Index."""
@@ -451,6 +462,7 @@ class TestIndexMd(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # SUMMARY.md
 # ---------------------------------------------------------------------------
+
 
 class TestSummaryMd(unittest.TestCase):
     """SUMMARY.md must list active docs and archive correctly."""
@@ -512,6 +524,7 @@ class TestSummaryMd(unittest.TestCase):
 # api_guide.md
 # ---------------------------------------------------------------------------
 
+
 class TestApiGuideMd(unittest.TestCase):
     """api_guide.md must contain the required sections and accurate info."""
 
@@ -559,7 +572,9 @@ class TestApiGuideMd(unittest.TestCase):
             r"`(/(?:save|list|get|restore|delete)_snapshot[^`]*)`\s*\|\s*`(\w+)`",
             self.text,
         )
-        self.assertTrue(endpoint_rows, "expected endpoint table rows to be found by regex")
+        self.assertTrue(
+            endpoint_rows, "expected endpoint table rows to be found by regex"
+        )
         for endpoint, method in endpoint_rows:
             self.assertEqual(
                 method,
@@ -624,6 +639,7 @@ class TestApiGuideMd(unittest.TestCase):
 # architecture.md
 # ---------------------------------------------------------------------------
 
+
 class TestArchitectureMd(unittest.TestCase):
     """architecture.md must describe the real implementation, not the old speculative one."""
 
@@ -671,7 +687,8 @@ class TestArchitectureMd(unittest.TestCase):
         # Acceptable if mentioned purely as historical context, but should not
         # be a top-level section header.
         lines_registry_header = [
-            ln for ln in self.text.splitlines()
+            ln
+            for ln in self.text.splitlines()
             if ln.startswith("#") and "SnapshotRegistry" in ln
         ]
         self.assertEqual(
@@ -706,6 +723,7 @@ class TestArchitectureMd(unittest.TestCase):
 # No active doc leaks stale paths
 # ---------------------------------------------------------------------------
 
+
 class TestNoStaleReferencesInActiveDocs(unittest.TestCase):
     """Active docs must not reference files that have been deleted or archived."""
 
@@ -725,7 +743,8 @@ class TestNoStaleReferencesInActiveDocs(unittest.TestCase):
             text = _read(path)
             # Find any link that references the filename without going through .archive/
             bad_refs = [
-                ln for ln in text.splitlines()
+                ln
+                for ln in text.splitlines()
                 if filename in ln and ".archive" not in ln
                 # Allow headings and content text that mention it by name as prose
                 # but flag markdown link syntax pointing at it
@@ -756,7 +775,8 @@ class TestNoStaleReferencesInActiveDocs(unittest.TestCase):
         ]:
             text = _read(path)
             bad_refs = [
-                ln for ln in text.splitlines()
+                ln
+                for ln in text.splitlines()
                 if "api_reference.md" in ln
                 and ".archive" not in ln
                 and re.search(r"\[.*?\]\([^)]*api_reference\.md[^)]*\)", ln)
@@ -771,6 +791,7 @@ class TestNoStaleReferencesInActiveDocs(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Regression / boundary / edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestRegressionAndEdgeCases(unittest.TestCase):
     """Extra regression and boundary tests for robustness."""

@@ -77,7 +77,10 @@ def validate_file(path: Path) -> int:
         location = "$"
         if exc.absolute_path:
             location = "$." + ".".join(str(part) for part in exc.absolute_path)
-        print(f"{path}: schema validation failed at {location}: {exc.message}", file=sys.stderr)
+        print(
+            f"{path}: schema validation failed at {location}: {exc.message}",
+            file=sys.stderr,
+        )
         return 1
 
     print(f"{path}: schema validation passed")

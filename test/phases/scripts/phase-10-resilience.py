@@ -25,7 +25,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List
 
 import requests
 
@@ -42,6 +42,7 @@ COLD_RESTORE_MIN_MS = 50
 # Helpers
 # ────────────────────────────────────────────────────────────────
 
+
 def log(msg: str):
     print(f"  {msg}")
 
@@ -50,7 +51,9 @@ def get_gpu_vram_mb() -> int:
     try:
         r = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
         if r.returncode == 0:
             return int(r.stdout.strip().split("\n")[0].strip())
@@ -99,7 +102,9 @@ def get_server_pids() -> List[int]:
     pids = set()
     for pattern in ["sglang::", "launch_server", "sglang.launch_server"]:
         try:
-            r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True, timeout=2)
+            r = subprocess.run(
+                ["pgrep", "-f", pattern], capture_output=True, text=True, timeout=2
+            )
             if r.returncode == 0:
                 for line in r.stdout.strip().split("\n"):
                     line = line.strip()
@@ -162,8 +167,10 @@ def start_server(timeout: float = 180) -> bool:
     )
 
     subprocess.Popen(
-        cmd, shell=True,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        cmd,
+        shell=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         preexec_fn=os.setsid,
     )
 
@@ -180,13 +187,18 @@ def start_server(timeout: float = 180) -> bool:
     return False
 
 
-def send_completion(prompt: str, temperature: float = 0.0, max_tokens: int = 100,
-                    timeout: float = 300) -> dict:
+def send_completion(
+    prompt: str, temperature: float = 0.0, max_tokens: int = 100, timeout: float = 300
+) -> dict:
     start = time.time()
     r = requests.post(
         f"{SERVER_URL}/v1/completions",
-        json={"model": "default", "prompt": prompt, "temperature": temperature,
-              "max_tokens": max_tokens},
+        json={
+            "model": "default",
+            "prompt": prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        },
         timeout=timeout,
     )
     elapsed = time.time() - start
@@ -201,9 +213,14 @@ def send_completion(prompt: str, temperature: float = 0.0, max_tokens: int = 100
     }
 
 
-def send_generate(text: str, temperature: float = 0.0, max_tokens: int = 100,
-                  stream: bool = False, timeout: float = 300,
-                  custom_rid: str = None) -> dict:
+def send_generate(
+    text: str,
+    temperature: float = 0.0,
+    max_tokens: int = 100,
+    stream: bool = False,
+    timeout: float = 300,
+    custom_rid: str = None,
+) -> dict:
     payload = {
         "text": text,
         "sampling_params": {"temperature": temperature, "max_new_tokens": max_tokens},
@@ -214,7 +231,10 @@ def send_generate(text: str, temperature: float = 0.0, max_tokens: int = 100,
 
     start = time.time()
     r = requests.post(
-        f"{SERVER_URL}/generate", json=payload, timeout=timeout, stream=stream,
+        f"{SERVER_URL}/generate",
+        json=payload,
+        timeout=timeout,
+        stream=stream,
     )
     elapsed = time.time() - start
 
@@ -230,7 +250,9 @@ def send_generate(text: str, temperature: float = 0.0, max_tokens: int = 100,
     }
 
 
-def save_snapshot(rid: str = None, conversation_id: str = None, timeout: float = 30) -> dict:
+def save_snapshot(
+    rid: str = None, conversation_id: str = None, timeout: float = 30
+) -> dict:
     payload = {}
     if rid:
         payload["rid"] = rid
@@ -246,7 +268,9 @@ def save_snapshot(rid: str = None, conversation_id: str = None, timeout: float =
     return data
 
 
-def restore_snapshot(conversation_id: str = None, rid: str = None, timeout: float = 60) -> dict:
+def restore_snapshot(
+    conversation_id: str = None, rid: str = None, timeout: float = 60
+) -> dict:
     payload = {}
     if conversation_id:
         payload["conversation_id"] = conversation_id
@@ -264,7 +288,9 @@ def restore_snapshot(conversation_id: str = None, rid: str = None, timeout: floa
 
 def abort_request(rid: str, timeout: float = 10) -> bool:
     try:
-        r = requests.post(f"{SERVER_URL}/abort_request", json={"rid": rid}, timeout=timeout)
+        r = requests.post(
+            f"{SERVER_URL}/abort_request", json={"rid": rid}, timeout=timeout
+        )
         return r.status_code == 200
     except Exception:
         return False
@@ -283,11 +309,14 @@ def list_disk_snapshots() -> List[dict]:
                 if f.is_file():
                     files.append({"name": f.name, "size_bytes": f.stat().st_size})
             if files:
-                results.append({
-                    "conversation_id": conv_dir.name,
-                    "files": files,
-                    "total_size_mb": sum(f["size_bytes"] for f in files) / (1024 * 1024),
-                })
+                results.append(
+                    {
+                        "conversation_id": conv_dir.name,
+                        "files": files,
+                        "total_size_mb": sum(f["size_bytes"] for f in files)
+                        / (1024 * 1024),
+                    }
+                )
     return results
 
 
@@ -305,6 +334,7 @@ def check_snapshot_integrity(conversation_id: str) -> dict:
 
     try:
         from safetensors.torch import load_file
+
         for sf in safetensors_files:
             tensors = load_file(str(sf))
             keys = list(tensors.keys())
@@ -328,22 +358,28 @@ def find_tmp_files() -> List[str]:
     return [str(f) for f in snap_dir.rglob("*.tmp")]
 
 
-def send_streaming_chat(messages: list, temperature: float = 0.0, max_tokens: int = 200,
-                        timeout: float = 30):
+def send_streaming_chat(
+    messages: list, temperature: float = 0.0, max_tokens: int = 200, timeout: float = 30
+):
     """Send a streaming chat request. Returns the response object for manual chunk reading."""
     return requests.post(
         f"{SERVER_URL}/v1/chat/completions",
         json={
-            "model": "default", "messages": messages,
-            "temperature": temperature, "max_tokens": max_tokens, "stream": True,
+            "model": "default",
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
         },
-        timeout=timeout, stream=True,
+        timeout=timeout,
+        stream=True,
     )
 
 
 # ────────────────────────────────────────────────────────────────
 # Test 1: Client Disconnect Mid-Stream
 # ────────────────────────────────────────────────────────────────
+
 
 def test_client_disconnect() -> dict:
     print("\n" + "=" * 60)
@@ -364,7 +400,12 @@ def test_client_disconnect() -> dict:
 
     # Step 1: Send streaming request, read 1-2 chunks, then close
     log("Sending streaming request...")
-    messages = [{"role": "user", "content": "Write a long essay about the history of computing, from Charles Babbage to modern AI. Be thorough and detailed."}]
+    messages = [
+        {
+            "role": "user",
+            "content": "Write a long essay about the history of computing, from Charles Babbage to modern AI. Be thorough and detailed.",
+        }
+    ]
     chunks_read = 0
     partial_text = ""
 
@@ -436,6 +477,7 @@ def test_client_disconnect() -> dict:
 # Test 2: Server SIGKILL Mid-Inference
 # ────────────────────────────────────────────────────────────────
 
+
 def test_sigkill_mid_inference() -> dict:
     print("\n" + "=" * 60)
     print("TEST 2: Server SIGKILL Mid-Inference")
@@ -475,7 +517,9 @@ def test_sigkill_mid_inference() -> dict:
     result["snapshots_before_kill"] = len(snap_files)
     integrity = check_snapshot_integrity(conv_id)
     result["integrity_before_kill"] = integrity
-    log(f"Snapshot integrity: exists={integrity.get('exists')}, tensors={integrity.get('has_safetensors')}")
+    log(
+        f"Snapshot integrity: exists={integrity.get('exists')}, tensors={integrity.get('has_safetensors')}"
+    )
 
     if not integrity.get("exists"):
         result["status"] = "FAIL"
@@ -493,7 +537,8 @@ def test_sigkill_mid_inference() -> dict:
                 "Write a very long and detailed essay about every aspect of quantum physics. "
                 "Include historical context, key experiments, mathematical formulations, "
                 "and modern applications. Be extremely thorough.",
-                max_tokens=500, timeout=60,
+                max_tokens=500,
+                timeout=60,
             )
         except Exception:
             pass
@@ -520,7 +565,9 @@ def test_sigkill_mid_inference() -> dict:
     result["snapshots_after_kill"] = len(snap_files_after)
     integrity_after = check_snapshot_integrity(conv_id)
     result["integrity_after_kill"] = integrity_after
-    log(f"Snapshot after kill: exists={integrity_after.get('exists')}, tensors={integrity_after.get('has_safetensors')}")
+    log(
+        f"Snapshot after kill: exists={integrity_after.get('exists')}, tensors={integrity_after.get('has_safetensors')}"
+    )
 
     if not integrity_after.get("exists"):
         result["status"] = "FAIL"
@@ -549,11 +596,15 @@ def test_sigkill_mid_inference() -> dict:
         if restore_latency < WARM_RESTORE_MAX_MS:
             result["preload_tier"] = "WARM"
             result["preload_worked"] = True
-            log(f"Restore latency: {restore_latency:.0f}ms — WARM tier (preload worked!)")
+            log(
+                f"Restore latency: {restore_latency:.0f}ms — WARM tier (preload worked!)"
+            )
         elif restore_latency >= COLD_RESTORE_MIN_MS:
             result["preload_tier"] = "COLD"
             result["preload_worked"] = False
-            log(f"Restore latency: {restore_latency:.0f}ms — COLD tier (preload may not have worked)")
+            log(
+                f"Restore latency: {restore_latency:.0f}ms — COLD tier (preload may not have worked)"
+            )
         else:
             result["preload_tier"] = "AMBIGUOUS"
             result["preload_worked"] = None
@@ -575,7 +626,9 @@ def test_sigkill_mid_inference() -> dict:
     # Step 8: Generate from restored snapshot to confirm semantic correctness
     log("Generating from restored snapshot...")
     try:
-        verify = send_completion("What did we discuss earlier? Summarize in one sentence.", max_tokens=50)
+        verify = send_completion(
+            "What did we discuss earlier? Summarize in one sentence.", max_tokens=50
+        )
         result["post_restore_generation_ok"] = True
         result["post_restore_text"] = verify["text"][:100]
         log(f"Post-restore generation: {verify['text'][:80]}...")
@@ -591,6 +644,7 @@ def test_sigkill_mid_inference() -> dict:
 # ────────────────────────────────────────────────────────────────
 # Test 3: Server SIGKILL During Snapshot Write
 # ────────────────────────────────────────────────────────────────
+
 
 def test_sigkill_during_write() -> dict:
     print("\n" + "=" * 60)
@@ -658,7 +712,9 @@ def test_sigkill_during_write() -> dict:
         for f in snap["files"]:
             if f["name"].endswith(".safetensors") and f["size_bytes"] < 1000:
                 partial_found = True
-                log(f"WARNING: Very small safetensors file: {snap['conversation_id']}/{f['name']} ({f['size_bytes']} bytes)")
+                log(
+                    f"WARNING: Very small safetensors file: {snap['conversation_id']}/{f['name']} ({f['size_bytes']} bytes)"
+                )
     result["partial_safetensors_found"] = partial_found
 
     # Step 5: Restart server
@@ -689,6 +745,7 @@ def test_sigkill_during_write() -> dict:
 # ────────────────────────────────────────────────────────────────
 # Test 4: Graceful SIGTERM Shutdown
 # ────────────────────────────────────────────────────────────────
+
 
 def test_graceful_sigterm() -> dict:
     print("\n" + "=" * 60)
@@ -732,8 +789,11 @@ def test_graceful_sigterm() -> dict:
 
     def send_long():
         try:
-            send_completion("Write a 500-word essay about climate change and its global impacts.",
-                            max_tokens=300, timeout=30)
+            send_completion(
+                "Write a 500-word essay about climate change and its global impacts.",
+                max_tokens=300,
+                timeout=30,
+            )
         except Exception:
             pass
 
@@ -780,7 +840,9 @@ def test_graceful_sigterm() -> dict:
         restore = restore_snapshot(conversation_id=conv_id)
         result["restore_success"] = restore.get("success", False)
         result["restore_latency_ms"] = round(restore.get("latency_ms", 0), 1)
-        log(f"Restore: success={restore.get('success')}, latency={restore.get('latency_ms', 0):.0f}ms")
+        log(
+            f"Restore: success={restore.get('success')}, latency={restore.get('latency_ms', 0):.0f}ms"
+        )
     except Exception as e:
         result["restore_success"] = False
         result["restore_error"] = str(e)
@@ -800,6 +862,7 @@ def test_graceful_sigterm() -> dict:
 # ────────────────────────────────────────────────────────────────
 # Test 5: Abort Request + Snapshot Interaction
 # ────────────────────────────────────────────────────────────────
+
 
 def test_abort_and_snapshot() -> dict:
     print("\n" + "=" * 60)
@@ -827,7 +890,8 @@ def test_abort_and_snapshot() -> dict:
             r = send_generate(
                 "Write a very detailed analysis of neural network architectures. "
                 "Include CNNs, RNNs, Transformers, and State Space Models.",
-                max_tokens=500, custom_rid=custom_rid,
+                max_tokens=500,
+                custom_rid=custom_rid,
             )
             gen_result.update(r)
         except Exception as e:
@@ -857,7 +921,9 @@ def test_abort_and_snapshot() -> dict:
         save_result = save_snapshot(rid=custom_rid)
         result["save_after_abort"] = save_result
         result["save_succeeded"] = save_result.get("success", False)
-        log(f"Save result: success={save_result.get('success')}, msg={save_result.get('message')}")
+        log(
+            f"Save result: success={save_result.get('success')}, msg={save_result.get('message')}"
+        )
 
         # If save succeeded, verify the snapshot on disk
         if save_result.get("success"):
@@ -909,6 +975,7 @@ def test_abort_and_snapshot() -> dict:
 # Report Generation
 # ────────────────────────────────────────────────────────────────
 
+
 def generate_report(results: List[dict], output_dir: Path):
     lines = [
         "# Phase 10 Addendum: Resilience Test Results\n",
@@ -936,8 +1003,12 @@ def generate_report(results: List[dict], output_dir: Path):
         elif r["test"] == "graceful_sigterm":
             evidence = f"Shutdown={r.get('sigterm_shutdown_s', 0):.1f}s, restore={r.get('restore_success')}"
         elif r["test"] == "abort_and_snapshot":
-            evidence = f"Save={r.get('save_succeeded')}, healthy={r.get('server_healthy')}"
-        lines.append(f"| {results.index(r) + 1} | {r['test']} | **{status}** | {evidence} |")
+            evidence = (
+                f"Save={r.get('save_succeeded')}, healthy={r.get('server_healthy')}"
+            )
+        lines.append(
+            f"| {results.index(r) + 1} | {r['test']} | **{status}** | {evidence} |"
+        )
     lines.append("")
 
     # Detailed results per test
@@ -980,8 +1051,9 @@ def main():
     global SERVER_URL, SNAPSHOT_DIR, MODEL_PATH
 
     parser = argparse.ArgumentParser(description="Phase 10: Resilience Testing")
-    parser.add_argument("--test", default="all",
-                        help="Test number(s) to run: 1,2,3,4,5 or 'all'")
+    parser.add_argument(
+        "--test", default="all", help="Test number(s) to run: 1,2,3,4,5 or 'all'"
+    )
     parser.add_argument("--server-url", default=SERVER_URL)
     parser.add_argument("--snapshot-dir", default=SNAPSHOT_DIR)
     parser.add_argument("--model-path", default=MODEL_PATH)

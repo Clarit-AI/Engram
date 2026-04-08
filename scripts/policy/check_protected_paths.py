@@ -102,7 +102,9 @@ def compute_sync_policy(
     static_touches = set(filter_matching(upstream_incoming_files, static_globs))
     dynamic_touches = fork_only_files & upstream_incoming_files
     protected_upstream_touches = unique_sorted(static_touches | dynamic_touches)
-    protected_conflicts = unique_sorted(conflict_files & set(protected_upstream_touches))
+    protected_conflicts = unique_sorted(
+        conflict_files & set(protected_upstream_touches)
+    )
 
     if conflict_files:
         if protected_conflicts:
