@@ -1021,7 +1021,4 @@ from sglang.snapshot.exceptions import (
 
 ## See Also
 
-- [User Guide](user_guide.md) - Usage examples and patterns
-- [Architecture](architecture.md) - Technical architecture details
-- [Examples](examples.md) - Real-world examples
-- [Troubleshooting](troubleshooting.md) - Common issues and solutions
+*This document is archived. See [api_guide.md](../api_guide.md) for current documentation.*
