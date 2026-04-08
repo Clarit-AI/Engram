@@ -1,13 +1,12 @@
 """Tests for SSM state tensor validation (hidden state poisoning guards)."""
+
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 import torch
 
 from sglang.srt.snapshot.mamba_snapshot import (
-    ALLOWED_DTYPES,
     MambaSnapshotManager,
     MambaSnapshotMetadata,
     SnapshotValidationError,
@@ -15,10 +14,10 @@ from sglang.srt.snapshot.mamba_snapshot import (
     validate_state_tensors,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_conv_states(dtype=torch.float32) -> list:
     """Return a realistic conv_states list: one tensor, shape [24, 4, 16, 3]."""
@@ -47,6 +46,7 @@ def _make_metadata(conversation_id: str = "test-conv-123") -> MambaSnapshotMetad
 # 1. Valid state passes
 # ---------------------------------------------------------------------------
 
+
 def test_valid_state_passes():
     conv = _make_conv_states()
     temporal = _make_temporal_states()
@@ -60,18 +60,22 @@ def test_valid_state_passes():
 # 2. NaN detection
 # ---------------------------------------------------------------------------
 
+
 def test_nan_detection():
     conv = _make_conv_states()
     conv[0][0, 0, 0, 0] = float("nan")
     temporal = _make_temporal_states()
     result = validate_state_tensors(conv, temporal)
     assert result.is_valid is False
-    assert any("NaN" in e for e in result.errors), f"Expected 'NaN' in errors: {result.errors}"
+    assert any(
+        "NaN" in e for e in result.errors
+    ), f"Expected 'NaN' in errors: {result.errors}"
 
 
 # ---------------------------------------------------------------------------
 # 3. Inf detection
 # ---------------------------------------------------------------------------
+
 
 def test_inf_detection():
     conv = _make_conv_states()
@@ -79,81 +83,89 @@ def test_inf_detection():
     temporal[0, 0, 0, 0] = float("inf")
     result = validate_state_tensors(conv, temporal)
     assert result.is_valid is False
-    assert any("Inf" in e for e in result.errors), f"Expected 'Inf' in errors: {result.errors}"
+    assert any(
+        "Inf" in e for e in result.errors
+    ), f"Expected 'Inf' in errors: {result.errors}"
 
 
 # ---------------------------------------------------------------------------
 # 4. All-zeros warning (non-strict)
 # ---------------------------------------------------------------------------
 
+
 def test_all_zeros_warning():
     conv = [torch.zeros(24, 4, 16, 3, dtype=torch.float32)]
     temporal = torch.zeros(24, 4, 16, 64, dtype=torch.float32)
     result = validate_state_tensors(conv, temporal, strict=False)
     assert result.is_valid is True
-    assert any("all-zero" in w for w in result.warnings), (
-        f"Expected 'all-zero' warning: {result.warnings}"
-    )
+    assert any(
+        "all-zero" in w for w in result.warnings
+    ), f"Expected 'all-zero' warning: {result.warnings}"
 
 
 # ---------------------------------------------------------------------------
 # 5. All-zeros strict → error
 # ---------------------------------------------------------------------------
 
+
 def test_all_zeros_strict_error():
     conv = [torch.zeros(24, 4, 16, 3, dtype=torch.float32)]
     temporal = torch.zeros(24, 4, 16, 64, dtype=torch.float32)
     result = validate_state_tensors(conv, temporal, strict=True)
     assert result.is_valid is False
-    assert any("all-zero" in e for e in result.errors), (
-        f"Expected 'all-zero' error: {result.errors}"
-    )
+    assert any(
+        "all-zero" in e for e in result.errors
+    ), f"Expected 'all-zero' error: {result.errors}"
 
 
 # ---------------------------------------------------------------------------
 # 6. Wrong dtype → error mentioning "dtype"
 # ---------------------------------------------------------------------------
 
+
 def test_wrong_dtype_error():
     conv = [torch.zeros(24, 4, 16, 3, dtype=torch.int64)]
     temporal = torch.zeros(24, 4, 16, 64, dtype=torch.int64)
     result = validate_state_tensors(conv, temporal)
     assert result.is_valid is False
-    assert any("dtype" in e for e in result.errors), (
-        f"Expected 'dtype' in errors: {result.errors}"
-    )
+    assert any(
+        "dtype" in e for e in result.errors
+    ), f"Expected 'dtype' in errors: {result.errors}"
 
 
 # ---------------------------------------------------------------------------
 # 7. Empty tensor (zero numel) → error mentioning "empty"
 # ---------------------------------------------------------------------------
 
+
 def test_empty_tensor_error():
     conv = [torch.empty(0)]
     temporal = _make_temporal_states()
     result = validate_state_tensors(conv, temporal)
     assert result.is_valid is False
-    assert any("empty" in e for e in result.errors), (
-        f"Expected 'empty' in errors: {result.errors}"
-    )
+    assert any(
+        "empty" in e for e in result.errors
+    ), f"Expected 'empty' in errors: {result.errors}"
 
 
 # ---------------------------------------------------------------------------
 # 8. Empty conv_states list → error mentioning "empty"
 # ---------------------------------------------------------------------------
 
+
 def test_empty_conv_states_error():
     temporal = _make_temporal_states()
     result = validate_state_tensors([], temporal)
     assert result.is_valid is False
-    assert any("empty" in e for e in result.errors), (
-        f"Expected 'empty' in errors: {result.errors}"
-    )
+    assert any(
+        "empty" in e for e in result.errors
+    ), f"Expected 'empty' in errors: {result.errors}"
 
 
 # ---------------------------------------------------------------------------
 # 9. bfloat16 accepted
 # ---------------------------------------------------------------------------
+
 
 def test_bfloat16_accepted():
     conv = _make_conv_states(dtype=torch.bfloat16)
@@ -167,6 +179,7 @@ def test_bfloat16_accepted():
 # 10. float16 accepted
 # ---------------------------------------------------------------------------
 
+
 def test_float16_accepted():
     conv = _make_conv_states(dtype=torch.float16)
     temporal = _make_temporal_states(dtype=torch.float16)
@@ -179,6 +192,7 @@ def test_float16_accepted():
 # 11. conversation_id appears in error/warning messages
 # ---------------------------------------------------------------------------
 
+
 def test_metadata_conversation_id_in_messages():
     conv_id = "test-conv-123"
     metadata = _make_metadata(conversation_id=conv_id)
@@ -190,22 +204,23 @@ def test_metadata_conversation_id_in_messages():
 
     result = validate_state_tensors(conv, temporal, metadata=metadata)
     assert result.is_valid is False
-    assert any(conv_id in e for e in result.errors), (
-        f"Expected '{conv_id}' in errors: {result.errors}"
-    )
+    assert any(
+        conv_id in e for e in result.errors
+    ), f"Expected '{conv_id}' in errors: {result.errors}"
 
     # Also verify warnings carry the conversation_id (use all-zeros warning)
     conv_zeros = [torch.zeros(24, 4, 16, 3)]
     temporal_zeros = torch.zeros(24, 4, 16, 64)
     result_warn = validate_state_tensors(conv_zeros, temporal_zeros, metadata=metadata)
-    assert any(conv_id in w for w in result_warn.warnings), (
-        f"Expected '{conv_id}' in warnings: {result_warn.warnings}"
-    )
+    assert any(
+        conv_id in w for w in result_warn.warnings
+    ), f"Expected '{conv_id}' in warnings: {result_warn.warnings}"
 
 
 # ---------------------------------------------------------------------------
 # 12. Multiple errors reported (NaN in both conv and temporal)
 # ---------------------------------------------------------------------------
+
 
 def test_multiple_errors_reported():
     conv = _make_conv_states()
@@ -216,14 +231,13 @@ def test_multiple_errors_reported():
     assert result.is_valid is False
     # Both conv_state[0] and temporal_states should report NaN
     nan_errors = [e for e in result.errors if "NaN" in e]
-    assert len(nan_errors) >= 2, (
-        f"Expected at least 2 NaN errors, got: {result.errors}"
-    )
+    assert len(nan_errors) >= 2, f"Expected at least 2 NaN errors, got: {result.errors}"
 
 
 # ---------------------------------------------------------------------------
 # 13. Integration: save_snapshot rejects NaN state
 # ---------------------------------------------------------------------------
+
 
 def test_save_rejects_nan_state():
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -250,6 +264,7 @@ def test_save_rejects_nan_state():
 # 14. ValidationResult __bool__ behaviour
 # ---------------------------------------------------------------------------
 
+
 def test_validation_result_bool():
     valid = ValidationResult(is_valid=True, warnings=[], errors=[])
     invalid = ValidationResult(is_valid=False, warnings=[], errors=["something wrong"])
@@ -260,6 +275,7 @@ def test_validation_result_bool():
 # ---------------------------------------------------------------------------
 # 15. E2E: save → load → restore round-trip and quarantine on corruption
 # ---------------------------------------------------------------------------
+
 
 def test_save_load_roundtrip_and_quarantine():
     """Save a valid snapshot, load it back, and verify quarantine on corruption."""

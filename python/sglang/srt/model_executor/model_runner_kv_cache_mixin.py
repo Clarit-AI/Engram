@@ -33,6 +33,7 @@ from sglang.srt.mem_cache.swa_memory_pool import SWAKVPool, SWATokenToKVPoolAllo
 from sglang.srt.utils.common import (
     get_available_gpu_memory,
     is_float4_e2m1fn_x2,
+    is_hip,
     is_npu,
 )
 
@@ -67,6 +68,7 @@ MAMBA_CACHE_V2_ADDITIONAL_RATIO_NO_OVERLAP = 1
 logger = logging.getLogger(__name__)
 
 _is_npu = is_npu()
+_is_hip = is_hip()
 
 
 class ModelRunnerKVCacheMixin:
@@ -183,7 +185,9 @@ class ModelRunnerKVCacheMixin:
                 max_tokens_per_req = self.model_config.context_len
                 # Compute how many such requests fit in available memory
                 # (rest_memory is in GB, convert to bytes)
-                return int(rest_memory * (1 << 30) // (max_tokens_per_req * 2))  # 2 bytes per token for bf16 activations
+                return int(
+                    rest_memory * (1 << 30) // (max_tokens_per_req * 2)
+                )  # 2 bytes per token for bf16 activations
             else:
                 # Fallback: if no Mamba config, use available memory with a
                 # conservative per-token estimate
@@ -285,9 +289,17 @@ class ModelRunnerKVCacheMixin:
         ):
             return kv_cache_dim
 
+        # On HIP with TileLang backend, keep the default MLA KV cache dimension.
+        # FP8 attention uses the nope(512 fp8) + rope(64 fp8) layout, without extra per-block scales.
+        if _is_hip and (
+            self.server_args.nsa_prefill_backend == "tilelang"
+            or self.server_args.nsa_decode_backend == "tilelang"
+        ):
+            return kv_cache_dim
+
         quant_block_size = NSATokenToKVPool.quant_block_size
         rope_storage_dtype = NSATokenToKVPool.rope_storage_dtype
-        # Calculate override_kv_cache_dim for FP8 storage for non-trtllm attention backends:
+        # Calculate override_kv_cache_dim for FP8 storage in backends that use scaled KV layout (excluding TRTLLM and HIP+TileLang).
         # kv_lora_rank + scale storage (kv_lora_rank // quant_block_size * 4 bytes) + rope dimension storage
         # Note: rope dimension is stored in original dtype (bf16), not quantized to fp8
         if kv_cache_dtype == torch.float8_e4m3fn:

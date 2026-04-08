@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POLICY_PATH = REPO_ROOT / ".engram" / "policy" / "protected-paths.json"
 
@@ -103,7 +102,9 @@ def compute_sync_policy(
     static_touches = set(filter_matching(upstream_incoming_files, static_globs))
     dynamic_touches = fork_only_files & upstream_incoming_files
     protected_upstream_touches = unique_sorted(static_touches | dynamic_touches)
-    protected_conflicts = unique_sorted(conflict_files & set(protected_upstream_touches))
+    protected_conflicts = unique_sorted(
+        conflict_files & set(protected_upstream_touches)
+    )
 
     if conflict_files:
         if protected_conflicts:
@@ -200,12 +201,12 @@ def cmd_check_local_edits(args: argparse.Namespace) -> int:
     ]
     if missing_refs:
         print(
-            "Protected-path policy fallback: missing git ref(s) "
+            "Protected-path policy: skipping (missing git ref(s) "
             + ", ".join(missing_refs)
-            + ". Treating all candidate files as fork-owned because "
-            + f"{args.upstream_ref}...{args.fork_ref} cannot be compared."
+            + "). Cannot distinguish fork-owned files without "
+            + f"{args.upstream_ref}...{args.fork_ref}."
         )
-        fork_owned_files = set(candidate_files)
+        return 0
     else:
         try:
             fork_owned_files = set(

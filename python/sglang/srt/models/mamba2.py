@@ -271,7 +271,7 @@ class Mamba2ForCausalLM(nn.Module):
             # Remap HF checkpoint names to SGLang model names
             for old_prefix, new_prefix in self.remap_prefix.items():
                 if name.startswith(old_prefix):
-                    name = new_prefix + name[len(old_prefix):]
+                    name = new_prefix + name[len(old_prefix) :]
                     break
             for old_sub, new_sub in self.remap_substr.items():
                 name = name.replace(old_sub, new_sub)
@@ -301,9 +301,7 @@ class Mamba2ForCausalLM(nn.Module):
 
             if name in params_dict:
                 param = params_dict[name]
-                weight_loader = getattr(
-                    param, "weight_loader", default_weight_loader
-                )
+                weight_loader = getattr(param, "weight_loader", default_weight_loader)
                 weight_loader(param, loaded_weight)
             else:
                 logger.warning(f"Parameter {name} not found in params_dict")

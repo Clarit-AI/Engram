@@ -178,6 +178,7 @@ benchmark/llava_bench/images
 benchmark/llava_bench/mme_pack
 *.jsonl
 tmp*.txt
+/tmp/
 
 # Torch Compile logs
 tl_out/
@@ -277,9 +278,9 @@ sgl-kernel/csrc/**/*_musa/
 *.ply
 *.npz
 
-# Beads / Dolt files (added by bd init)
+# Dev tool artifacts (not part of Engram)
 .dolt/
-.beads/*.db
+.beads/
 .beads-credential-key
 
 # VM migration context (local only, not for commit)
@@ -288,8 +289,8 @@ docs/migration-prep/
 # Runtime state files
 .remember/tmp/
 
-# Beads / Dolt files (added by bd init)
-*.db
+# Test phase run results (dev-generated, not test definitions)
+test/phases/results/
 
 # VM-generated skills (local only)
 .claude/skills/

@@ -6,18 +6,17 @@ Tests memory behavior, context window scaling, and resource utilization
 for Mamba snapshot persistence with built-in monitoring.
 """
 
+import argparse
 import asyncio
-import subprocess
-import time
 import json
 import os
-import argparse
+import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import requests
-
 
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:30000")
 SNAPSHOT_DIR = os.environ.get("SNAPSHOT_DIR", "/tmp/mamba_snapshots")
@@ -41,7 +40,9 @@ class ResourceMonitor:
 
         # Write CSV header
         with open(self.log_file, "w") as f:
-            f.write("timestamp,elapsed_s,gpu_vram_mb,gpu_util_pct,ram_available_mb,ram_mb,proc_rss_mb,fd_count,snapshots_count\n")
+            f.write(
+                "timestamp,elapsed_s,gpu_vram_mb,gpu_util_pct,ram_available_mb,ram_mb,proc_rss_mb,fd_count,snapshots_count\n"
+            )
 
         print(f"[Monitor] Started logging to {self.log_file}")
 
@@ -99,8 +100,14 @@ class ResourceMonitor:
         """Get GPU VRAM usage in MB."""
         try:
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=2
+                [
+                    "nvidia-smi",
+                    "--query-gpu=memory.used",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
             )
             if result.returncode == 0:
                 return int(result.stdout.strip())
@@ -112,8 +119,14 @@ class ResourceMonitor:
         """Get GPU utilization percentage."""
         try:
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=2
+                [
+                    "nvidia-smi",
+                    "--query-gpu=utilization.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=2,
             )
             if result.returncode == 0:
                 return int(result.stdout.strip())
@@ -124,7 +137,9 @@ class ResourceMonitor:
     def _get_ram_available(self) -> int:
         """Get available RAM in MB."""
         try:
-            result = subprocess.run(["free", "-m"], capture_output=True, text=True, timeout=2)
+            result = subprocess.run(
+                ["free", "-m"], capture_output=True, text=True, timeout=2
+            )
             if result.returncode == 0:
                 return int(result.stdout.split("\n")[1].split()[6])
         except Exception:
@@ -134,7 +149,9 @@ class ResourceMonitor:
     def _get_ram_total(self) -> int:
         """Get total RAM in MB."""
         try:
-            result = subprocess.run(["free", "-m"], capture_output=True, text=True, timeout=2)
+            result = subprocess.run(
+                ["free", "-m"], capture_output=True, text=True, timeout=2
+            )
             if result.returncode == 0:
                 return int(result.stdout.split("\n")[1].split()[1])
         except Exception:
@@ -145,7 +162,9 @@ class ResourceMonitor:
         """Get sglang process RSS in MB."""
         try:
             # Sum up all sglang-related processes
-            result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=2)
+            result = subprocess.run(
+                ["ps", "aux"], capture_output=True, text=True, timeout=2
+            )
             if result.returncode == 0:
                 total_rss_kb = 0
                 for line in result.stdout.split("\n"):
@@ -165,8 +184,13 @@ class ResourceMonitor:
     def _get_fd_count(self) -> int:
         """Get file descriptor count for sglang processes."""
         try:
-            result = subprocess.run(["lsof", "-a", "-p", "$(pgrep -f sglang | head -1)"],
-                                  shell=True, capture_output=True, text=True, timeout=2)
+            result = subprocess.run(
+                ["lsof", "-a", "-p", "$(pgrep -f sglang | head -1)"],
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
             if result.returncode == 0:
                 return len([l for l in result.stdout.split("\n") if l.strip()])
         except Exception:
@@ -178,8 +202,9 @@ class ResourceMonitor:
         try:
             if os.path.exists(SNAPSHOT_DIR):
                 # Count both .bin and .safetensors files
-                return sum(1 for _ in Path(SNAPSHOT_DIR).rglob("*.bin")) + \
-                       sum(1 for _ in Path(SNAPSHOT_DIR).rglob("*.safetensors"))
+                return sum(1 for _ in Path(SNAPSHOT_DIR).rglob("*.bin")) + sum(
+                    1 for _ in Path(SNAPSHOT_DIR).rglob("*.safetensors")
+                )
         except Exception:
             pass
         return 0
@@ -197,11 +222,15 @@ class ResourceMonitor:
             "samples": len(self.metrics),
             "gpu_vram_start_mb": gpu_vrams[0] if gpu_vrams else 0,
             "gpu_vram_end_mb": gpu_vrams[-1] if gpu_vrams else 0,
-            "gpu_vram_delta_mb": (gpu_vrams[-1] - gpu_vrams[0]) if len(gpu_vrams) > 1 else 0,
+            "gpu_vram_delta_mb": (
+                (gpu_vrams[-1] - gpu_vrams[0]) if len(gpu_vrams) > 1 else 0
+            ),
             "gpu_vram_max_mb": max(gpu_vrams) if gpu_vrams else 0,
             "proc_rss_start_mb": proc_rsss[0] if proc_rsss else 0,
             "proc_rss_end_mb": proc_rsss[-1] if proc_rsss else 0,
-            "proc_rss_delta_mb": (proc_rsss[-1] - proc_rsss[0]) if len(proc_rsss) > 1 else 0,
+            "proc_rss_delta_mb": (
+                (proc_rsss[-1] - proc_rsss[0]) if len(proc_rsss) > 1 else 0
+            ),
             "proc_rss_max_mb": max(proc_rsss) if proc_rsss else 0,
             "snapshots_end": self.metrics[-1]["snapshots_count"],
         }
@@ -230,7 +259,9 @@ class LoadTestRunner:
             "max_tokens": max_tokens,
             "temperature": 0.0,
         }
-        r = requests.post(f"{self.server_url}/v1/chat/completions", json=payload, timeout=120)
+        r = requests.post(
+            f"{self.server_url}/v1/chat/completions", json=payload, timeout=120
+        )
         r.raise_for_status()
         return r.json()
 
@@ -238,12 +269,12 @@ class LoadTestRunner:
         """Scenario: Small context conversations (baseline)."""
         print(f"\n[Scenario] Small Context - {turns} turns")
 
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant."}
-        ]
+        messages = [{"role": "system", "content": "You are a helpful assistant."}]
 
         for i in range(turns):
-            messages.append({"role": "user", "content": f"Turn {i+1}: Say something brief."})
+            messages.append(
+                {"role": "user", "content": f"Turn {i+1}: Say something brief."}
+            )
             try:
                 response = self._chat_completion(messages, max_tokens=30)
                 content = response["choices"][0]["message"]["content"]
@@ -262,11 +293,16 @@ class LoadTestRunner:
         # Build up a medium context
         long_context = "This is a test. " * 100  # ~500 tokens
         messages = [
-            {"role": "system", "content": f"You are a helpful assistant. Context: {long_context}"}
+            {
+                "role": "system",
+                "content": f"You are a helpful assistant. Context: {long_context}",
+            }
         ]
 
         for i in range(turns):
-            messages.append({"role": "user", "content": f"Turn {i+1}: What was that context about?"})
+            messages.append(
+                {"role": "user", "content": f"Turn {i+1}: What was that context about?"}
+            )
             try:
                 response = self._chat_completion(messages, max_tokens=50)
                 content = response["choices"][0]["message"]["content"]
@@ -285,18 +321,27 @@ class LoadTestRunner:
         # Start conversation
         messages = [
             {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "My favorite color is blue and my lucky number is 7. Remember this."}
+            {
+                "role": "user",
+                "content": "My favorite color is blue and my lucky number is 7. Remember this.",
+            },
         ]
 
         try:
             # Turn 1: Establish context
             response = self._chat_completion(messages, max_tokens=30)
             rid = response.get("id", "unknown")
-            messages.append({"role": "assistant", "content": response["choices"][0]["message"]["content"]})
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": response["choices"][0]["message"]["content"],
+                }
+            )
 
             # Save snapshot
-            save_result = requests.post(f"{self.server_url}/save_snapshot",
-                                       json={"rid": rid}, timeout=30)
+            save_result = requests.post(
+                f"{self.server_url}/save_snapshot", json={"rid": rid}, timeout=30
+            )
             if save_result.json().get("success"):
                 print(f"  Snapshot saved: {save_result.json().get('snapshot_id')}")
             else:
@@ -305,15 +350,21 @@ class LoadTestRunner:
 
             # Continue with stateful turns
             for i in range(1, turns):
-                messages.append({"role": "user", "content": f"Turn {i+1}: What's my favorite color?"})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Turn {i+1}: What's my favorite color?",
+                    }
+                )
                 response = self._chat_completion(messages, max_tokens=30)
                 content = response["choices"][0]["message"]["content"]
                 messages.append({"role": "assistant", "content": content})
                 print(f"  Turn {i+1}: OK - {content[:50]}...")
 
                 # Save snapshot after each turn
-                save_result = requests.post(f"{self.server_url}/save_snapshot",
-                                           json={"rid": rid}, timeout=30)
+                save_result = requests.post(
+                    f"{self.server_url}/save_snapshot", json={"rid": rid}, timeout=30
+                )
                 if not save_result.json().get("success"):
                     print(f"  Snapshot save failed: {save_result.json()}")
 
@@ -333,7 +384,10 @@ class LoadTestRunner:
         while (time.time() - start_time) < duration_seconds:
             try:
                 messages = [
-                    {"role": "user", "content": f"Request {requests_sent + 1}: Say hello."}
+                    {
+                        "role": "user",
+                        "content": f"Request {requests_sent + 1}: Say hello.",
+                    }
                 ]
                 self._chat_completion(messages, max_tokens=10)
                 requests_sent += 1
@@ -347,10 +401,21 @@ class LoadTestRunner:
 
 async def main():
     parser = argparse.ArgumentParser(description="Phase 10 Scaling Tests")
-    parser.add_argument("--scenario", choices=["baseline", "small", "medium", "snapshots", "continuous", "all"],
-                       default="baseline", help="Which scenario to run")
-    parser.add_argument("--duration", type=int, default=60, help="Duration for baseline/continuous (seconds)")
-    parser.add_argument("--no-monitor", action="store_true", help="Skip resource monitoring")
+    parser.add_argument(
+        "--scenario",
+        choices=["baseline", "small", "medium", "snapshots", "continuous", "all"],
+        default="baseline",
+        help="Which scenario to run",
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=60,
+        help="Duration for baseline/continuous (seconds)",
+    )
+    parser.add_argument(
+        "--no-monitor", action="store_true", help="Skip resource monitoring"
+    )
     args = parser.parse_args()
 
     # Check server
@@ -358,13 +423,18 @@ async def main():
     if not runner.check_server():
         print(f"ERROR: Server not responding at {SERVER_URL}")
         print("Start the server first:")
-        print("  python -m sglang.launch_server --model-path $MODEL_PATH --enable-snapshot-persistence")
+        print(
+            "  python -m sglang.launch_server --model-path $MODEL_PATH --enable-snapshot-persistence"
+        )
         return
 
     # Set up monitoring
     monitor = None
     if not args.no_monitor:
-        log_file = LOG_DIR / f"metrics_{args.scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        log_file = (
+            LOG_DIR
+            / f"metrics_{args.scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        )
         monitor = ResourceMonitor(str(log_file))
 
     # Run scenarios
@@ -379,7 +449,9 @@ async def main():
     try:
         # Start monitor in background
         if monitor:
-            monitor_task = asyncio.create_task(monitor.start(duration_seconds=args.duration * 2))
+            monitor_task = asyncio.create_task(
+                monitor.start(duration_seconds=args.duration * 2)
+            )
             await asyncio.sleep(2)  # Let monitor establish baseline
 
         # Run requested scenario(s)
@@ -425,13 +497,16 @@ async def main():
             print(f"\nSnapshots on disk: {summary.get('snapshots_end', 0)}")
 
             # Alert on potential leaks
-            if abs(summary.get('gpu_vram_delta_mb', 0)) > 500:
+            if abs(summary.get("gpu_vram_delta_mb", 0)) > 500:
                 print("\n⚠️  WARNING: GPU VRAM delta > 500MB (possible leak)")
-            if abs(summary.get('proc_rss_delta_mb', 0)) > 1000:
+            if abs(summary.get("proc_rss_delta_mb", 0)) > 1000:
                 print("\n⚠️  WARNING: Process RSS delta > 1GB (possible leak)")
 
             # Save summary JSON
-            summary_file = LOG_DIR / f"summary_{args.scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            summary_file = (
+                LOG_DIR
+                / f"summary_{args.scenario}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
             with open(summary_file, "w") as f:
                 json.dump(summary, f, indent=2)
             print(f"\nSummary saved to: {summary_file}")

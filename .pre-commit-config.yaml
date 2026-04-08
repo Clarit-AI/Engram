@@ -99,6 +99,12 @@ repos:
         language: python
         additional_dependencies: [jsonschema==4.25.1]
         files: ^funding\.json$
+      - id: check-workflow-job-names
+        name: check for duplicate workflow job names
+        entry: python3 scripts/ci/check_workflow_job_names.py
+        language: system
+        files: ^\.github/workflows/.*\.yml$
+        pass_filenames: false
   - repo: https://github.com/lycheeverse/lychee.git
     rev: lychee-v0.22.0
     hooks:

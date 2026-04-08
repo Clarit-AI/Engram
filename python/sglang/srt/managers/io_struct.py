@@ -411,37 +411,14 @@ class GenerateReqInput(BaseReq):
             self.input_embeds = self.input_embeds * self.parallel_sample_num
 
     def _normalize_lora_paths(self, num):
-        """Normalize LoRA paths and ids for batch processing."""
+        """Normalize LoRA paths for batch processing."""
         if self.lora_path is not None:
             if isinstance(self.lora_path, str):
                 self.lora_path = [self.lora_path] * num
             elif isinstance(self.lora_path, list):
-                if len(self.lora_path) == 1:
-                    self.lora_path = self.lora_path * num
-                elif len(self.lora_path) == self.batch_size:
-                    self.lora_path = self.lora_path * self.parallel_sample_num
-                else:
-                    raise ValueError(
-                        f"lora_path list length ({len(self.lora_path)}) must match batch size ({self.batch_size}) "
-                        f"or be broadcastable from length 1 in _normalize_lora_paths()"
-                    )
+                self.lora_path = self.lora_path * self.parallel_sample_num
             else:
                 raise ValueError("lora_path should be a list or a string.")
-        if self.lora_id is not None:
-            if isinstance(self.lora_id, str):
-                self.lora_id = [self.lora_id] * num
-            elif isinstance(self.lora_id, list):
-                if len(self.lora_id) == 1:
-                    self.lora_id = self.lora_id * num
-                elif len(self.lora_id) == self.batch_size:
-                    self.lora_id = self.lora_id * self.parallel_sample_num
-                else:
-                    raise ValueError(
-                        f"lora_id list length ({len(self.lora_id)}) must match batch size ({self.batch_size}) "
-                        f"or be broadcastable from length 1 in _normalize_lora_paths()"
-                    )
-            else:
-                raise ValueError("lora_id should be a list or a string.")
 
     def _normalize_image_data(self, num):
         """Normalize image data for batch processing."""
@@ -624,7 +601,12 @@ class GenerateReqInput(BaseReq):
                 raise ValueError("Session params must be a dict or a list of dicts.")
 
     def __getitem__(self, i):
-        return GenerateReqInput(
+        # Cache sub-objects so that repeated obj[i] calls return the same instance.
+        # This avoids subtle bugs where different call sites get divergent objects.
+        cache = self.__dict__.setdefault("_sub_obj_cache", {})
+        if i in cache:
+            return cache[i]
+        sub = GenerateReqInput(
             text=self.text[i] if self.text is not None else None,
             input_ids=self.input_ids[i] if self.input_ids is not None else None,
             input_embeds=(
@@ -688,6 +670,8 @@ class GenerateReqInput(BaseReq):
             http_worker_ipc=self.http_worker_ipc,
             received_time=self.received_time,
         )
+        cache[i] = sub
+        return sub
 
 
 @dataclass
@@ -697,7 +681,7 @@ class TokenizedGenerateReqInput(BaseReq):
     # The input token ids
     input_ids: List[int]
     # The multimodal inputs
-    mm_inputs: dict
+    mm_inputs: object
     # The sampling parameters
     sampling_params: SamplingParams
     # Whether to return the logprobs
@@ -766,14 +750,16 @@ class TokenizedGenerateReqInput(BaseReq):
     # Whether to return entropy
     return_entropy: bool = False
 
+    token_type_ids: Optional[List[int]] = None
+
     need_wait_for_mm_inputs: bool = False
     num_items_assigned: Optional[Dict[Modality, List[int]]] = None
 
-    # Conversation id for snapshot grouping across turns
-    conversation_id: Optional[str] = None
-
     # For observability
     time_stats: Optional[Union[APIServerReqTimeStats, DPControllerReqTimeStats]] = None
+
+    # Conversation id for snapshot grouping across turns
+    conversation_id: Optional[str] = None
 
 
 @dataclass
@@ -816,8 +802,6 @@ class EmbeddingReqInput(BaseReq):
     log_metrics: bool = True
     # The modalities of the image data [image, multi-images, video]
     modalities: Optional[List[str]] = None
-    # Session info for continual prompting
-    session_params: Optional[Union[List[Dict], Dict]] = None
     # For cross-encoder requests
     is_cross_encoder_request: bool = False
     # Priority for the request
@@ -839,6 +823,9 @@ class EmbeddingReqInput(BaseReq):
     lora_path: Optional[Union[List[Optional[str]], Optional[str]]] = None
     # The uid of LoRA adaptors, should be initialized by tokenizer manager
     lora_id: Optional[Union[List[Optional[str]], Optional[str]]] = None
+
+    # Session info for continual prompting
+    session_params: Optional[Union[List[Dict], Dict]] = None
 
     def normalize_batch_and_arguments(self):
         # at least one of text, input_ids, or image should be provided
@@ -892,12 +879,11 @@ class EmbeddingReqInput(BaseReq):
                 self.sampling_params[i]["max_new_tokens"] = 0
 
             self._normalize_lora_paths(self.batch_size)
-            self._normalize_session_params(self.batch_size)
 
         self._validate_rid_uniqueness()
 
     def _normalize_lora_paths(self, num):
-        """Normalize LoRA paths and ids for batch processing."""
+        """Normalize LoRA paths for batch processing."""
         if self.lora_path is not None:
             if isinstance(self.lora_path, str):
                 self.lora_path = [self.lora_path] * num
@@ -908,24 +894,6 @@ class EmbeddingReqInput(BaseReq):
                     )
             else:
                 raise ValueError("lora_path should be a list or a string.")
-        if self.lora_id is not None:
-            if isinstance(self.lora_id, str):
-                self.lora_id = [self.lora_id] * num
-            elif isinstance(self.lora_id, list):
-                if len(self.lora_id) != num:
-                    raise ValueError(
-                        f"lora_id list length ({len(self.lora_id)}) must match batch size ({num})"
-                    )
-            else:
-                raise ValueError("lora_id should be a list or a string.")
-
-    def _normalize_session_params(self, num):
-        """Validate embedding session params for batch processing."""
-        if isinstance(self.session_params, list) and len(self.session_params) != num:
-            raise ValueError(
-                f"session_params length ({len(self.session_params)}) must match batch_size ({num}) "
-                "in normalize_batch_and_arguments()"
-            )
 
     def contains_mm_input(self) -> bool:
         return (
@@ -935,40 +903,39 @@ class EmbeddingReqInput(BaseReq):
         )
 
     def __getitem__(self, i):
-        session_params = (
-            self.session_params[i]
-            if isinstance(self.session_params, list)
-            else self.session_params
-        )
+        # Cache sub-objects so that repeated obj[i] calls return the same instance.
+        cache = self.__dict__.setdefault("_sub_obj_cache", {})
+        if i in cache:
+            return cache[i]
+
         if self.is_cross_encoder_request:
-            return EmbeddingReqInput(
+            sub = EmbeddingReqInput(
                 text=[self.text[i]] if self.text is not None else None,
                 sampling_params=self.sampling_params[i],
                 rid=self.rid[i],
-                session_params=session_params,
                 lora_path=self.lora_path[i] if self.lora_path is not None else None,
                 lora_id=self.lora_id[i] if self.lora_id is not None else None,
                 is_cross_encoder_request=True,
-                external_trace_header=self.external_trace_header,
                 http_worker_ipc=self.http_worker_ipc,
             )
-
-        return EmbeddingReqInput(
-            text=self.text[i] if self.text is not None else None,
-            input_ids=self.input_ids[i] if self.input_ids is not None else None,
-            image_data=self.image_data[i] if self.image_data is not None else None,
-            audio_data=self.audio_data[i] if self.audio_data is not None else None,
-            video_data=self.video_data[i] if self.video_data is not None else None,
-            sampling_params=self.sampling_params[i],
-            rid=self.rid[i],
-            session_params=session_params,
-            lora_path=self.lora_path[i] if self.lora_path is not None else None,
-            lora_id=self.lora_id[i] if self.lora_id is not None else None,
-            external_trace_header=self.external_trace_header,
-            dimensions=self.dimensions,
-            http_worker_ipc=self.http_worker_ipc,
-            received_time=self.received_time,
-        )
+        else:
+            sub = EmbeddingReqInput(
+                text=self.text[i] if self.text is not None else None,
+                input_ids=self.input_ids[i] if self.input_ids is not None else None,
+                image_data=self.image_data[i] if self.image_data is not None else None,
+                audio_data=self.audio_data[i] if self.audio_data is not None else None,
+                video_data=self.video_data[i] if self.video_data is not None else None,
+                sampling_params=self.sampling_params[i],
+                rid=self.rid[i],
+                lora_path=self.lora_path[i] if self.lora_path is not None else None,
+                lora_id=self.lora_id[i] if self.lora_id is not None else None,
+                external_trace_header=self.external_trace_header,
+                dimensions=self.dimensions,
+                http_worker_ipc=self.http_worker_ipc,
+                received_time=self.received_time,
+            )
+        cache[i] = sub
+        return sub
 
 
 @dataclass
@@ -1027,6 +994,7 @@ class BatchTokenIDOutput(BaseBatchReq, SpeculativeDecodingMetricsMixin):
 
     # Token counts
     prompt_tokens: List[int]
+    reasoning_tokens: List[int]
     completion_tokens: List[int]
     cached_tokens: List[int]
 
@@ -1068,48 +1036,13 @@ class BatchTokenIDOutput(BaseBatchReq, SpeculativeDecodingMetricsMixin):
     load: GetLoadReqOutput = None
     # Customized info
     customized_info: Optional[Dict[str, List[Any]]] = None
-    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
+    # Detailed breakdown of cached tokens by source (device/host/storage)
     cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
     # DP rank of the scheduler that processed each request
     dp_ranks: Optional[List[int]] = None
 
     # For observability
     time_stats: Optional[List[SchedulerReqTimeStats]] = None
-
-    # For observability
-    time_stats: Optional[List[SchedulerReqTimeStats]] = None
-
-
-@dataclass
-class BatchMultimodalDecodeReq(BaseBatchReq):
-    decoded_ids: List[int]
-    input_token_logprobs_val: List[float]
-    input_token_logprobs_idx: List[int]
-    output_token_logprobs_val: List[float]
-    output_token_logprobs_idx: List[int]
-    read_offsets: List[int]
-    skip_special_tokens: List[bool]
-    spaces_between_special_tokens: List[bool]
-    image_resolutions: List[List[int]]
-    resize_image_resolutions: List[List[int]]
-
-    finished_reasons: List[BaseFinishReason]
-
-    # Token counts
-    prompt_tokens: List[int]
-    completion_tokens: List[int]
-    cached_tokens: List[int]
-
-    # The information of placeholder tokens (e.g., image token)
-    # idx is the index of the token in the prompt after expansion.
-    # val is the length of padded tokens after expansion.
-    placeholder_tokens_idx: List[Optional[List[int]]]
-    placeholder_tokens_val: List[Optional[List[int]]]
-
-    return_bytes: List[bool]
-
-    # The trainer step id. Used to know which step's weights are used for sampling.
-    token_steps: List[List[int]] = None
 
 
 @dataclass
@@ -1124,6 +1057,7 @@ class BatchStrOutput(BaseBatchReq, SpeculativeDecodingMetricsMixin):
     # Token counts
     prompt_tokens: List[int]
     completion_tokens: List[int]
+    reasoning_tokens: List[int]
     cached_tokens: List[int]
 
     # Logprobs
@@ -1165,43 +1099,10 @@ class BatchStrOutput(BaseBatchReq, SpeculativeDecodingMetricsMixin):
 
     # Customized info
     customized_info: Optional[Dict[str, List[Any]]] = None
-    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
+    # Detailed breakdown of cached tokens by source (device/host/storage)
     cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
     # DP rank of the scheduler that processed each request
     dp_ranks: Optional[List[int]] = None
-
-    # For observability
-    time_stats: Optional[List[SchedulerReqTimeStats]] = None
-
-    # For observability
-    time_stats: Optional[List[SchedulerReqTimeStats]] = None
-
-
-@dataclass
-class BatchMultimodalOutput(BaseBatchReq):
-    # The finish reason
-    finished_reasons: List[dict]
-    decoded_ids: List[List[int]]
-    # The outputs
-    outputs: Union[List[str | bytes], List[List[Dict]]]
-
-    # probability values for input tokens and output tokens
-    input_token_logprobs_val: List[List[float]]
-    input_token_logprobs_idx: List[List[int]]
-    output_token_logprobs_val: List[List[float]]
-    output_token_logprobs_idx: List[List[int]]
-
-    # Token counts
-    prompt_tokens: List[int]
-    completion_tokens: List[int]
-    cached_tokens: List[int]
-
-    placeholder_tokens_idx: List[Optional[List[int]]]
-    placeholder_tokens_val: List[Optional[List[int]]]
-
-    return_bytes: List[bool]
-    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
-    cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
 
     # For observability
     time_stats: Optional[List[SchedulerReqTimeStats]] = None
@@ -1222,7 +1123,7 @@ class BatchEmbeddingOutput(BaseBatchReq):
 
     # Number of times each request was retracted.
     retraction_counts: List[int]
-    # Detailed breakdown breakdown of cached tokens by source (device/host/storage)
+    # Detailed breakdown of cached tokens by source (device/host/storage)
     cached_tokens_details: Optional[List[Optional[Dict[str, Any]]]] = None
 
     # For observability
@@ -1247,6 +1148,45 @@ class FlushCacheReqInput(BaseReq):
 @dataclass
 class FlushCacheReqOutput(BaseReq):
     success: bool
+    message: str = ""
+
+
+@dataclass
+class AddExternalCorpusReqInput(BaseReq):
+    corpus_id: Optional[str] = None
+    file_path: Optional[str] = None
+    documents: Optional[List[str]] = None
+    token_chunks: Optional[List[List[int]]] = None
+
+
+@dataclass
+class AddExternalCorpusReqOutput(BaseReq):
+    success: bool
+    corpus_id: str = ""
+    message: str = ""
+    loaded_token_count: int = 0
+
+
+@dataclass
+class RemoveExternalCorpusReqInput(BaseReq):
+    corpus_id: str
+
+
+@dataclass
+class RemoveExternalCorpusReqOutput(BaseReq):
+    success: bool
+    message: str = ""
+
+
+@dataclass
+class ListExternalCorporaReqInput(BaseReq):
+    pass
+
+
+@dataclass
+class ListExternalCorporaReqOutput(BaseReq):
+    success: bool
+    corpus_ids: List[str] = field(default_factory=list)
     message: str = ""
 
 
@@ -1305,21 +1245,6 @@ class DetachHiCacheStorageReqOutput(BaseReq):
 
 
 @dataclass
-class PinPrefixReqInput(BaseReq):
-    """Pin a prefix by token_ids to resist eviction."""
-
-    token_ids: List[int] = field(default_factory=list)
-    ttl_seconds: int = 300  # TTL in seconds, default 5 minutes
-
-
-@dataclass
-class PinPrefixReqOutput(BaseReq):
-    success: bool
-    nodes_pinned: int = 0
-    message: str = ""
-
-
-@dataclass
 class PauseGenerationReqInput(BaseReq):
     """
     Note that the PauseGenerationRequests is only supported in SGLang Server.
@@ -1332,7 +1257,7 @@ class PauseGenerationReqInput(BaseReq):
             Note: In 'inplace' mode, flush_cache will fail if there are any requests
             in the running_batch.
 
-    retract: Pause the scheduler's event_loop from performing inference;
+    retract: Pause the scheduler's event loop from performing inference;
             only non-inference requests will be handled, and all currently running
             requests will be retracted back to the waiting_queue.
             Note: The KV cache can be flushed in this mode and will be automatically
@@ -1716,7 +1641,7 @@ class ConfigureLoggingReq(BaseReq):
 class OpenSessionReqInput(BaseReq):
     capacity_of_str_len: int
     session_id: Optional[str] = None
-    streaming: bool = False
+    streaming: Optional[bool] = None
     timeout: Optional[float] = None
 
 
@@ -2042,7 +1967,7 @@ class SetInjectDumpMetadataReqInput(BaseReq):
 
 @dataclass
 class SetInjectDumpMetadataReqOutput(BaseReq):
-    success: bool = False
+    success: bool
 
 
 @dataclass
@@ -2052,7 +1977,43 @@ class LazyDumpTensorsReqInput(BaseReq):
 
 @dataclass
 class LazyDumpTensorsReqOutput(BaseReq):
-    success: bool = False
+    success: bool
+
+
+@dataclass
+class DumperControlReqInput(BaseReq):
+    method: str
+    body: Dict[str, Any]
+
+
+@dataclass
+class DumperControlReqOutput(BaseReq):
+    success: bool
+    response: List[Dict[str, Any]]
+    error: str = ""
+
+
+def _check_all_req_types():
+    """A helper function to check all request types are defined in this file."""
+    import inspect
+    import sys
+
+    all_classes = inspect.getmembers(sys.modules[__name__], inspect.isclass)
+    for class_type in all_classes:
+        # check its name
+        name = class_type[0]
+        is_io_struct = (
+            name.endswith("Req") or name.endswith("Input") or name.endswith("Output")
+        )
+        is_base_req = issubclass(class_type[1], BaseReq) or issubclass(
+            class_type[1], BaseBatchReq
+        )
+        if is_io_struct and not is_base_req:
+            raise ValueError(f"{name} is not a subclass of BaseReq or BaseBatchReq.")
+        if is_base_req and not is_io_struct:
+            raise ValueError(
+                f"{name} is a subclass of BaseReq but not follow the naming convention."
+            )
 
 
 @dataclass
@@ -2117,16 +2078,11 @@ class RestoreSnapshotReqInput(BaseReq):
     turn_number: Optional[int] = None
     branch_name: Optional[str] = None
     create_new_request: bool = False
-    # Stateful generation: new tokens to append after the restored context.
-    # When provided, /restore_snapshot blocks until generation completes and
-    # returns output_ids + output_text in RestoreSnapshotReqOutput.
     continuation_ids: Optional[List[int]] = None
     max_new_tokens: Optional[int] = None
-    # Correlation ID for per-request futures (prevents FIFO out-of-order responses)
     request_id: Optional[str] = field(default=None, kw_only=True)
 
     def __post_init__(self):
-        # Auto-generate request_id if not provided (for per-request futures)
         if self.request_id is None:
             self.request_id = uuid.uuid4().hex
 
@@ -2136,17 +2092,13 @@ class RestoreSnapshotReqInput(BaseReq):
                 "'conversation_id' to be set."
             )
 
-        # Validate stateful generation fields
         if not self.create_new_request:
-            # Stateful fields should only be provided when create_new_request=True
             if self.continuation_ids is not None or self.max_new_tokens is not None:
                 raise ValueError(
                     "continuation_ids and max_new_tokens can only be provided when "
-                    "create_new_request=True. These fields are for stateful generation "
-                    "where the server restores context and generates a response."
+                    "create_new_request=True."
                 )
         else:
-            # When create_new_request=True, at least max_new_tokens should be provided
             if self.max_new_tokens is None:
                 raise ValueError(
                     "max_new_tokens must be provided when create_new_request=True."
@@ -2159,11 +2111,7 @@ class RestoreSnapshotReqInput(BaseReq):
 
 @dataclass
 class RestoreSnapshotReqOutput(BaseReq):
-    """Response from restoring a snapshot.
-
-    When continuation_ids were provided in the request, output_ids and
-    output_text contain the generated response.
-    """
+    """Response from restoring a snapshot."""
 
     success: bool = False
     message: Optional[str] = None
@@ -2172,7 +2120,6 @@ class RestoreSnapshotReqOutput(BaseReq):
     mamba_pool_idx: Optional[int] = None
     output_ids: Optional[List[int]] = None
     output_text: Optional[str] = None
-    # Correlation ID to match request/response for per-request futures
     request_id: Optional[str] = field(default=None, kw_only=True)
 
 
@@ -2191,42 +2138,6 @@ class DeleteSnapshotReqOutput(BaseReq):
 
     success: bool = False
     message: Optional[str] = None
-
-
-@dataclass
-class DumperControlReqInput(BaseReq):
-    method: str
-    body: Dict[str, Any]
-
-
-@dataclass
-class DumperControlReqOutput(BaseReq):
-    success: bool
-    response: List[Dict[str, Any]]
-    error: str = ""
-
-
-def _check_all_req_types():
-    """A helper function to check all request types are defined in this file."""
-    import inspect
-    import sys
-
-    all_classes = inspect.getmembers(sys.modules[__name__], inspect.isclass)
-    for class_type in all_classes:
-        # check its name
-        name = class_type[0]
-        is_io_struct = (
-            name.endswith("Req") or name.endswith("Input") or name.endswith("Output")
-        )
-        is_base_req = issubclass(class_type[1], BaseReq) or issubclass(
-            class_type[1], BaseBatchReq
-        )
-        if is_io_struct and not is_base_req:
-            raise ValueError(f"{name} is not a subclass of BaseReq or BaseBatchReq.")
-        if is_base_req and not is_io_struct:
-            raise ValueError(
-                f"{name} is a subclass of BaseReq but not follow the naming convention."
-            )
 
 
 _check_all_req_types()

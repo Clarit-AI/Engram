@@ -271,14 +271,11 @@ class TierManager:
 
                 # Model compatibility check
                 model_name = (
-                    metadata.get("model_name") if isinstance(metadata, dict)
+                    metadata.get("model_name")
+                    if isinstance(metadata, dict)
                     else getattr(metadata, "model_name", None)
                 )
-                if (
-                    self.model_path
-                    and model_name
-                    and model_name != self.model_path
-                ):
+                if self.model_path and model_name and model_name != self.model_path:
                     raise ValueError(
                         f"Model mismatch: snapshot from '{model_name}', "
                         f"server running '{self.model_path}'"

@@ -20,7 +20,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
 import requests
 
@@ -64,7 +64,9 @@ def get_gpu_vram_mb() -> int:
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
         if result.returncode == 0:
             return int(result.stdout.strip().split("\n")[0].strip())
@@ -76,7 +78,9 @@ def get_gpu_vram_mb() -> int:
 def get_proc_rss_mb() -> int:
     """Get sglang process RSS in MB."""
     try:
-        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=2)
+        result = subprocess.run(
+            ["ps", "aux"], capture_output=True, text=True, timeout=2
+        )
         if result.returncode == 0:
             total_kb = 0
             for line in result.stdout.split("\n"):
@@ -174,7 +178,9 @@ def send_chat(messages: list, temperature: float = 0.0, max_tokens: int = 100) -
     }
 
 
-def send_completion(prompt: str, temperature: float = 0.0, max_tokens: int = 100) -> dict:
+def send_completion(
+    prompt: str, temperature: float = 0.0, max_tokens: int = 100
+) -> dict:
     """Send a /v1/completions request — returns RID in response['id']."""
     start = time.time()
     r = requests.post(
@@ -270,7 +276,9 @@ def evict_warm_and_cold_restore(conversation_id: str) -> dict:
                     f"{SERVER_URL}/v1/chat/completions",
                     json={
                         "model": "default",
-                        "messages": [{"role": "user", "content": f"Junk request {i}. Say OK."}],
+                        "messages": [
+                            {"role": "user", "content": f"Junk request {i}. Say OK."}
+                        ],
                         "temperature": 0.0,
                         "max_tokens": 5,
                     },
@@ -303,6 +311,7 @@ def evict_warm_and_cold_restore(conversation_id: str) -> dict:
 # Single-Shot Mode
 # ────────────────────────────────────────────────────────────────
 
+
 def run_single_shot(tiers: List[str], output_dir: Path) -> List[dict]:
     """Run single-shot test at each tier."""
     results = []
@@ -317,12 +326,21 @@ def run_single_shot(tiers: List[str], output_dir: Path) -> List[dict]:
         vram = get_gpu_vram_mb()
         if vram > VRAM_LIMIT_MB:
             print(f"  ABORT: GPU VRAM at {vram}MB exceeds {VRAM_LIMIT_MB}MB limit")
-            results.append({"tier": tier_label, "target_tokens": target, "status": "OOM_SKIP", "vram_mb": vram})
+            results.append(
+                {
+                    "tier": tier_label,
+                    "target_tokens": target,
+                    "status": "OOM_SKIP",
+                    "vram_mb": vram,
+                }
+            )
             break
 
         if not check_health():
             print("  ABORT: Server not healthy")
-            results.append({"tier": tier_label, "target_tokens": target, "status": "SERVER_DOWN"})
+            results.append(
+                {"tier": tier_label, "target_tokens": target, "status": "SERVER_DOWN"}
+            )
             break
 
         tier_result = {
@@ -379,7 +397,9 @@ def run_single_shot(tiers: List[str], output_dir: Path) -> List[dict]:
         tier_result["output_nonempty"] = len(comp_result["text"].strip()) > 0
 
         print(f"  RID: {rid[:16]}...")
-        print(f"  Prompt tokens: {actual_prompt_tokens:,}  |  Inference: {inference_latency:.3f}s")
+        print(
+            f"  Prompt tokens: {actual_prompt_tokens:,}  |  Inference: {inference_latency:.3f}s"
+        )
         print(f"  Output: {comp_result['text'][:100]}...")
 
         # Check VRAM after inference
@@ -389,7 +409,9 @@ def run_single_shot(tiers: List[str], output_dir: Path) -> List[dict]:
         tier_result["rss_after_mb"] = get_proc_rss_mb()
 
         if vram_after > VRAM_LIMIT_MB:
-            print(f"  WARNING: VRAM at {vram_after}MB after inference (limit {VRAM_LIMIT_MB})")
+            print(
+                f"  WARNING: VRAM at {vram_after}MB after inference (limit {VRAM_LIMIT_MB})"
+            )
             tier_result["vram_warning"] = True
 
         # 3. Save snapshot using the RID from the completion
@@ -400,11 +422,15 @@ def run_single_shot(tiers: List[str], output_dir: Path) -> List[dict]:
         tier_result["save_message"] = save_result.get("message", "")
 
         if save_result.get("success"):
-            snap_conv_id = (save_result.get("snapshot_id") or "").rsplit("-t", 1)[0] or ""
+            snap_conv_id = (save_result.get("snapshot_id") or "").rsplit("-t", 1)[
+                0
+            ] or ""
             snap_size = get_snapshot_file_size_mb(snap_conv_id)
             tier_result["snapshot_size_mb"] = round(snap_size, 2)
             tier_result["snapshot_id"] = save_result.get("snapshot_id", "")
-            print(f"  Snapshot saved: {snap_size:.1f}MB in {save_result['latency_ms']:.0f}ms")
+            print(
+                f"  Snapshot saved: {snap_size:.1f}MB in {save_result['latency_ms']:.0f}ms"
+            )
         else:
             print(f"  Snapshot save FAILED: {save_result.get('message', 'unknown')}")
             tier_result["status"] = "SAVE_FAILED"
@@ -415,12 +441,16 @@ def run_single_shot(tiers: List[str], output_dir: Path) -> List[dict]:
             conversation_id=snap_conv_id,
         )
         tier_result["warm_restore_success"] = warm_result.get("success", False)
-        tier_result["warm_restore_latency_ms"] = round(warm_result.get("latency_ms", 0), 1)
+        tier_result["warm_restore_latency_ms"] = round(
+            warm_result.get("latency_ms", 0), 1
+        )
         tier_result["warm_restore_tier"] = (
             "WARM" if warm_result["latency_ms"] < WARM_RESTORE_MAX_MS else "COLD?"
         )
-        print(f"  WARM restore: {warm_result.get('latency_ms', 0):.0f}ms "
-              f"(success={warm_result.get('success')})")
+        print(
+            f"  WARM restore: {warm_result.get('latency_ms', 0):.0f}ms "
+            f"(success={warm_result.get('success')})"
+        )
 
         # 6. COLD restore
         print(f"  COLD restore test (evicting WARM tier)...")
@@ -428,12 +458,16 @@ def run_single_shot(tiers: List[str], output_dir: Path) -> List[dict]:
             conversation_id=snap_conv_id,
         )
         tier_result["cold_restore_success"] = cold_result.get("success", False)
-        tier_result["cold_restore_latency_ms"] = round(cold_result.get("latency_ms", 0), 1)
+        tier_result["cold_restore_latency_ms"] = round(
+            cold_result.get("latency_ms", 0), 1
+        )
         tier_result["cold_restore_verified"] = cold_result.get("cold_verified", False)
         tier_result["cold_restore_junk_sent"] = cold_result.get("junk_requests_sent", 0)
         tier_result["cold_restore_attempts"] = cold_result.get("attempt", 0)
         verified_str = "VERIFIED" if cold_result.get("cold_verified") else "UNVERIFIED"
-        print(f"  COLD restore: {cold_result.get('latency_ms', 0):.0f}ms [{verified_str}]")
+        print(
+            f"  COLD restore: {cold_result.get('latency_ms', 0):.0f}ms [{verified_str}]"
+        )
 
         tier_result["status"] = "PASS"
         results.append(tier_result)
@@ -489,12 +523,16 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
         vram = get_gpu_vram_mb()
         if vram > VRAM_LIMIT_MB:
             print(f"  ABORT: GPU VRAM at {vram}MB exceeds limit")
-            results.append({"tier": tier_label, "target_tokens": target, "status": "OOM_SKIP"})
+            results.append(
+                {"tier": tier_label, "target_tokens": target, "status": "OOM_SKIP"}
+            )
             break
 
         if not check_health():
             print("  ABORT: Server not healthy")
-            results.append({"tier": tier_label, "target_tokens": target, "status": "SERVER_DOWN"})
+            results.append(
+                {"tier": tier_label, "target_tokens": target, "status": "SERVER_DOWN"}
+            )
             break
 
         tier_result = {
@@ -521,15 +559,19 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
             para_idx += 1
 
         if fill_paragraphs:
-            messages.append({
-                "role": "user",
-                "content": "Please read the following reference text carefully:\n\n"
-                           + "\n\n".join(fill_paragraphs),
-            })
-            messages.append({
-                "role": "assistant",
-                "content": "I have read the reference text and am ready for questions.",
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "Please read the following reference text carefully:\n\n"
+                    + "\n\n".join(fill_paragraphs),
+                }
+            )
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": "I have read the reference text and am ready for questions.",
+                }
+            )
 
         # Accumulate turns
         turn_count = 0
@@ -563,10 +605,12 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
             # Add a turn
             turn_count += 1
             fact_q = RECALL_FACTS[(turn_count - 1) % len(RECALL_FACTS)]
-            messages.append({
-                "role": "user",
-                "content": f"Turn {turn_count}: Please confirm: what is fact #{(turn_count % 10) + 1} from your personal details? Just state the fact.",
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"Turn {turn_count}: Please confirm: what is fact #{(turn_count % 10) + 1} from your personal details? Just state the fact.",
+                }
+            )
 
             try:
                 chat_result = send_chat(messages, temperature=0.0, max_tokens=50)
@@ -577,16 +621,20 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
 
                 # Simple coherence check
                 response_lower = chat_result["text"].lower()
-                expected_fact = RECALL_FACTS[(turn_count - 1) % len(RECALL_FACTS)].lower()
+                expected_fact = RECALL_FACTS[
+                    (turn_count - 1) % len(RECALL_FACTS)
+                ].lower()
                 # Very loose check — just see if any key words from the fact appear
                 key_words = [w for w in expected_fact.split() if len(w) > 4][:3]
                 matches = sum(1 for w in key_words if w in response_lower)
-                coherence_log.append({
-                    "turn": turn_count,
-                    "tokens": chat_result["prompt_tokens"],
-                    "key_word_matches": matches,
-                    "response": chat_result["text"][:100],
-                })
+                coherence_log.append(
+                    {
+                        "turn": turn_count,
+                        "tokens": chat_result["prompt_tokens"],
+                        "key_word_matches": matches,
+                        "response": chat_result["text"][:100],
+                    }
+                )
 
             except requests.exceptions.Timeout:
                 tier_result["status"] = "TIMEOUT"
@@ -602,7 +650,9 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
                 break
 
         tier_result["turns_completed"] = turn_count
-        tier_result["final_context_tokens"] = current_tokens if 'current_tokens' in dir() else 0
+        tier_result["final_context_tokens"] = (
+            current_tokens if "current_tokens" in dir() else 0
+        )
         tier_result["prefill_latency_s"] = prefill_latency
         tier_result["coherence_log"] = coherence_log
 
@@ -636,23 +686,32 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
 
         if save_result.get("success"):
             snap_conv_id = save_result.get("snapshot_id", "").rsplit("-t", 1)[0]
-            tier_result["snapshot_size_mb"] = round(get_snapshot_file_size_mb(snap_conv_id), 2)
+            tier_result["snapshot_size_mb"] = round(
+                get_snapshot_file_size_mb(snap_conv_id), 2
+            )
 
         # Restore and verify fact recall
         print(f"  Restoring and testing recall...")
         if save_result.get("success"):
             warm_result = restore_snapshot(conversation_id=snap_conv_id)
-            tier_result["warm_restore_latency_ms"] = round(warm_result.get("latency_ms", 0), 1)
+            tier_result["warm_restore_latency_ms"] = round(
+                warm_result.get("latency_ms", 0), 1
+            )
 
             # Ask about fact #1 (should be remembered if snapshot works)
             recall_msgs = [
-                {"role": "user", "content": "What is your name? Reply in one sentence."},
+                {
+                    "role": "user",
+                    "content": "What is your name? Reply in one sentence.",
+                },
             ]
             try:
                 recall_result = send_chat(recall_msgs, temperature=0.0, max_tokens=50)
                 recall_text = recall_result["text"].lower()
                 # Check if "elara" or "voss" appears
-                tier_result["recall_fact1"] = "elara" in recall_text or "voss" in recall_text
+                tier_result["recall_fact1"] = (
+                    "elara" in recall_text or "voss" in recall_text
+                )
                 tier_result["recall_response"] = recall_result["text"][:200]
                 tier_result["recall_success"] = tier_result["recall_fact1"]
             except Exception as e:
@@ -660,7 +719,9 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
                 tier_result["recall_success"] = False
 
         # State fidelity vs model coherence distinction
-        tier_result["state_fidelity"] = "snapshot saved and restored" if save_result.get("success") else "FAILED"
+        tier_result["state_fidelity"] = (
+            "snapshot saved and restored" if save_result.get("success") else "FAILED"
+        )
         if turn_count > 0 and coherence_log:
             last_coherent = coherence_log[-1]["key_word_matches"] > 0
             tier_result["model_coherence"] = "coherent" if last_coherent else "degraded"
@@ -679,7 +740,10 @@ def run_multi_turn(tiers: List[str], output_dir: Path) -> List[dict]:
 # Report Generation
 # ────────────────────────────────────────────────────────────────
 
-def generate_report(single_shot_results: list, multi_turn_results: list, output_dir: Path):
+
+def generate_report(
+    single_shot_results: list, multi_turn_results: list, output_dir: Path
+):
     """Generate markdown results report."""
     lines = []
     lines.append("# Phase 10 Addendum: Context Window Scaling Results\n")
@@ -691,11 +755,17 @@ def generate_report(single_shot_results: list, multi_turn_results: list, output_
     # Single-shot results
     if single_shot_results:
         lines.append("## Mode A: Single-Shot (Snapshot Mechanics)\n")
-        lines.append("| Tier | Prompt Tokens | Inference (s) | Save (ms) | Snapshot (MB) | WARM Restore (ms) | COLD Restore (ms) | COLD Verified | Status |")
-        lines.append("|------|--------------|---------------|-----------|---------------|-------------------|-------------------|---------------|--------|")
+        lines.append(
+            "| Tier | Prompt Tokens | Inference (s) | Save (ms) | Snapshot (MB) | WARM Restore (ms) | COLD Restore (ms) | COLD Verified | Status |"
+        )
+        lines.append(
+            "|------|--------------|---------------|-----------|---------------|-------------------|-------------------|---------------|--------|"
+        )
         for r in single_shot_results:
             if r.get("status") in ("OOM_SKIP", "SERVER_DOWN", "TIMEOUT", "HTTP_ERROR"):
-                lines.append(f"| {r['tier']} | - | - | - | - | - | - | - | **{r['status']}** |")
+                lines.append(
+                    f"| {r['tier']} | - | - | - | - | - | - | - | **{r['status']}** |"
+                )
                 continue
             lines.append(
                 f"| {r['tier']} "
@@ -712,8 +782,12 @@ def generate_report(single_shot_results: list, multi_turn_results: list, output_
 
         # Resource scaling
         lines.append("### Resource Scaling (Single-Shot)\n")
-        lines.append("| Tier | VRAM Before (MB) | VRAM After (MB) | VRAM Delta | RSS (MB) |")
-        lines.append("|------|-----------------|-----------------|------------|----------|")
+        lines.append(
+            "| Tier | VRAM Before (MB) | VRAM After (MB) | VRAM Delta | RSS (MB) |"
+        )
+        lines.append(
+            "|------|-----------------|-----------------|------------|----------|"
+        )
         for r in single_shot_results:
             if r.get("status") in ("OOM_SKIP", "SERVER_DOWN"):
                 continue
@@ -729,13 +803,29 @@ def generate_report(single_shot_results: list, multi_turn_results: list, output_
     # Multi-turn results
     if multi_turn_results:
         lines.append("## Mode B: Multi-Turn (Coherence)\n")
-        lines.append("| Tier | Turns | Final Context | Prefill (s) | Snapshot (MB) | Recall | Fidelity | Coherence | Status |")
-        lines.append("|------|-------|--------------|-------------|---------------|--------|----------|-----------|--------|")
+        lines.append(
+            "| Tier | Turns | Final Context | Prefill (s) | Snapshot (MB) | Recall | Fidelity | Coherence | Status |"
+        )
+        lines.append(
+            "|------|-------|--------------|-------------|---------------|--------|----------|-----------|--------|"
+        )
         for r in multi_turn_results:
             recall = "PASS" if r.get("recall_success") else "FAIL"
-            ctx = f"{r.get('final_context_tokens', 0):,}" if r.get('final_context_tokens') else "?"
-            prefill = f"{r.get('prefill_latency_s', 0):.3f}" if isinstance(r.get('prefill_latency_s'), (int, float)) else "?"
-            snap_mb = f"{r.get('snapshot_size_mb', 0):.1f}" if isinstance(r.get('snapshot_size_mb'), (int, float)) else "?"
+            ctx = (
+                f"{r.get('final_context_tokens', 0):,}"
+                if r.get("final_context_tokens")
+                else "?"
+            )
+            prefill = (
+                f"{r.get('prefill_latency_s', 0):.3f}"
+                if isinstance(r.get("prefill_latency_s"), (int, float))
+                else "?"
+            )
+            snap_mb = (
+                f"{r.get('snapshot_size_mb', 0):.1f}"
+                if isinstance(r.get("snapshot_size_mb"), (int, float))
+                else "?"
+            )
             lines.append(
                 f"| {r['tier']} "
                 f"| {r.get('turns_completed', '?')} "
@@ -752,28 +842,48 @@ def generate_report(single_shot_results: list, multi_turn_results: list, output_
     # Key findings
     lines.append("## Key Findings\n")
     if single_shot_results:
-        sizes = [r.get("snapshot_size_mb", 0) for r in single_shot_results if r.get("snapshot_size_mb")]
+        sizes = [
+            r.get("snapshot_size_mb", 0)
+            for r in single_shot_results
+            if r.get("snapshot_size_mb")
+        ]
         if sizes:
-            lines.append(f"1. **Snapshot size**: {min(sizes):.1f} - {max(sizes):.1f} MB across all tiers "
-                         f"({'constant' if max(sizes) - min(sizes) < 5 else 'varies'})")
-        cold_latencies = [r.get("cold_restore_latency_ms", 0) for r in single_shot_results
-                         if r.get("cold_restore_verified")]
+            lines.append(
+                f"1. **Snapshot size**: {min(sizes):.1f} - {max(sizes):.1f} MB across all tiers "
+                f"({'constant' if max(sizes) - min(sizes) < 5 else 'varies'})"
+            )
+        cold_latencies = [
+            r.get("cold_restore_latency_ms", 0)
+            for r in single_shot_results
+            if r.get("cold_restore_verified")
+        ]
         if cold_latencies:
-            lines.append(f"2. **COLD restore latency**: {min(cold_latencies):.0f} - {max(cold_latencies):.0f}ms "
-                         f"({'under 200ms target' if max(cold_latencies) < 200 else 'exceeds 200ms'})")
-        max_tier = max((r for r in single_shot_results if r.get("status") == "PASS"),
-                      key=lambda r: r.get("actual_prompt_tokens", 0), default=None)
+            lines.append(
+                f"2. **COLD restore latency**: {min(cold_latencies):.0f} - {max(cold_latencies):.0f}ms "
+                f"({'under 200ms target' if max(cold_latencies) < 200 else 'exceeds 200ms'})"
+            )
+        max_tier = max(
+            (r for r in single_shot_results if r.get("status") == "PASS"),
+            key=lambda r: r.get("actual_prompt_tokens", 0),
+            default=None,
+        )
         if max_tier:
-            lines.append(f"3. **Max context achieved**: {max_tier.get('actual_prompt_tokens', 0):,} tokens "
-                         f"(tier {max_tier['tier']})")
+            lines.append(
+                f"3. **Max context achieved**: {max_tier.get('actual_prompt_tokens', 0):,} tokens "
+                f"(tier {max_tier['tier']})"
+            )
     lines.append("")
 
     # Separate state fidelity from model coherence
     lines.append("## Important Distinction\n")
-    lines.append("- **State fidelity**: Whether the snapshot system correctly saves and restores Mamba SSM state. "
-                 "This is what the system is responsible for.")
-    lines.append("- **Model coherence**: Whether the 4B parameter model produces sensible output at extreme context "
-                 "lengths. This is a model capability limitation, not a snapshot system issue.")
+    lines.append(
+        "- **State fidelity**: Whether the snapshot system correctly saves and restores Mamba SSM state. "
+        "This is what the system is responsible for."
+    )
+    lines.append(
+        "- **Model coherence**: Whether the 4B parameter model produces sensible output at extreme context "
+        "lengths. This is a model capability limitation, not a snapshot system issue."
+    )
     lines.append("")
 
     report_path = output_dir / "phase-10-context-scaling-results.md"
@@ -787,18 +897,33 @@ def generate_report(single_shot_results: list, multi_turn_results: list, output_
 # Main
 # ────────────────────────────────────────────────────────────────
 
+
 def main():
     global SERVER_URL
 
-    parser = argparse.ArgumentParser(description="Phase 10: Context Window Scaling Test")
-    parser.add_argument("--mode", choices=["single-shot", "multi-turn", "both"],
-                        default="both", help="Test mode")
-    parser.add_argument("--tiers", default="2K,8K,32K,64K,128K",
-                        help="Comma-separated tier labels to test")
+    parser = argparse.ArgumentParser(
+        description="Phase 10: Context Window Scaling Test"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["single-shot", "multi-turn", "both"],
+        default="both",
+        help="Test mode",
+    )
+    parser.add_argument(
+        "--tiers",
+        default="2K,8K,32K,64K,128K",
+        help="Comma-separated tier labels to test",
+    )
     parser.add_argument("--server-url", default=SERVER_URL, help="Server URL")
-    parser.add_argument("--output-dir", default="test/phases/results",
-                        help="Output directory for results")
-    parser.add_argument("--model", default="granite-tiny", help="Model label for reports")
+    parser.add_argument(
+        "--output-dir",
+        default="test/phases/results",
+        help="Output directory for results",
+    )
+    parser.add_argument(
+        "--model", default="granite-tiny", help="Model label for reports"
+    )
     args = parser.parse_args()
 
     SERVER_URL = args.server_url
@@ -843,7 +968,9 @@ def main():
     if args.mode in ("multi-turn", "both"):
         # Only test tiers that passed single-shot
         if single_shot_results:
-            passed_tiers = [r["tier"] for r in single_shot_results if r.get("status") == "PASS"]
+            passed_tiers = [
+                r["tier"] for r in single_shot_results if r.get("status") == "PASS"
+            ]
             if not passed_tiers:
                 print("\nNo tiers passed single-shot — skipping multi-turn")
             else:

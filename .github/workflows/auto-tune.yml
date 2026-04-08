@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
+  auto-tune-lint:
     if: github.repository == 'sgl-project/sglang'
     runs-on: ubuntu-latest
     steps:
