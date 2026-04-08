@@ -14,8 +14,6 @@ without the conversation_id= kwarg, causing snapshots to be keyed by
 request UUID instead of the user-provided conversation_id.
 """
 
-import pytest
-
 from sglang.srt.managers.schedule_batch import Req
 from sglang.srt.sampling.sampling_params import SamplingParams
 

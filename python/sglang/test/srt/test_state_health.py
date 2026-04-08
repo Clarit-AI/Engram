@@ -2,11 +2,9 @@
 
 import time
 
-import pytest
 import torch
 
 from sglang.srt.snapshot.state_health import (
-    DEFAULT_SIGMA_THRESHOLD,
     HealthCheckResult,
     NormBaseline,
     StateHealthMonitor,
@@ -15,6 +13,7 @@ from sglang.srt.snapshot.state_health import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_conv_states(dtype=torch.float32, scale=1.0) -> list:
     """Return a conv_states list: one tensor, shape [24, 4, 16, 3]."""
@@ -30,6 +29,7 @@ def _make_temporal_states(dtype=torch.float32, scale=1.0) -> torch.Tensor:
 # 1. NormBaseline rolling window
 # ---------------------------------------------------------------------------
 
+
 def test_norm_baseline_rolling_window():
     baseline = NormBaseline(window_size=5)
     for i in range(10):
@@ -44,6 +44,7 @@ def test_norm_baseline_rolling_window():
 # ---------------------------------------------------------------------------
 # 2. NormBaseline anomaly detection
 # ---------------------------------------------------------------------------
+
 
 def test_norm_baseline_anomaly_detection():
     baseline = NormBaseline(window_size=100)
@@ -62,6 +63,7 @@ def test_norm_baseline_anomaly_detection():
 # 3. NormBaseline insufficient samples
 # ---------------------------------------------------------------------------
 
+
 def test_norm_baseline_insufficient_samples():
     baseline = NormBaseline(window_size=100)
     # Zero samples
@@ -74,6 +76,7 @@ def test_norm_baseline_insufficient_samples():
 # ---------------------------------------------------------------------------
 # 4. Health monitor healthy state
 # ---------------------------------------------------------------------------
+
 
 def test_health_monitor_healthy_state():
     monitor = StateHealthMonitor()
@@ -91,6 +94,7 @@ def test_health_monitor_healthy_state():
 # 5. Health monitor single layer anomaly
 # ---------------------------------------------------------------------------
 
+
 def test_health_monitor_single_layer_anomaly():
     monitor = StateHealthMonitor(sigma_threshold=3.0)
 
@@ -104,7 +108,9 @@ def test_health_monitor_single_layer_anomaly():
     conv_spike = _make_conv_states(scale=1.0)
     conv_spike[0][0] *= 100.0  # spike layer 0 only
     temporal_normal = _make_temporal_states(scale=1.0)
-    result = monitor.check_state_health("conv-1", conv_spike, temporal_normal, turn_number=20)
+    result = monitor.check_state_health(
+        "conv-1", conv_spike, temporal_normal, turn_number=20
+    )
 
     assert result.healthy is False
     assert 0 in result.anomalous_layers  # layer 0 (conv_state) should be flagged
@@ -115,6 +121,7 @@ def test_health_monitor_single_layer_anomaly():
 # ---------------------------------------------------------------------------
 # 6. Health monitor baseline reset
 # ---------------------------------------------------------------------------
+
 
 def test_health_monitor_baseline_reset():
     monitor = StateHealthMonitor()
@@ -131,13 +138,16 @@ def test_health_monitor_baseline_reset():
     # After reset, even a spike should pass (no baseline to compare against)
     conv_spike = _make_conv_states(scale=100.0)
     temporal_spike = _make_temporal_states(scale=100.0)
-    result = monitor.check_state_health("conv-1", conv_spike, temporal_spike, turn_number=20)
+    result = monitor.check_state_health(
+        "conv-1", conv_spike, temporal_spike, turn_number=20
+    )
     assert result.healthy is True
 
 
 # ---------------------------------------------------------------------------
 # 7. Health monitor conversation isolation
 # ---------------------------------------------------------------------------
+
 
 def test_health_monitor_conversation_isolation():
     monitor = StateHealthMonitor()
@@ -151,17 +161,22 @@ def test_health_monitor_conversation_isolation():
     # conv-2 has no baseline, so a large value should pass
     conv_large = _make_conv_states(scale=100.0)
     temporal_large = _make_temporal_states(scale=100.0)
-    result = monitor.check_state_health("conv-2", conv_large, temporal_large, turn_number=0)
+    result = monitor.check_state_health(
+        "conv-2", conv_large, temporal_large, turn_number=0
+    )
     assert result.healthy is True
 
     # But the same large value in conv-1 should be anomalous
-    result2 = monitor.check_state_health("conv-1", conv_large, temporal_large, turn_number=20)
+    result2 = monitor.check_state_health(
+        "conv-1", conv_large, temporal_large, turn_number=20
+    )
     assert result2.healthy is False
 
 
 # ---------------------------------------------------------------------------
 # 8. HealthCheckResult fields
 # ---------------------------------------------------------------------------
+
 
 def test_health_check_result_fields():
     result = HealthCheckResult(
@@ -192,6 +207,7 @@ def test_health_check_result_fields():
 # 9. Structural validation failure (NaN) → unhealthy without norm analysis
 # ---------------------------------------------------------------------------
 
+
 def test_structural_validation_failure():
     monitor = StateHealthMonitor()
     conv = _make_conv_states()
@@ -208,6 +224,7 @@ def test_structural_validation_failure():
 # ---------------------------------------------------------------------------
 # 10. Empty state handling
 # ---------------------------------------------------------------------------
+
 
 def test_empty_state_handling():
     monitor = StateHealthMonitor()

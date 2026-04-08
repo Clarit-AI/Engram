@@ -1,6 +1,5 @@
 import argparse
 import csv
-import os
 from functools import partial
 from typing import List, Tuple
 

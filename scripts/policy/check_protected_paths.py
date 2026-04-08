@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POLICY_PATH = REPO_ROOT / ".engram" / "policy" / "protected-paths.json"
 

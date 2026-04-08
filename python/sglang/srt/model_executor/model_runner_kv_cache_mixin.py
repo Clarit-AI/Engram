@@ -185,7 +185,9 @@ class ModelRunnerKVCacheMixin:
                 max_tokens_per_req = self.model_config.context_len
                 # Compute how many such requests fit in available memory
                 # (rest_memory is in GB, convert to bytes)
-                return int(rest_memory * (1 << 30) // (max_tokens_per_req * 2))  # 2 bytes per token for bf16 activations
+                return int(
+                    rest_memory * (1 << 30) // (max_tokens_per_req * 2)
+                )  # 2 bytes per token for bf16 activations
             else:
                 # Fallback: if no Mamba config, use available memory with a
                 # conservative per-token estimate

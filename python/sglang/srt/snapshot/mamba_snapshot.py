@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class SnapshotValidationError(ValueError):
     """Raised when snapshot state fails validation checks."""
+
     pass
 
 
@@ -841,5 +842,6 @@ class MambaSnapshotManager:
             f"temporal shape {temporal_states.shape} "
             f"(moved to {mamba_pool.device})"
         )
+
 
 MambaSnapshot = MambaSnapshotManager

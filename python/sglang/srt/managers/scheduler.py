@@ -874,7 +874,6 @@ class Scheduler(
         embedding_cache_size = envs.SGLANG_VLM_CACHE_SIZE_MB.get()
         init_mm_embedding_cache(embedding_cache_size * 1024 * 1024)
 
-
     def init_snapshot_system(self):
         """
         Initialize the Mamba state snapshot system for stateful inference.
@@ -2005,7 +2004,6 @@ class Scheduler(
             self.tool_registry = None
             self.tool_parser = None
             self.tool_executor = None
-
 
     def init_running_status(self):
         self.waiting_queue: List[Req] = []

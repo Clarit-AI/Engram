@@ -392,7 +392,8 @@ class ModelConfig:
 
         self.is_hybrid_swa_compress = (
             self.hf_config.architectures
-            and self.hf_config.architectures[0] in [
+            and self.hf_config.architectures[0]
+            in [
                 "MiMoV2FlashForCausalLM",
                 "MiMoV2MTP",
                 "Gemma4ForCausalLM",

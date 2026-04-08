@@ -3,7 +3,7 @@ from typing import Optional, Tuple
 import torch
 
 try:
-    from sgl_kernel import flashmla_ops  # triggers TORCH extension registration
+    pass  # triggers TORCH extension registration
 except Exception as _e:
     _flashmla_import_error = _e
 else:

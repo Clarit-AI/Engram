@@ -86,8 +86,7 @@ class Mamba2Config(PretrainedConfig):
         self.expand = expand
         self.n_groups = n_groups
         self.intermediate_size = (
-            intermediate_size if intermediate_size is not None
-            else hidden_size * expand
+            intermediate_size if intermediate_size is not None else hidden_size * expand
         )
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
