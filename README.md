@@ -72,8 +72,10 @@ Validated on H200 across the full test suite (77/82 pass, 0 regressions):
 | Granite 4.0-H-tiny (TP4) | 4B | ~14 MB | TP=4 gathers state to rank 0 |
 | Granite 4.0-H-tiny (TP1) | 4B | ~56 MB | Primary benchmark model |
 | Granite 4.0-H-small | 32B | ~146 MB | 36 Mamba layers, BF16 |
+| Nemotron-Cascade-2-30B | 30B | ~47 MB | MoE routing, fewer Mamba layers |
 | Codestral Mamba 7B | 7B | ~260 MB | Pure Mamba2 — large SSM state (64 layers) |
 | Nemotron-3-Super-120B | 120B | ~5.3 GB | 88 layers, FP8, LatentMoE |
+| Qwen3-Coder-Next | ~75B | ~23.7 GB | GLA recurrent state (not Mamba2) |
 
 All sizes are constant regardless of conversation length — a 1M-token conversation saves the same bytes as a 1K-token one.
 
