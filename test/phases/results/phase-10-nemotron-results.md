@@ -1,5 +1,7 @@
 # Phase 10 Results: Nemotron-Cascade-2-30B-A3B
 
+**Date**: 2026-04-01
+
 ## Model Info
 - **Architecture**: NemotronHForCausalLM (native SGLang support)
 - **Parameters**: 30B total / 3B active (MoE)

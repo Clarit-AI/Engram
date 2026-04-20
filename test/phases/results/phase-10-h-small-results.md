@@ -1,5 +1,7 @@
 # Phase 10 Results: granite-4.0-h-small
 
+**Date**: 2026-04-01
+
 ## Model Info
 - **Architecture**: GraniteMoeHybridForCausalLM
 - **Parameters**: 32B dense hybrid (40 layers: 36 mamba + 4 attention)

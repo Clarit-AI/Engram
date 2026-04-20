@@ -1,5 +1,7 @@
 # Phase 10 Final Report: Scaling & Cross-Model Testing
 
+**Date**: 2026-04-01
+
 ## Executive Summary
 
 Phase 10 tested Mamba snapshot persistence across multiple model architectures and sizes. Two hybrid Mamba models were successfully tested; pure Mamba2 models were found incompatible with SGLang's serving architecture. **No memory leaks were detected in any model.** Nemotron-Cascade-2-30B-A3B outperformed granite-4.0-h-small across most metrics.
