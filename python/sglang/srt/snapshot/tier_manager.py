@@ -25,6 +25,7 @@ from sglang.srt.snapshot.mamba_snapshot import (
 logger = logging.getLogger(__name__)
 
 
+# --- BEGIN ENGRAM: restore_snapshots_on_startup implementation ---
 def restore_latest_snapshots_to_warm_tier(
     snapshot_manager: MambaSnapshotManager,
     tier_manager: "TierManager",
@@ -100,6 +101,7 @@ def restore_latest_snapshots_to_warm_tier(
         len(conversations),
     )
     return restored_count
+# --- END ENGRAM: restore_snapshots_on_startup implementation ---
 
 
 class TierManager:
