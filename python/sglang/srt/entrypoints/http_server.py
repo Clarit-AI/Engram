@@ -2282,16 +2282,24 @@ def _setup_and_run_http_server(
         # This reserves the port early and avoids conflicts.
         import socket as _socket
 
-        _family = (
-            _socket.AF_INET6 if ":" in (server_args.host or "") else _socket.AF_INET
-        )
-        reserved_socket = _socket.socket(family=_family, type=_socket.SOCK_STREAM)
-        reserved_socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-        if hasattr(_socket, "SO_REUSEPORT"):
-            reserved_socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
-        reserved_socket.bind((server_args.host or "", server_args.port))
-        reserved_socket.set_inheritable(True)
-        reserved_socket.listen(128)
+        if server_args.dp_size == 1:
+            _family = (
+                _socket.AF_INET6 if ":" in (server_args.host or "") else _socket.AF_INET
+            )
+            reserved_socket = _socket.socket(family=_family, type=_socket.SOCK_STREAM)
+            reserved_socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            if hasattr(_socket, "SO_REUSEPORT"):
+                reserved_socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
+            reserved_socket.bind((server_args.host or "", server_args.port))
+            reserved_socket.set_inheritable(True)
+            reserved_socket.listen(128)
+        else:
+            logger.info(
+                f"Skipping reserved socket pre-bind (dp_size={server_args.dp_size} > 1, "
+                "multi-worker mode). Port binding will be handled per-worker."
+            )
+            reserved_socket = None
+        # --- END ENGRAM ---
 
         if server_args.ssl_certfile:
             logger.info(
@@ -2305,7 +2313,7 @@ def _setup_and_run_http_server(
                 # Use Config/Server API for access to the SSLContext.
                 config = uvicorn.Config(
                     app,
-                    fd=reserved_socket.fileno(),
+                    fd=reserved_socket.fileno() if reserved_socket is not None else None,
                     root_path=server_args.fastapi_root_path,
                     log_level=server_args.log_level_http or server_args.log_level,
                     timeout_keep_alive=5,
@@ -2341,7 +2349,7 @@ def _setup_and_run_http_server(
                 # Default case, one tokenizer process
                 uvicorn.run(
                     app,
-                    fd=reserved_socket.fileno(),
+                    fd=reserved_socket.fileno() if reserved_socket is not None else None,
                     root_path=server_args.fastapi_root_path,
                     log_level=server_args.log_level_http or server_args.log_level,
                     timeout_keep_alive=5,
