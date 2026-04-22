@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch
@@ -13,6 +14,7 @@ from sglang.srt.snapshot.mamba_snapshot import (
     ValidationResult,
     validate_state_tensors,
 )
+from sglang.srt.snapshot.tier_manager import TierManager
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -311,3 +313,93 @@ def test_save_load_roundtrip_and_quarantine():
 
         with pytest.raises(SnapshotValidationError):
             manager.load_snapshot("roundtrip-conv", turn_number=0)
+
+
+# ---------------------------------------------------------------------------
+# 16. Warm-tier save rejects NaN state (log_and_continue policy)
+# ---------------------------------------------------------------------------
+
+
+# --- BEGIN ENGRAM: Tier 1 validation on warm-tier save ---
+
+
+def _make_tier_manager() -> TierManager:
+    """Return a TierManager with mocked dependencies."""
+    tracker = MagicMock()
+    host_pool = MagicMock()
+    snapshot_mgr = MagicMock()
+    return TierManager(
+        conversation_tracker=tracker,
+        host_pool=host_pool,
+        snapshot_manager=snapshot_mgr,
+        enable_background_cleanup=False,
+    )
+
+
+def test_warm_tier_rejects_nan_state():
+    """Warm-tier save with NaN in conv_states should be rejected, not persisted."""
+    tm = _make_tier_manager()
+
+    conv = _make_conv_states()
+    conv[0][0, 0, 0, 0] = float("nan")
+    temporal = _make_temporal_states()
+
+    result = tm.save_to_warm_tier("test-conv-nan", conv, temporal)
+    assert result is False
+    tm.host_pool.save_state.assert_not_called()
+
+
+def test_warm_tier_rejects_nan_temporal():
+    """Warm-tier save with NaN in temporal_states should be rejected."""
+    tm = _make_tier_manager()
+
+    conv = _make_conv_states()
+    temporal = _make_temporal_states()
+    temporal[0, 0, 0, 0] = float("nan")
+
+    result = tm.save_to_warm_tier("test-conv-temporal-nan", conv, temporal)
+    assert result is False
+    tm.host_pool.save_state.assert_not_called()
+
+
+def test_warm_tier_rejects_all_zeros_strict():
+    """Warm-tier save with all-zero state (strict=True) should be rejected."""
+    tm = _make_tier_manager()
+
+    conv = [torch.zeros(24, 4, 16, 3, dtype=torch.float32)]
+    temporal = torch.zeros(24, 4, 16, 64, dtype=torch.float32)
+
+    # Default validate_state_tensors uses strict=False, so all-zeros is a warning
+    # not an error. The save should succeed because there are no errors.
+    result = tm.save_to_warm_tier("test-conv-zeros", conv, temporal)
+    assert result is True
+
+
+def test_warm_tier_raise_policy_raises_on_nan():
+    """With validation_policy='raise', NaN state raises SnapshotValidationError."""
+    tm = _make_tier_manager()
+
+    conv = _make_conv_states()
+    conv[0][0, 0, 0, 0] = float("nan")
+    temporal = _make_temporal_states()
+
+    with pytest.raises(SnapshotValidationError, match="Warm-tier save rejected"):
+        tm.save_to_warm_tier(
+            "test-conv-raise", conv, temporal, validation_policy="raise"
+        )
+
+
+def test_warm_tier_accepts_valid_state():
+    """Valid state should pass validation and be saved to warm tier."""
+    tm = _make_tier_manager()
+    tm.host_pool.save_state.return_value = True
+
+    conv = _make_conv_states()
+    temporal = _make_temporal_states()
+
+    result = tm.save_to_warm_tier("test-conv-valid", conv, temporal)
+    assert result is True
+    tm.host_pool.save_state.assert_called_once()
+
+
+# --- END ENGRAM: Tier 1 validation on warm-tier save ---
