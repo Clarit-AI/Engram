@@ -1312,6 +1312,7 @@ class Scheduler(
     # --- END ENGRAM ---
 
     # --- BEGIN ENGRAM: snapshot save, list, info, restore, and eviction handlers ---
+    # --- BEGIN ENGRAM: restore_snapshots_on_startup implementation ---
     def restore_snapshots_on_startup(self):
         """
         Restore the latest snapshots for all conversations on server startup.
@@ -1338,6 +1339,7 @@ class Scheduler(
             tier_manager=self.tier_manager,
             restore_logger=logger,
         )
+    # --- END ENGRAM: restore_snapshots_on_startup implementation ---
 
     def _find_request_by_rid(self, rid: str):
         """Find a request by its rid in running batch or waiting queue.
