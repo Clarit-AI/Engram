@@ -23,7 +23,7 @@
 | Total ENGRAM_MODIFIED headers | 85 |
 | Total BEGIN/END ENGRAM blocks | 322 |
 
-## High Conflict Risk — Modified Upstream Files with 5+ Blocks ⚠️
+## High Conflict Risk — Modified Upstream Files ⚠️
 
 These are the files where upstream changes will most likely conflict with Engram additions.
 
@@ -35,16 +35,16 @@ These are the files where upstream changes will most likely conflict with Engram
 | `python/sglang/srt/entrypoints/http_server.py` | 3 | +208 | Snapshot HTTP endpoints, agent API routes, socket pre-binding |
 | `python/sglang/srt/mem_cache/mamba_radix_cache.py` | 3 | +22 | Mamba radix cache extensions |
 | `python/sglang/srt/managers/io_struct.py` | 3 | +138 | Snapshot and agent request/response data structures |
-| `python/sglang/srt/model_executor/model_runner_kv_cache_mixin.py` | 3 | +113 | KV cache Mamba state integration |
+| `python/sglang/srt/model_executor/model_runner_kv_cache_mixin.py` | 2 | +113 | KV cache Mamba state integration |
 | `python/sglang/srt/managers/scheduler_output_processor_mixin.py` | 3 | +113 | Snapshot output processing hooks |
 | `python/sglang/srt/managers/schedule_batch.py` | 2 | +8 | Snapshot batch field |
 | `python/sglang/srt/configs/model_config.py` | 2 | +37 | Mamba config adaptations (safe architecture access, multimodal guards) |
-| `python/sglang/srt/mem_cache/memory_pool.py` | 1 | +9 | Mamba memory pool hooks |
 
-### Core Engine — Other Modified Files (fewer blocks) (subtotal: 12 blocks)
+### Core Engine — Other Modified Files (subtotal: 24 blocks)
 
 | File | Blocks | +/- | Description |
 |------|--------|-----|-------------|
+| `python/sglang/srt/mem_cache/memory_pool.py` | 1 | +9 | Mamba memory pool hooks |
 | `python/sglang/srt/observability/trace.py` | 0 | +2 | Safer exception handling in host ID detection |
 | `python/sglang/srt/model_executor/model_runner.py` | 0 | +15 | Mamba2Config support, safe architecture access |
 | `python/sglang/srt/entrypoints/openai/protocol.py` | 2 | — | Snapshot fields in OpenAI-compatible API protocol |
@@ -292,7 +292,7 @@ The following are not fork-differentiated and accept upstream changes verbatim:
 
 ## Block Count by Subsystem
 
-### High Conflict Risk (5+ blocks): 46 total
+### High Conflict Risk (5+ blocks): 45 total
 | Subsystem | Files | Blocks |
 |-----------|-------|--------|
 | Scheduler | 1 | 15 |
@@ -305,9 +305,8 @@ The following are not fork-differentiated and accept upstream changes verbatim:
 | Scheduler Output Processor | 1 | 3 |
 | Schedule Batch | 1 | 2 |
 | Model Config | 1 | 2 |
-| Memory Pool | 1 | 1 |
 
-### Other Modified (fewer blocks): 23 total
+### Other Modified (fewer blocks): 24 total
 | File | Blocks |
 |------|--------|
 | OpenAI protocol | 2 |
