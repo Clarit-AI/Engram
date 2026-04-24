@@ -309,3 +309,4 @@ test/phases/results/*.json
 # Vercel AI SDK provider (will move to own repo)
 vercel_sdk_provider/
 # --- END ENGRAM ---
+.gitnexus

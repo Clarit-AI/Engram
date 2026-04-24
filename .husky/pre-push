@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# pre-push hook: Block pushes to upstream (sgl-project/sglang) unless PUSH_TO_UPSTREAM=1
+#
+# Prevents accidental pushes/PRs to the upstream repo.
+# To push upstream intentionally: PUSH_TO_UPSTREAM=1 git push upstream main
+
+remote_url=$(git remote get-url "$1" 2>/dev/null)
+
+# Extract remote name from URL
+remote_name=$(basename "$(echo "$remote_url" | sed 's/\.git$//')" )
+
+# Extract owner from URL (e.g. sgl-project from https://github.com/sgl-project/sglang)
+remote_owner=$(echo "$remote_url" | awk -F/ '{print $(NF-1)}' | head -1 | awk -F/ '{print $1}')
+# Extract repo from URL
+remote_repo=$(echo "$remote_url" | awk -F/ '{print $NF}' | awk -F. '{print $1}')
+
+UPSTREAM_OWNER="sgl-project"
+UPSTREAM_REPO="sglang"
+
+# Check if this is a push to upstream
+if [[ "$remote_name" == "upstream" ]] || [[ "$remote_owner" == "$UPSTREAM_OWNER" && "$remote_repo" == "$UPSTREAM_REPO" ]]; then
+    if [[ -z "$PUSH_TO_UPSTREAM" ]]; then
+        echo ""
+        echo "BLOCKED: Push to upstream ($remote_owner/$remote_repo) prevented."
+        echo ""
+        echo "This is a safety guard to prevent accidental pushes to sgl-project/sglang."
+        echo ""
+        echo "If you actually need to push upstream:"
+        echo "  PUSH_TO_UPSTREAM=1 git push upstream main"
+        echo "  git push-to-upstream main"
+        echo ""
+        exit 1
+    fi
+fi
+
+exit 0
