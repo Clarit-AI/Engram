@@ -1,5 +1,8 @@
 # Engram Upstream Sync Playbook
 
+> **Engram:** v0.2.0 (pre-merge; target v0.3.0)
+> **Last updated:** 2026-04-24
+
 > This document enables any coding agent to resolve upstream merge conflicts
 > in the Engram fork without prior project context. Read this before touching
 > any merge conflict.

@@ -1,8 +1,10 @@
 <!-- ENGRAM_MODIFIED — Fork file manifest: canonical registry of all Engram changes -->
 # Engram Fork Manifest
 
+> **Engram:** v0.2.0 (pre-merge; target v0.3.0)
+> **Last updated:** 2026-04-24
+>
 > Auto-generated from `git diff upstream/main...HEAD` and ENGRAM_MODIFIED markers.
-> Last updated: 2026-04-24
 > Commit: 2d047c4996f13fc1bfc08a7fb6f1eedd7f2b2906 (+ pre-merge snapshot.py addition)
 
 ## How to use this file
