@@ -1,4 +1,4 @@
-# ENGRAM_MODIFIED — CI guard: job disabled on fork (upstream-only)
+# ENGRAM_MODIFIED — fork guard: disable upstream-only CI
 name: Nightly Test (AMD ROCm 7.2)
 
 on:
@@ -44,8 +44,8 @@ on:
           - nightly-8-gpu-kimi-k25-rocm720
           - nightly-8-gpu-qwen3-235b-rocm720
           - nightly-8-gpu-qwen35-rocm720
-          - nightly-8-gpu-glm5-rocm720
-          - nightly-8-gpu-minimax-m25-rocm720
+          - nightly-8-gpu-glm51-rocm720
+          - nightly-8-gpu-minimax-m27-rocm720
           - nightly-1-gpu-zimage-turbo-rocm720
           - nightly-test-1-gpu-mi35x-rocm720
           - nightly-accuracy-8-gpu-mi35x-rocm720
@@ -61,9 +61,8 @@ on:
           - nightly-8-gpu-mi35x-kimi-k25-rocm720
           - nightly-8-gpu-mi35x-qwen3-235b-mxfp4-rocm720
           - nightly-8-gpu-mi35x-qwen35-rocm720
-          - nightly-8-gpu-mi35x-glm5-rocm720
-          - nightly-8-gpu-mi35x-glm47-fp8-rocm720
-          - nightly-8-gpu-mi35x-minimax-m25-rocm720
+          - nightly-8-gpu-mi35x-glm51-rocm720
+          - nightly-8-gpu-mi35x-glm5-mxfp4-rocm720
       job_filter:
         description: 'Or type comma-separated job names (overrides dropdown if non-empty)'
         required: false
@@ -94,6 +93,8 @@ on:
 
 env:
   AITER_COMMIT_OVERRIDE: ${{ inputs.aiter_ref }}
+  DOCKERHUB_AMD_USERNAME: ${{ secrets.DOCKERHUB_AMD_USERNAME }}
+  DOCKERHUB_AMD_TOKEN: ${{ secrets.DOCKERHUB_AMD_TOKEN }}
 
 concurrency:
   # When called via workflow_call with ref set, use a unique group per caller run to avoid
@@ -107,7 +108,7 @@ jobs:
   # 1-GPU Unit Tests - LoRA, debug utils, scheduler, etc. (MI30x ROCm 7.2)
   nightly-test-1-gpu-unit-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-unit-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-unit-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-1gpu-sglang
     steps:
@@ -138,7 +139,7 @@ jobs:
   # 2-GPU Accuracy Tests - GSM8K eval (MI30x ROCm 7.2)
   nightly-accuracy-2-gpu-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -168,7 +169,7 @@ jobs:
   # 2-GPU VLM Accuracy Tests - Vision-Language Models MMMU evaluation (ROCm 7.2)
   nightly-accuracy-2-gpu-vlm-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu-vlm-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu-vlm-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -199,7 +200,7 @@ jobs:
   # 2-GPU Text Models Performance Tests (ROCm 7.2)
   nightly-perf-2-gpu-text-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-text-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-text-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -231,7 +232,7 @@ jobs:
   # 2-GPU VLM Performance Tests (ROCm 7.2)
   nightly-perf-2-gpu-vlm-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-vlm-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-vlm-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -264,7 +265,7 @@ jobs:
   # 4-GPU Nightly Tests - Dumper/Comparator E2E, VLM Encoder DP (ROCm 7.2)
   nightly-4-gpu-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-4-gpu-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-4-gpu-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-4gpu-sglang
     steps:
@@ -296,7 +297,7 @@ jobs:
   # 8-GPU Accuracy Tests - GPT-OSS, Grok1-FP8 (ROCm 7.2)
   nightly-accuracy-8-gpu-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -338,7 +339,7 @@ jobs:
   # 8-GPU Grok1-INT4 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-grok1-int4-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok1-int4-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok1-int4-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -383,7 +384,7 @@ jobs:
   # 8-GPU Grok2 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-grok2-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok2-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok2-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -428,7 +429,7 @@ jobs:
   # 8-GPU DeepSeek-V3.1 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-deepseek-v31-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v31-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v31-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -473,7 +474,7 @@ jobs:
   # 8-GPU DeepSeek-V3.2 (Basic Accuracy + Perf) ROCm 7.2
   nightly-8-gpu-deepseek-v32-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -516,7 +517,7 @@ jobs:
   # 8-GPU DeepSeek-V3.2 MTP (MTP Accuracy + Perf) ROCm 7.2
   nightly-8-gpu-deepseek-v32-mtp-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32-mtp-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32-mtp-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -559,7 +560,7 @@ jobs:
   # 8-GPU DeepSeek-V3 KV FP8 (Basic + MTP with --kv-cache-dtype fp8_e4m3) ROCm 7.2
   nightly-8-gpu-deepseek-v3-kv-fp8-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v3-kv-fp8-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v3-kv-fp8-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -591,7 +592,7 @@ jobs:
   # 8-GPU Kimi-K2.5 (Accuracy) ROCm 7.2
   nightly-8-gpu-kimi-k25-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k25-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k25-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -623,7 +624,7 @@ jobs:
   # 8-GPU Qwen3-235B (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-qwen3-235b-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen3-235b-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen3-235b-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -655,7 +656,7 @@ jobs:
   # 8-GPU Qwen 3.5 (Accuracy + Performance combined) ROCm 7.2
   nightly-8-gpu-qwen35-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen35-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen35-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -698,10 +699,10 @@ jobs:
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-  # 8-GPU GLM-5 (Accuracy) ROCm 7.2
-  nightly-8-gpu-glm5-rocm720:
+  # 8-GPU GLM-5.1 (Accuracy + Performance combined) ROCm 7.2
+  nightly-8-gpu-glm51-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-glm5-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-glm51-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -722,20 +723,32 @@ jobs:
           bash scripts/ci/amd/amd_ci_install_dependency.sh --skip-test-time-deps
           bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
 
-      - name: Accuracy Test ROCm 7.2 (8-GPU GLM-5 NSA)
+      - name: Accuracy Test ROCm 7.2 (8-GPU GLM-5.1 NSA)
         timeout-minutes: 120
         run: |
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-glm5 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-glm51 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-  # 8-GPU MiniMax-M2.5 (Accuracy + Performance combined) ROCm 7.2
-  nightly-8-gpu-minimax-m25-rocm720:
+      - name: Performance Test ROCm 7.2 (8-GPU GLM-5.1)
+        timeout-minutes: 120
+        continue-on-error: true
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-glm51 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # 8-GPU MiniMax-M2.7 (Accuracy + Performance combined, replaces M2.5) ROCm 7.2
+  nightly-8-gpu-minimax-m27-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-minimax-m25-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-minimax-m27-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -754,18 +767,18 @@ jobs:
       - name: Install dependencies
         run: bash scripts/ci/amd/amd_ci_install_dependency.sh --skip-test-time-deps
 
-      - name: Accuracy Test ROCm 7.2 (8-GPU MiniMax-M2.5)
+      - name: Accuracy Test ROCm 7.2 (8-GPU MiniMax-M2.7)
         timeout-minutes: 120
         run: |
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-minimax-m25 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-minimax-m27 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-      - name: Performance Test ROCm 7.2 (8-GPU MiniMax-M2.5)
+      - name: Performance Test ROCm 7.2 (8-GPU MiniMax-M2.7)
         timeout-minutes: 120
         continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
         run: |
@@ -773,7 +786,7 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-minimax-m25 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-minimax-m27 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -781,7 +794,7 @@ jobs:
   # 1-GPU Z-Image-Turbo (Diffusion T2I) ROCm 7.2
   nightly-1-gpu-zimage-turbo-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-1-gpu-zimage-turbo-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-1-gpu-zimage-turbo-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi325-1gpu-sglang
     steps:
@@ -823,7 +836,7 @@ jobs:
   # MI35x 1-GPU ROCm 7.2 tests
   nightly-test-1-gpu-mi35x-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-mi35x-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-mi35x-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-1
     steps:
@@ -854,7 +867,7 @@ jobs:
   # MI35x 8-GPU Accuracy Tests - GPT-OSS (ROCm 7.2)
   nightly-accuracy-8-gpu-mi35x-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -888,7 +901,7 @@ jobs:
   # MI35x 8-GPU Grok1-INT4 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-mi35x-grok1-int4-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok1-int4-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok1-int4-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -936,7 +949,7 @@ jobs:
   # MI35x 8-GPU Grok2 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-mi35x-grok2-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok2-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok2-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -984,7 +997,7 @@ jobs:
   # MI35x 8-GPU DeepSeek-R1-MXFP4 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-mi35x-deepseek-r1-mxfp4-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1030,7 +1043,7 @@ jobs:
   # MI35x 8-GPU DeepSeek-R1-MXFP4 KV FP8 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1076,7 +1089,7 @@ jobs:
   # MI35x 8-GPU DeepSeek-R1-MXFP4 AllReduce Fusion (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1122,7 +1135,7 @@ jobs:
   # MI35x 8-GPU DeepSeek-V3.2 Accuracy Test (ROCm 7.2)
   nightly-accuracy-8-gpu-mi35x-deepseek-v32-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1157,7 +1170,7 @@ jobs:
   # MI35x 8-GPU DeepSeek-V3.2 TP+MTP Accuracy Test (ROCm 7.2)
   nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1192,7 +1205,7 @@ jobs:
   # MI35x 8-GPU DeepSeek-V3.2 Performance Test (Basic) ROCm 7.2
   nightly-perf-8-gpu-mi35x-deepseek-v32-basic-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-basic-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-basic-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1227,7 +1240,7 @@ jobs:
   # MI35x 8-GPU Kimi-K2.5 (Accuracy) ROCm 7.2
   nightly-8-gpu-mi35x-kimi-k25-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k25-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k25-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1262,7 +1275,7 @@ jobs:
   # MI35x 8-GPU Qwen3-235B-MXFP4 (Accuracy + Performance) ROCm 7.2
   nightly-8-gpu-mi35x-qwen3-235b-mxfp4-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen3-235b-mxfp4-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen3-235b-mxfp4-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1297,7 +1310,7 @@ jobs:
   # MI35x 8-GPU Qwen 3.5 (Accuracy + Performance combined) ROCm 7.2
   nightly-8-gpu-mi35x-qwen35-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen35-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen35-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1341,9 +1354,10 @@ jobs:
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-  nightly-8-gpu-mi35x-glm5-rocm720:
+  # MI35x 8-GPU GLM-5.1 (Accuracy + Performance combined) ROCm 7.2
+  nightly-8-gpu-mi35x-glm51-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm5-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm51-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1362,59 +1376,34 @@ jobs:
       - name: Install dependencies
         run: |
           bash scripts/ci/amd/amd_ci_install_dependency.sh --skip-test-time-deps
-          # Install tabulate for run_suite.py (missing in MI35x container)
           bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
           bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
 
-      - name: Accuracy Test MI35x ROCm 7.2 (8-GPU GLM-5 NSA)
+      - name: Accuracy Test MI35x ROCm 7.2 (8-GPU GLM-5.1 NSA)
         timeout-minutes: 180
         run: |
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm5 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm51 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-  # MI35x 8-GPU GLM-4.7-FP8 (Accuracy) ROCm 7.2
-  nightly-8-gpu-mi35x-glm47-fp8-rocm720:
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm47-fp8-rocm720,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: Setup docker (ROCm 7.2)
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh --rocm-version rocm720
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x ROCm 7.2 (8-GPU GLM-4.7-FP8)
+      - name: Performance Test MI35x ROCm 7.2 (8-GPU GLM-5.1)
         timeout-minutes: 120
+        continue-on-error: true
         run: |
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm47-fp8 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-glm51 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-  # MI35x 8-GPU MiniMax-M2.5 (Accuracy + Performance combined) ROCm 7.2
-  nightly-8-gpu-mi35x-minimax-m25-rocm720:
+  # MI35x 8-GPU GLM-5-MXFP4 (Accuracy + Performance combined) ROCm 7.2
+  nightly-8-gpu-mi35x-glm5-mxfp4-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-minimax-m25-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm5-mxfp4-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1434,34 +1423,35 @@ jobs:
         run: |
           bash scripts/ci/amd/amd_ci_install_dependency.sh --skip-test-time-deps
           bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+          bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
 
-      - name: Accuracy Test MI35x ROCm 7.2 (8-GPU MiniMax-M2.5)
-        timeout-minutes: 120
+      - name: Accuracy Test MI35x ROCm 7.2 (8-GPU GLM-5-MXFP4)
+        timeout-minutes: 180
         run: |
-          > github_summary.md  # Clear summary file
+          > github_summary.md
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-minimax-m25 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm5-mxfp4 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-      - name: Performance Test MI35x ROCm 7.2 (8-GPU MiniMax-M2.5)
-        timeout-minutes: 120
-        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
+      - name: Performance Test MI35x ROCm 7.2 (8-GPU GLM-5-MXFP4)
+        timeout-minutes: 300
+        continue-on-error: true
         run: |
-          > github_summary.md  # Clear summary file
+          > github_summary.md
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-minimax-m25 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 registered/amd/perf/mi35x/test_glm5_mxfp4_perf_mi35x.py || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # MI35x 8-GPU DeepSeek-V3.2 Performance Test (MTP) ROCm 7.2
   nightly-perf-8-gpu-mi35x-deepseek-v32-mtp-rocm720:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-mtp-rocm720,'))
+    if: github.repository == 'sgl-project/sglang' && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-mtp-rocm720,'))
     # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
@@ -1495,7 +1485,7 @@ jobs:
 
   check-all-jobs:
     # --- BEGIN ENGRAM: fork CI guard ---
-    if: always() && (github.repository == 'sgl-project/sglang')
+    if: always() && (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
     # --- END ENGRAM ---
     needs:
       # MI30x ROCm 7.2 Unit Tests
@@ -1519,8 +1509,8 @@ jobs:
       - nightly-8-gpu-kimi-k25-rocm720
       - nightly-8-gpu-qwen3-235b-rocm720
       - nightly-8-gpu-qwen35-rocm720
-      - nightly-8-gpu-glm5-rocm720
-      - nightly-8-gpu-minimax-m25-rocm720
+      - nightly-8-gpu-glm51-rocm720
+      - nightly-8-gpu-minimax-m27-rocm720
       # MI30x ROCm 7.2 Diffusion Tests
       - nightly-1-gpu-zimage-turbo-rocm720
       # MI35x ROCm 7.2 jobs
@@ -1538,9 +1528,8 @@ jobs:
       - nightly-8-gpu-mi35x-kimi-k25-rocm720
       - nightly-8-gpu-mi35x-qwen3-235b-mxfp4-rocm720
       - nightly-8-gpu-mi35x-qwen35-rocm720
-      - nightly-8-gpu-mi35x-glm5-rocm720
-      - nightly-8-gpu-mi35x-glm47-fp8-rocm720
-      - nightly-8-gpu-mi35x-minimax-m25-rocm720
+      - nightly-8-gpu-mi35x-glm51-rocm720
+      - nightly-8-gpu-mi35x-glm5-mxfp4-rocm720
     runs-on: ubuntu-latest
     steps:
       - name: Check if any job failed
@@ -1554,3 +1543,4 @@ jobs:
             exit 1
           fi
           echo "All ROCm 7.2 nightly test jobs passed"
+
