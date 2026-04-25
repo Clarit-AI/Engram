@@ -11,6 +11,7 @@
 
 namespace device::top512 {
 
+template <uint32_t K>
 struct RegisterTopK {
   static constexpr uint32_t kHistBits = 12;
   static constexpr uint32_t kHistBins = 1 << kHistBits;
@@ -49,7 +50,7 @@ struct RegisterTopK {
 
     // Initialize shared memory histogram
     {
-      Smem::HistVec hist_vec;
+      typename Smem::HistVec hist_vec;
       hist_vec.fill(0);
       smem->histogram_vec[tx] = hist_vec;
       if (tx == 0) {

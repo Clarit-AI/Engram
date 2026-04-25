@@ -8,12 +8,12 @@
 
 namespace device::top512 {
 
-inline constexpr uint32_t K = 512;
+inline constexpr uint32_t kMaxTopK = 1024;
 inline constexpr uint32_t kBlockSize = 1024;
 inline constexpr uint32_t kNumWarps = kBlockSize / kWarpThreads;
 inline constexpr uint32_t kMaxTies = 1024;  // == kBlockSize: 1 element per thread in stage2
 static constexpr uint32_t kRadixBins = 256;
-static_assert(K <= kBlockSize && kMaxTies <= kBlockSize);
+static_assert(kMaxTopK <= kBlockSize && kMaxTies <= kBlockSize);
 
 // always use float4 to load from global memory
 using Vec4 = AlignedVector<float, 4>;
@@ -80,7 +80,7 @@ SGL_DEVICE uint32_t extract_exact_bin(float x) {
   return (bits & 0x80000000u) ? ~bits : (bits | 0x80000000u);
 }
 
-SGL_DEVICE void trivial_transform(const TransformParams& params, uint32_t length) {
+SGL_DEVICE void trivial_transform(const TransformParams& params, uint32_t length, uint32_t K) {
   if (const auto tx = threadIdx.x; tx < length) {
     params.write(tx, tx);
   } else if (tx < K) {
@@ -92,6 +92,7 @@ SGL_DEVICE void tie_handle_transform(
     const Tie* __restrict__ ties,  //
     const uint32_t num_ties,
     const uint32_t num_above,
+    const uint32_t K,
     const TransformParams params,
     void* _smem) {
   auto* smem = static_cast<TieHandleSmem*>(_smem);

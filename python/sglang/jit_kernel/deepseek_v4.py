@@ -45,14 +45,27 @@ def _jit_topk_module() -> Module:
 
 
 @cache_once
-def _jit_topk_v2_module() -> Module:
+def _jit_topk1024_module() -> Module:
+    args = make_cpp_args(is_arch_support_pdl())
+    return load_jit(
+        make_name("topk1024"),
+        *args,
+        cuda_files=["deepseek_v4/topk_1024.cuh"],
+        cuda_wrappers=[("topk_transform", f"TopK1024Kernel<{args}>::transform")],
+    )
+
+
+@cache_once
+def _jit_topk_v2_module(topk: int) -> Module:
     return load_jit(
         make_name("topk_v2"),
+        str(topk),
         cuda_files=["deepseek_v4/topk_v2.cuh"],
         cuda_wrappers=[
-            ("topk_transform", "CombinedTopK512Kernel::transform"),
-            ("topk_plan", "CombinedTopK512Kernel::plan"),
+            ("topk_transform", "CombinedTopKKernel::transform"),
+            ("topk_plan", "CombinedTopKKernel::plan"),
         ],
+        extra_cuda_cflags=[f"-DSGL_TOPK={topk}"],
     )
 
 
@@ -294,7 +307,10 @@ def topk_transform_512(
     page_size: int,
     out_raw_indices: Optional[torch.Tensor] = None,
 ) -> None:
-    module = _jit_topk_module()
+    if out_page_indices.shape[1] == 512:
+        module = _jit_topk_module()
+    else:
+        module = _jit_topk1024_module()
     module.topk_transform(
         scores, seq_lens, page_tables, out_page_indices, page_size, out_raw_indices
     )
@@ -305,7 +321,7 @@ _PLAN_METADATA_INTS_PER_BATCH = 4
 
 
 def plan_topk_v2(seq_lens: torch.Tensor, static_threshold: int = 0) -> torch.Tensor:
-    module = _jit_topk_v2_module()
+    module = _jit_topk_v2_module(512)  # does not matter
     bs = seq_lens.shape[0]
     metadata = seq_lens.new_empty(bs + 1, _PLAN_METADATA_INTS_PER_BATCH)
     module.topk_plan(seq_lens, metadata, static_threshold)
@@ -320,7 +336,7 @@ def topk_transform_512_v2(
     page_size: int,
     metadata: torch.Tensor,
 ) -> None:
-    module = _jit_topk_v2_module()
+    module = _jit_topk_v2_module(out_page_indices.shape[1])
     bs = scores.shape[0]
     workspace = seq_lens.new_empty(bs, _WORKSPACE_INTS_PER_BATCH)
     module.topk_transform(

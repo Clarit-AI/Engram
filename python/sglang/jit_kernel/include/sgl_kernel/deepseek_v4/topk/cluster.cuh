@@ -10,6 +10,7 @@
 
 namespace device::top512 {
 
+template <uint32_t K>
 struct ClusterTopK {
   static constexpr uint32_t kClusterSize = 8;
   static constexpr uint32_t kHistBits = 10;
@@ -20,7 +21,7 @@ struct ClusterTopK {
   static constexpr uint32_t kNumStages = 4;
   static constexpr uint32_t kMaxLength = kClusterSize * kNumStages * kSizePerStage;
   static constexpr uint32_t kStoreLane = kBlockSize - 1;
-  static constexpr uint32_t kAboveBits = 10;
+  static constexpr uint32_t kAboveBits = 11;
 
   // ---------------------------------------------------------------------------
   // Shared memory layouts
@@ -249,7 +250,7 @@ struct ClusterTopK {
     const auto [num_above, num_equal] = *meta;
     if (num_above >= K || num_equal == 0) return;
     const auto clamped_ties = min(num_equal, kMaxTies);
-    tie_handle_transform(ws->ties, clamped_ties, num_above, params, _smem);
+    tie_handle_transform(ws->ties, clamped_ties, num_above, K, params, _smem);
   }
 };
 

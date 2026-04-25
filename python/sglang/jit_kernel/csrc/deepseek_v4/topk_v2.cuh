@@ -20,6 +20,12 @@
 
 namespace {
 
+#ifndef SGL_TOPK
+#define SGL_TOPK 512
+#endif
+
+inline constexpr uint32_t K = SGL_TOPK;
+
 template <auto* f, size_t kMaxDynamicSMEM>
 void setup_kernel_smem_once(host::DebugInfo where = {}) {
   [[maybe_unused]]
@@ -31,13 +37,16 @@ void setup_kernel_smem_once(host::DebugInfo where = {}) {
 }
 
 namespace impl = device::top512;
-using Metadata = impl::ClusterTopK::Metadata;
-constexpr uint32_t K = impl::K;
+using Large = impl::ClusterTopK<K>;
+using Medium = impl::StreamingTopK<K>;
+using Small = impl::RegisterTopK<K>;
+
+using Metadata = Large::Metadata;
 constexpr uint32_t kBlockSize = impl::kBlockSize;
 constexpr uint32_t kNumClusters = 15;  // based on hardware limits
-constexpr uint32_t kClusterSize = impl::ClusterTopK::kClusterSize;
-constexpr uint32_t kMax2PassLength = impl::RegisterTopK::kMax2PassLength;
-constexpr uint32_t kMaxSupportedLength = impl::ClusterTopK::kMaxLength;
+constexpr uint32_t kClusterSize = Large::kClusterSize;
+constexpr uint32_t kMax2PassLength = Small::kMax2PassLength;
+constexpr uint32_t kMaxSupportedLength = Large::kMaxLength;
 
 /// Common metadata lives at metadata[0] (first row of the [batch_size+1, 4] tensor).
 /// Per-item metadata starts at metadata[1..batch_size]. The plan kernel writes both.
@@ -222,14 +231,12 @@ SMALL_TOPK_KERNEL void  // short context
 topk_short_transform(const __grid_constant__ TopKParams params) {
   alignas(128) extern __shared__ uint8_t smem[];
   __shared__ int32_t s_topk_indices[K];
-  using Small = impl::RegisterTopK;
-
   const auto batch_id = blockIdx.x;
   const auto seq_len = params.seq_lens[batch_id];
   const auto transform = params.get_transform(batch_id, s_topk_indices);
   // trivial case
   if (seq_len <= K) {
-    impl::trivial_transform(transform, seq_len);
+    impl::trivial_transform(transform, seq_len, K);
   } else {
     Small::run(params.get_scores(batch_id), s_topk_indices, seq_len, smem, /*use_pdl=*/true);
     device::PDLTriggerSecondary<true>();
@@ -241,8 +248,6 @@ LARGE_TOPK_STAGE_1 void  // long context, middle to large batch size
 topk_combine_preprocess(const __grid_constant__ TopKParams params) {
   alignas(128) extern __shared__ uint8_t smem[];
   __shared__ int32_t s_topk_indices[K];
-  using Large = impl::ClusterTopK;
-
   uint32_t work_id = blockIdx.x;
   uint32_t batch_id;
   uint32_t seq_len;
@@ -290,16 +295,12 @@ LARGE_TOPK_STAGE_2 void  // long context, middle to large batch size
 topk_combine_transform(const __grid_constant__ TopKParams params) {
   alignas(128) extern __shared__ uint8_t smem[];
   __shared__ int32_t s_topk_indices[K];
-  using Small = impl::RegisterTopK;
-  using Medium = impl::StreamingTopK;
-  using Large = impl::ClusterTopK;
-
   const auto batch_id = blockIdx.x;
   const auto seq_len = params.seq_lens[batch_id];
   const auto cluster_threshold = params.get_global_metadata().cluster_threshold;
   const auto transform = params.get_transform(batch_id, s_topk_indices);
   if (seq_len <= K) {
-    impl::trivial_transform(transform, seq_len);
+    impl::trivial_transform(transform, seq_len, K);
   } else if (seq_len <= kMax2PassLength) {
     if (seq_len <= Small::kMax1PassLength) {
       Small::run(params.get_scores(batch_id), s_topk_indices, seq_len, smem);
@@ -322,16 +323,13 @@ FUSED_COMBINE_KERNEL void  // long context, small batch size
 topk_fused_transform(const __grid_constant__ TopKParams params) {
   alignas(128) extern __shared__ uint8_t smem[];
   __shared__ int32_t s_topk_indices[K];
-  using Small = impl::RegisterTopK;
-  using Large = impl::ClusterTopK;
-
   const auto batch_id = blockIdx.x;
   const auto cluster_rank = blockIdx.y;
   const auto seq_len = params.seq_lens[batch_id];
   const auto transform = params.get_transform(batch_id, s_topk_indices);
   if (seq_len <= K) {
     if (cluster_rank != 0) return;  // only first rank work
-    impl::trivial_transform(transform, seq_len);
+    impl::trivial_transform(transform, seq_len, K);
   } else if (seq_len <= Small::kMax1PassLength) {
     if (cluster_rank != 0) return;  // only first rank work
     Small::run(params.get_scores(batch_id), s_topk_indices, seq_len, smem, /*use_pdl=*/true);
@@ -350,10 +348,7 @@ topk_fused_transform(const __grid_constant__ TopKParams params) {
   }
 }
 
-struct CombinedTopK512Kernel {
-  using Large = impl::ClusterTopK;
-  using Medium = impl::StreamingTopK;
-  using Small = impl::RegisterTopK;
+struct CombinedTopKKernel {
   static constexpr auto kStage1SMEM = sizeof(Large::Smem) + 128;
   static constexpr auto kStage2SMEM = std::max(sizeof(Small::Smem), sizeof(Medium::Smem)) + 128;
 
@@ -423,7 +418,7 @@ struct CombinedTopK512Kernel {
         .with_dtype<int32_t>()
         .with_device(device_)
         .verify(page_table);
-    TensorMatcher({B, 512})  //
+    TensorMatcher({B, K})  //
         .with_dtype<int32_t>()
         .with_device(device_)
         .verify(page_indices);

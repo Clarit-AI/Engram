@@ -11,6 +11,7 @@
 
 namespace device::top512 {
 
+template <uint32_t K>
 struct StreamingTopK {
   static constexpr uint32_t kHistBits = 12;
   static constexpr uint32_t kHistBins = 1 << kHistBits;
@@ -205,7 +206,7 @@ struct StreamingTopK {
     const auto num_equal = smem->counter_eq;
     if (num_above >= K || num_equal == 0) return;
     const auto clamped_ties = min(num_equal, kMaxTies);
-    tie_handle_transform(smem->tie_buffer, clamped_ties, num_above, params, &smem->stage2);
+    tie_handle_transform(smem->tie_buffer, clamped_ties, num_above, K, params, &smem->stage2);
   }
 };
 
