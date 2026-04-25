@@ -4018,3 +4018,124 @@ def get_or_create_event_loop():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         return loop
+
+
+def get_numa_node_count() -> int:
+    """
+    Get the number of NUMA nodes available on the system.
+    Must be called after is_numa_available() is True.
+    Returns:
+        int: The number of NUMA nodes.
+    """
+    libnuma = ctypes.CDLL("libnuma.so")
+    return libnuma.numa_max_node() + 1
+
+
+def is_numa_available() -> bool:
+    try:
+        libnuma = ctypes.CDLL("libnuma.so")
+        return libnuma.numa_available() >= 0
+    except Exception:
+        return False
+
+
+def get_system_nvgpu_count() -> int:
+    """
+    Get the total number of GPUs in the system (not affected by CUDA_VISIBLE_DEVICES).
+
+    Returns:
+        int: The total number of physical GPUs.
+    """
+    result = subprocess.run(
+        ["nvidia-smi", "--list-gpus"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    gpu_lines = [
+        line
+        for line in result.stdout.strip().split("\n")
+        if line.strip().startswith("GPU")
+    ]
+    return len(gpu_lines)
+
+
+@lru_cache(maxsize=1)
+def get_current_device_numa_node_cuda() -> int:
+    """
+    Retrieve the NUMA node ID of the CPU socket closest to the currently active CUDA device.
+
+    First tries to query nvidia-smi topology. If it returns a single NUMA ID, uses that directly.
+    If it returns multiple NUMA IDs (comma/dash separated), falls back to distributing GPUs
+    evenly across NUMA nodes based on GPU ID intervals.
+
+    For example, with 8 GPUs and 2 NUMA nodes: GPUs 0-3 -> node 0, GPUs 4-7 -> node 1.
+
+    Returns:
+        int: The NUMA node ID (e.g., 0, 1).
+
+    Raises:
+        RuntimeError: If device information cannot be retrieved.
+    """
+    import torch
+
+    logical_device_id = torch.cuda.current_device()
+    physical_device_id = get_physical_device_id(logical_device_id)
+
+    # Query NUMA topology from nvidia-smi
+    result = subprocess.run(
+        ["nvidia-smi", "topo", "-C", "-i", str(physical_device_id)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    output_line = result.stdout.strip()
+    prefix = "NUMA IDs of closest CPU:"
+
+    if output_line.startswith(prefix):
+        numa_id_str = output_line[len(prefix) :].strip()
+        if numa_id_str.isdigit():
+            return int(numa_id_str)
+
+    # Fall back: distribute GPUs evenly across NUMA nodes
+    numa_count = get_numa_node_count()
+    gpu_count = get_system_nvgpu_count()
+
+    if gpu_count >= numa_count:
+        gpus_per_numa = gpu_count // numa_count  # >= 1
+        numa_node = physical_device_id // gpus_per_numa  # 0 ~ numa_count - 1
+    else:
+        logger.warning(
+            f"GPU count {gpu_count} is less than NUMA count {numa_count}. Using first NUMA node."
+        )
+        numa_node = 0
+
+    return numa_node
+
+
+def nvgpu_available() -> bool:
+    if not torch.cuda.is_available():
+        return False
+    if torch.version.cuda is None:
+        return False
+    return True
+
+
+def bind_to_closest_numa_node_cuda():
+    """
+    Bind the current process to the NUMA node closest to the active CUDA device.
+
+    Uses `numa` library calls via ctypes to set the CPU affinity of the process.
+    """
+    if is_numa_available() and nvgpu_available():
+        node_id = get_current_device_numa_node_cuda()
+        numa_bind_to_node(node_id)
+
+
+def maybe_torch_compile(func):
+    from sglang.srt.model_executor.cuda_graph_runner import get_is_capture_mode
+
+    if get_is_capture_mode():
+        return torch.compile(func)
+    return func

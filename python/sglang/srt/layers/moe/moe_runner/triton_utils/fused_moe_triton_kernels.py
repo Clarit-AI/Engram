@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import functools
-from collections import OrderedDict
+import os
 from typing import Any, Dict, List, Optional
 
 import torch
 import triton
 import triton.language as tl
 
-from sglang.srt.batch_invariant_ops import is_batch_invariant_mode_enabled
-from sglang.srt.layers.moe.utils import get_moe_padding_size
+from sglang.srt.debug_utils.deepseek_v4_debug_utils import deepseek_v4_moe_code_path_checker
 from sglang.srt.layers.quantization.fp8_kernel import (
     per_token_group_quant_fp8,
     scaled_fp8_quant,
@@ -23,6 +22,7 @@ from sglang.srt.layers.quantization.int8_kernel import (
 from sglang.srt.utils import (
     cpu_has_amx_support,
     get_bool_env_var,
+    get_device_name,
     is_cpu,
     is_cuda,
     is_hip,
@@ -49,23 +49,35 @@ elif _is_cpu and _is_cpu_amx_available:
 elif _is_hip:
     pass
 
-padding_size = get_moe_padding_size(_use_aiter)
+padding_size = 128 if bool(int(os.getenv("SGLANG_MOE_PADDING", "0"))) else 0
 
 
 def support_tensor_descriptor():
     return _support_tensor_descriptor
 
 
-# swap_ab benefits SM90 GPUs (H20, H100, H200, etc.) for certain block shapes.
+# In theory, swap_ab should benefit all SM90 GPUs.
+# However, since it has only been verified on H20 (not H100/H200),
+# it is currently enabled only on H20.
 @functools.lru_cache(maxsize=8)
 def should_enable_swap_ab(
     BLOCK_SIZE_M: int,
     BLOCK_SIZE_N: int,
 ) -> bool:
-    if not _is_cuda or is_batch_invariant_mode_enabled():
+    if not _is_cuda:
         return False
 
-    return is_sm90_supported() and BLOCK_SIZE_M < 64 and BLOCK_SIZE_N >= 64
+    @functools.lru_cache(maxsize=1)
+    def is_h20_device_and_sm90_supported():
+        device_name = get_device_name()
+        is_h20_device = (
+            device_name and "H20" in device_name and "H200" not in device_name
+        )
+        return is_h20_device and is_sm90_supported()
+
+    return (
+        is_h20_device_and_sm90_supported() and BLOCK_SIZE_M < 64 and BLOCK_SIZE_N >= 64
+    )
 
 
 @triton.jit
@@ -335,7 +347,6 @@ def fused_moe_kernel(
     sorted_token_ids_ptr,
     expert_ids_ptr,
     num_tokens_post_padded_ptr,
-    add_mask_ptr,
     # Matrix dimensions
     N,
     K,
@@ -378,9 +389,6 @@ def fused_moe_kernel(
     c_sorted: tl.constexpr,
     filter_expert: tl.constexpr,
     swap_ab: tl.constexpr,
-    FUSE_ADD_TO_OUTPUT: tl.constexpr,
-    FUSE_SUM_ALL_REDUCE: tl.constexpr,
-    ROUTER_TOPK: tl.constexpr,
 ):
     """
     Implements the fused computation for a Mixture of Experts (MOE) using
@@ -443,20 +451,18 @@ def fused_moe_kernel(
         # -----------------------------------------------------------
         # Write back zeros to the output when the expert is not
         # in the current expert parallel rank.
-        if not FUSE_ADD_TO_OUTPUT:
-            # skip the zero-write to preserve existing values.
-            write_zeros_to_output(
-                c_ptr,
-                stride_cm,
-                stride_cn,
-                pid_n,
-                N,
-                offs_token,
-                token_mask,
-                BLOCK_SIZE_M,
-                BLOCK_SIZE_N,
-                compute_type,
-            )
+        write_zeros_to_output(
+            c_ptr,
+            stride_cm,
+            stride_cn,
+            pid_n,
+            N,
+            offs_token,
+            token_mask,
+            BLOCK_SIZE_M,
+            BLOCK_SIZE_N,
+            compute_type,
+        )
         return
 
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)) % N
@@ -607,96 +613,14 @@ def fused_moe_kernel(
     # -----------------------------------------------------------
     # Write back the block of the output
     offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
-
-    if FUSE_ADD_TO_OUTPUT:
-        # Accumulate into existing output with per-token mask.
-        offs_token_out = offs_token // ROUTER_TOPK
-        add_mask = tl.load(add_mask_ptr + offs_token_out, mask=token_mask, other=False)
-        c_ptrs = c_ptr + stride_cm * offs_token[:, None] + stride_cn * offs_cn[None, :]
-        c_mask = token_mask[:, None] & add_mask[:, None] & (offs_cn[None, :] < N)
-        existing = tl.load(c_ptrs, mask=c_mask, other=0.0)
-        tl.store(c_ptrs, existing + accumulator, mask=c_mask)
-    elif FUSE_SUM_ALL_REDUCE:
-        offs_token_out = offs_token // ROUTER_TOPK
+    if c_sorted:
         c_ptrs = (
-            c_ptr + stride_cm * offs_token_out[:, None] + stride_cn * offs_cn[None, :]
+            c_ptr + stride_cm * offs_token_id[:, None] + stride_cn * offs_cn[None, :]
         )
-        c_mask = token_mask[:, None] & (offs_cn[None, :] < N)
-        tl.atomic_add(c_ptrs, accumulator, mask=c_mask)
     else:
-        if c_sorted:
-            c_ptrs = (
-                c_ptr
-                + stride_cm * offs_token_id[:, None]
-                + stride_cn * offs_cn[None, :]
-            )
-        else:
-            c_ptrs = (
-                c_ptr + stride_cm * offs_token[:, None] + stride_cn * offs_cn[None, :]
-            )
-        c_mask = token_mask[:, None] & (offs_cn[None, :] < N)
-        tl.store(c_ptrs, accumulator, mask=c_mask)
-
-
-# -----------------------------------------------------------------------------
-# TMA allocator: set once per process (avoid per-call triton.set_allocator)
-# -----------------------------------------------------------------------------
-_TMA_ALLOCATOR_SET = False
-
-
-def _set_triton_tma_allocator():
-    """TMA descriptors require a global allocator; set it once to avoid per-call overhead."""
-    global _TMA_ALLOCATOR_SET
-    if _TMA_ALLOCATOR_SET:
-        return
-
-    # TMA descriptors require a global memory allocation
-    def alloc_fn(size: int, alignment: int, stream: Optional[int]):
-        # NOTE: keep this allocation on CUDA device
-        return torch.empty(size, device="cuda", dtype=torch.int8)
-
-    triton.set_allocator(alloc_fn)
-    _TMA_ALLOCATOR_SET = True
-
-
-# --- B TensorDescriptor cache (LRU) ---
-_B_DESC_CACHE_MAX = 64
-_B_DESC_CACHE: "OrderedDict[tuple, TensorDescriptor]" = OrderedDict()
-
-
-def _get_b_tma_desc_cached(B: torch.Tensor, block_n: int, block_k: int):
-    """
-    Cache TensorDescriptor for constant weight B.
-    Keyed by storage ptr + shape/stride/dtype + tile shape.
-    """
-    key = (
-        int(B.data_ptr()),
-        tuple(B.shape),
-        tuple(B.stride()),
-        str(B.dtype),
-        int(block_n),
-        int(block_k),
-    )
-
-    desc = _B_DESC_CACHE.get(key, None)
-    if desc is not None:
-        _B_DESC_CACHE.move_to_end(key)
-        return desc
-
-    # Create outside lock to reduce lock hold time (ok if duplicated rarely)
-    desc = TensorDescriptor(
-        B,
-        B.shape,
-        B.stride(),
-        [1, block_n, block_k],
-    )
-
-    _B_DESC_CACHE[key] = desc
-    _B_DESC_CACHE.move_to_end(key)
-    if len(_B_DESC_CACHE) > _B_DESC_CACHE_MAX:
-        _B_DESC_CACHE.popitem(last=False)
-
-    return desc
+        c_ptrs = c_ptr + stride_cm * offs_token[:, None] + stride_cn * offs_cn[None, :]
+    c_mask = token_mask[:, None] & (offs_cn[None, :] < N)
+    tl.store(c_ptrs, accumulator, mask=c_mask)
 
 
 def invoke_fused_moe_kernel(
@@ -727,10 +651,6 @@ def invoke_fused_moe_kernel(
     b_use_tma: bool = False,
     c_sorted: bool = False,
     filter_expert: bool = True,
-    fuse_sum_all_reduce: bool = False,
-    router_topk: int = 1,
-    fuse_add_to_output: bool = False,
-    add_output_mask: Optional[torch.Tensor] = None,
 ) -> None:
     assert topk_weights.stride(1) == 1
     assert sorted_token_ids.stride(0) == 1
@@ -798,24 +718,11 @@ def invoke_fused_moe_kernel(
     else:
         even_Ks = False
 
-    if fuse_sum_all_reduce:
-        assert not c_sorted, "fuse_sum_all_reduce only supports c_sorted=False"
-    if fuse_add_to_output:
-        assert (
-            not fuse_sum_all_reduce
-        ), "fuse_add_to_output and fuse_sum_all_reduce are mutually exclusive"
-        assert (
-            add_output_mask is not None
-        ), "add_output_mask required when fuse_add_to_output=True"
-
     if (
         (use_int8_w8a16 or use_int4_w4a16)
         and block_shape is not None
         and block_shape[1] > 0
     ):
-        assert (
-            not fuse_sum_all_reduce
-        ), "fuse_sum_all_reduce is not supported for GPTQ/AWQ kernels"
         assert B_scale is not None and B_scale.ndim == 3
         assert B_zp is None or B_zp.ndim == 3
         assert bias is None
@@ -860,8 +767,11 @@ def invoke_fused_moe_kernel(
 
     else:
         if a_use_tma or b_use_tma:
-            _set_triton_tma_allocator()
+            # TMA descriptors require a global memory allocation
+            def alloc_fn(size: int, alignment: int, stream: Optional[int]):
+                return torch.empty(size, device="cuda", dtype=torch.int8)
 
+            triton.set_allocator(alloc_fn)
         if a_use_tma:
             a_desc = TensorDescriptor(
                 A, A.shape, A.stride(), [config["BLOCK_SIZE_M"], config["BLOCK_SIZE_K"]]
@@ -869,11 +779,11 @@ def invoke_fused_moe_kernel(
         else:
             a_desc = None
         if b_use_tma:
-            # B is constant weights -> cache descriptor
-            b_desc = _get_b_tma_desc_cached(
+            b_desc = TensorDescriptor(
                 B,
-                config["BLOCK_SIZE_N"],
-                config["BLOCK_SIZE_K"],
+                B.shape,
+                B.stride(),
+                [1, config["BLOCK_SIZE_N"], config["BLOCK_SIZE_K"]],
             )
         else:
             b_desc = None
@@ -891,7 +801,6 @@ def invoke_fused_moe_kernel(
             sorted_token_ids,
             expert_ids,
             num_tokens_post_padded,
-            add_output_mask,
             B.shape[1],
             B.shape[2] - padded_size,
             sorted_token_ids.shape[0],
@@ -923,9 +832,6 @@ def invoke_fused_moe_kernel(
             c_sorted=c_sorted,
             filter_expert=filter_expert,
             swap_ab=swap_ab,
-            FUSE_ADD_TO_OUTPUT=fuse_add_to_output,
-            FUSE_SUM_ALL_REDUCE=fuse_sum_all_reduce,
-            ROUTER_TOPK=router_topk,
             **config,
         )
 
@@ -966,6 +872,8 @@ def act_and_mul_kernel(
     expert_step: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
     ACTIVATION_TYPE: tl.constexpr,
+    SWIGLU_LIMIT: tl.constexpr = 0.0,
+    HAS_SWIGLU_LIMIT: tl.constexpr = False,
 ):
     """
     Unified activation and multiply kernel that handles both sorted and unsorted routing,
@@ -994,6 +902,10 @@ def act_and_mul_kernel(
         gate_output = tl.load(gate_output_ptr + offset, mask=mask)
         up_output = tl.load(up_output_ptr + offset, mask=mask)
 
+        if HAS_SWIGLU_LIMIT:
+            gate_output = tl.minimum(gate_output, SWIGLU_LIMIT)
+            up_output = tl.maximum(tl.minimum(up_output, SWIGLU_LIMIT), -SWIGLU_LIMIT)
+
         gate_output_activated = _apply_activation(gate_output, ACTIVATION_TYPE)
         gate_output_activated = gate_output_activated.to(InDtype)
 
@@ -1010,6 +922,7 @@ def act_and_mul_triton(
     expert_ids: Optional[torch.Tensor] = None,
     down_moe_use_tma: bool = False,
     activation: str = "silu",
+    swiglu_limit: Optional[float] = None,
 ) -> None:
     """
     Args:
@@ -1020,11 +933,16 @@ def act_and_mul_triton(
         expert_ids: Expert IDs for sorted routing (used when down_moe_use_tma=True)
         down_moe_use_tma: Whether to use sorted routing layout
         activation: Activation type ("silu" or "gelu")
+        swiglu_limit: if not None, clamp gate to [-inf, L] and up to [-L, L] before activation
+                      (compiles a separate kernel variant via tl.constexpr).
     """
     grid = (down_input.shape[0],)
     hidden_size = gateup_output.shape[1]
     expert_ids_row = topk_ids.view(-1) if not down_moe_use_tma else expert_ids
     expert_step = 1 if not down_moe_use_tma else config["BLOCK_SIZE_M"]
+    has_swiglu_limit = swiglu_limit is not None
+    if has_swiglu_limit:
+        deepseek_v4_moe_code_path_checker.observed += 1
     act_and_mul_kernel[grid](
         gateup_output,
         down_input,
@@ -1033,6 +951,8 @@ def act_and_mul_triton(
         expert_step,
         BLOCK_SIZE=512,
         ACTIVATION_TYPE=activation,
+        SWIGLU_LIMIT=float(swiglu_limit) if has_swiglu_limit else 0.0,
+        HAS_SWIGLU_LIMIT=has_swiglu_limit,
     )
 
 
@@ -1191,82 +1111,6 @@ def fused_append_shared_experts(
         scale_factor=scale_factor,
         K=k,
         S=s,
-        num_warps=1,
-    )
-    return out_ids, out_weights
-
-
-@triton.jit
-def _fused_append_shared_experts_with_weights_kernel(
-    topk_ids_ptr,
-    topk_weights_ptr,
-    shared_weights_ptr,
-    out_ids_ptr,
-    out_weights_ptr,
-    N_BASE,
-    K: tl.constexpr,
-    S: tl.constexpr,
-    BLOCK_K: tl.constexpr,
-    BLOCK_S: tl.constexpr,
-):
-    pid = tl.program_id(0)
-
-    ids_row_ptr = pid * K
-    out_row_ptr = pid * (K + S)
-
-    offs_k = tl.arange(0, BLOCK_K)
-    mask_k = offs_k < K
-    ids = tl.load(topk_ids_ptr + ids_row_ptr + offs_k, mask=mask_k)
-    ws = tl.load(topk_weights_ptr + ids_row_ptr + offs_k, mask=mask_k)
-
-    tl.store(out_ids_ptr + out_row_ptr + offs_k, ids, mask=mask_k)
-    tl.store(out_weights_ptr + out_row_ptr + offs_k, ws, mask=mask_k)
-
-    offs_s = tl.arange(0, BLOCK_S)
-    mask_s = offs_s < S
-    shared_ids = tl.cast(N_BASE + offs_s, ids.dtype)
-    shared_ws = tl.load(shared_weights_ptr + pid * S + offs_s, mask=mask_s)
-
-    tl.store(out_ids_ptr + out_row_ptr + K + offs_s, shared_ids, mask=mask_s)
-    tl.store(out_weights_ptr + out_row_ptr + K + offs_s, shared_ws, mask=mask_s)
-
-
-def fused_append_shared_experts_with_weights(
-    topk_ids, topk_weights, shared_weights, num_fused_shared_experts, N=None
-):
-    """Like fused_append_shared_experts but accepts per-token shared weights tensor."""
-    assert N is not None, "N (shared expert base id) must be provided"
-    m, k = topk_ids.shape
-    s = int(num_fused_shared_experts)
-    if s <= 0:
-        return topk_ids, topk_weights
-
-    shared_weights_2d = shared_weights.to(topk_weights.dtype)
-    if shared_weights_2d.ndim == 1:
-        shared_weights_2d = shared_weights_2d.unsqueeze(-1)
-    if shared_weights_2d.shape[1] < s:
-        shared_weights_2d = shared_weights_2d.expand(m, s)
-    shared_weights_2d = shared_weights_2d.contiguous()
-
-    out_ids = torch.empty((m, k + s), dtype=topk_ids.dtype, device=topk_ids.device)
-    out_weights = torch.empty(
-        (m, k + s), dtype=topk_weights.dtype, device=topk_weights.device
-    )
-
-    block_k = triton.next_power_of_2(k)
-    block_s = triton.next_power_of_2(s)
-
-    _fused_append_shared_experts_with_weights_kernel[(m,)](
-        topk_ids,
-        topk_weights,
-        shared_weights_2d,
-        out_ids,
-        out_weights,
-        N_BASE=N,
-        K=k,
-        S=s,
-        BLOCK_K=block_k,
-        BLOCK_S=block_s,
         num_warps=1,
     )
     return out_ids, out_weights

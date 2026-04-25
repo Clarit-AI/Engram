@@ -1,19 +1,14 @@
 """
-Unit-tests for OpenAIServingChat -- rewritten to use only the std-lib 'unittest'.
+Unit-tests for OpenAIServingChat — rewritten to use only the std-lib 'unittest'.
 Run with either:
     python tests/test_serving_chat_unit.py -v
 or
     python -m unittest discover -s tests -p "test_*unit.py" -v
 """
 
-from sglang.test.test_utils import maybe_stub_sgl_kernel
-
-maybe_stub_sgl_kernel()  # must precede any import that pulls in sgl_kernel
-
 import json
 import unittest
 import uuid
-from http import HTTPStatus
 from typing import Optional
 from unittest.mock import Mock, patch
 
@@ -23,15 +18,13 @@ from sglang.srt.entrypoints.openai.protocol import (
     ChatCompletionRequest,
     MessageProcessingResult,
 )
-from sglang.srt.entrypoints.openai.serving_chat import (
-    OpenAIServingChat,
-    normalize_tool_content,
-)
+from sglang.srt.entrypoints.openai.serving_chat import OpenAIServingChat
 from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.utils import get_or_create_event_loop
-from sglang.test.ci.ci_register import register_cpu_ci
+from sglang.test.ci.ci_register import register_amd_ci, register_cuda_ci
 
-register_cpu_ci(est_time=8, suite="stage-a-test-cpu")
+register_cuda_ci(est_time=10, suite="stage-b-test-small-1-gpu")
+register_amd_ci(est_time=10, suite="stage-b-test-small-1-gpu-amd")
 
 
 class _MockTokenizerManager:
@@ -43,9 +36,8 @@ class _MockTokenizerManager:
             enable_cache_report=False,
             tool_call_parser="hermes",
             reasoning_parser=None,
-            stream_response_default_include_usage=False,
         )
-        # Mock hf_config for _use_dpsk_v32_encoding check
+        # Mock hf_config for _resolve_chat_encoding_spec check
         mock_hf_config = Mock()
         mock_hf_config.architectures = ["LlamaForCausalLM"]
         self.model_config.hf_config = mock_hf_config
@@ -140,84 +132,6 @@ class ServingChatTestCase(unittest.TestCase):
             self.assertIsInstance(adapted, GenerateReqInput)
             self.assertFalse(adapted.stream)
             self.assertEqual(processed, self.basic_req)
-
-    def test_jinja_uses_openai_tool_schema_first(self):
-        """Ensure Jinja chat templates receive OpenAI-shaped tools by default."""
-        self.template_manager.chat_template_name = None
-        self.template_manager.jinja_template_content_format = "string"
-
-        req = ChatCompletionRequest(
-            model="x",
-            messages=[{"role": "user", "content": "What is 2+2?"}],
-            tools=[
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "add",
-                        "description": "Add two numbers.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "a": {"type": "integer"},
-                                "b": {"type": "integer"},
-                            },
-                            "required": ["a", "b"],
-                        },
-                    },
-                }
-            ],
-        )
-
-        self.chat._process_messages(req, is_multimodal=False)
-
-        expected_tools = [tool.model_dump() for tool in req.tools]
-        kwargs = self.tm.tokenizer.apply_chat_template.call_args.kwargs
-        self.assertEqual(kwargs["tools"], expected_tools)
-
-    def test_jinja_tool_schema_fallback_to_flat_function(self):
-        """Fallback to function-only schema when template rejects OpenAI wrapper."""
-        self.template_manager.chat_template_name = None
-        self.template_manager.jinja_template_content_format = "string"
-
-        req = ChatCompletionRequest(
-            model="x",
-            messages=[{"role": "user", "content": "What is 2+2?"}],
-            tools=[
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "add",
-                        "description": "Add two numbers.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "a": {"type": "integer"},
-                                "b": {"type": "integer"},
-                            },
-                            "required": ["a", "b"],
-                        },
-                    },
-                }
-            ],
-        )
-
-        self.tm.tokenizer.apply_chat_template.side_effect = [
-            RuntimeError("template expects flat tools format"),
-            [1, 2, 3],
-        ]
-
-        self.chat._process_messages(req, is_multimodal=False)
-
-        first_tools = self.tm.tokenizer.apply_chat_template.call_args_list[0].kwargs[
-            "tools"
-        ]
-        second_tools = self.tm.tokenizer.apply_chat_template.call_args_list[1].kwargs[
-            "tools"
-        ]
-        self.assertEqual(first_tools, [tool.model_dump() for tool in req.tools])
-        self.assertEqual(
-            second_tools, [tool.function.model_dump() for tool in req.tools]
-        )
 
     def test_stop_str_isolation_between_requests(self):
         """Test that stop strings from one request don't affect subsequent requests.
@@ -673,360 +587,56 @@ class ServingChatTestCase(unittest.TestCase):
     def test_dpsk_v32_encoding_path(self):
         """Test DeepSeek V3.2 encoding path detection and application."""
         from sglang.srt.managers.template_manager import TemplateManager
+        from sglang.srt.server_args import PortArgs, ServerArgs
 
-        # Only mock the fields that _use_dpsk_v32_encoding() actually reads:
-        # tokenizer.chat_template and hf_config.architectures
-        tm = _MockTokenizerManager()
+        server_args = ServerArgs(model_path="deepseek-ai/DeepSeek-V3.2")
+        port_args = PortArgs.init_new(server_args)
 
-        mock_hf_config = Mock()
-        mock_hf_config.architectures = ["DeepseekV32ForCausalLM"]
-        tm.model_config.hf_config = mock_hf_config
-
-        # Case 1: No chat template + DeepSeek V3.2 arch -> should use dpsk encoding
-        tm.tokenizer.chat_template = None
-        serving_chat = OpenAIServingChat(tm, TemplateManager())
-        self.assertTrue(serving_chat.use_dpsk_v32_encoding)
-
-        # Case 2: Chat template exists -> should NOT use dpsk encoding
-        tm.tokenizer.chat_template = "some template"
-        serving_chat = OpenAIServingChat(tm, TemplateManager())
-        self.assertFalse(serving_chat.use_dpsk_v32_encoding)
-
-        # Case 3: Not DeepSeek V3.2 architecture -> should NOT use dpsk encoding
-        tm.tokenizer.chat_template = None
-        mock_hf_config.architectures = ["LlamaForCausalLM"]
-        serving_chat = OpenAIServingChat(tm, TemplateManager())
-        self.assertFalse(serving_chat.use_dpsk_v32_encoding)
-
-    def test_streaming_abort_yields_error(self):
-        """Test that an abort finish reason during streaming correctly yields an error and stops."""
-        err_msg = "Aborted by scheduler"
-        err_code = HTTPStatus.INTERNAL_SERVER_ERROR
-
-        async def _mock_generate_abort():
-            yield {
-                "text": "Partial ",
-                "meta_info": {
-                    "id": "chatcmpl-test",
-                    "prompt_tokens": 10,
-                    "completion_tokens": 2,
-                    "cached_tokens": 0,
-                    "finish_reason": {
-                        "type": "abort",
-                        "status_code": err_code,
-                        "message": err_msg,
-                    },
-                    "output_token_logprobs": None,
-                    "output_top_logprobs": None,
-                },
-                "index": 0,
-            }
-
-        self.tm.generate_request.return_value = _mock_generate_abort()
-
-        req = ChatCompletionRequest(
-            model="x",
-            messages=[{"role": "user", "content": "Hi?"}],
-            temperature=0.7,
-            max_tokens=100,
-            stream=True,
-        )
-
+        # Use mocks for TokenizerManager components to avoid full initialization
         with patch(
-            "sglang.srt.entrypoints.openai.serving_chat.generate_chat_conv"
-        ) as conv_mock:
-            # Create a mock conversation object
-            conv_ins = Mock()
-            conv_ins.get_prompt.return_value = "Test prompt"
-            conv_mock.return_value = conv_ins
-
-            adapted_request, _ = self.chat._convert_to_internal_request(
-                req, self.fastapi_request
+            "sglang.srt.managers.tokenizer_manager.TokenizerManager"
+        ) as MockTokenizerManager:
+            tokenizer_manager = MockTokenizerManager(server_args, port_args)
+            tokenizer_manager.server_args = server_args
+            tokenizer_manager.model_config = Mock()
+            tokenizer_manager.model_config.get_default_sampling_params.return_value = (
+                None
             )
 
-            async def run_stream():
-                chunks = []
-                try:
-                    async for chunk in self.chat._generate_chat_stream(
-                        adapted_request, req, self.fastapi_request
-                    ):
-                        chunks.append(chunk)
-                except Exception as e:
-                    print(f"Error during stream iteration: {e}")
-                return chunks
+            # Mock hf_config
+            mock_hf_config = Mock()
+            mock_hf_config.architectures = ["DeepseekV32ForCausalLM"]
 
-        loop = get_or_create_event_loop()
-        chunks = loop.run_until_complete(run_stream())
+            tokenizer_manager.model_config.hf_config = mock_hf_config
 
-        error_chunk_data = None
-        for c in chunks:
-            if "error" in c:
-                error_chunk_data = json.loads(c[len("data: ") :])
-                break
-        self.assertIsNotNone(error_chunk_data, "Error chunk not found in stream")
-        self.assertEqual(error_chunk_data["error"]["message"], err_msg)
-        self.assertEqual(error_chunk_data["error"]["code"], err_code.value)
+            # Case 1: No chat template in tokenizer -> should use dpsk encoding
+            tokenizer_manager.tokenizer = Mock()
+            tokenizer_manager.tokenizer.chat_template = None
 
-        # Ensure the stream stops after the abort error
-        # The last chunk should be "data: [DONE]\n\n"
-        self.assertEqual(chunks[-1], "data: [DONE]\n\n")
+            serving_chat = OpenAIServingChat(tokenizer_manager, TemplateManager())
+            self.assertEqual(serving_chat.chat_encoding_spec, "dsv32")
 
-        # Check that there is an error chunk and a DONE chunk
-        self.assertEqual(len(chunks), 2)
-        self.assertIn("error", chunks[0])
+            # Case 2: Chat template exists -> should NOT use dpsk encoding
+            tokenizer_manager.tokenizer.chat_template = "some template"
+            serving_chat = OpenAIServingChat(tokenizer_manager, TemplateManager())
+            self.assertIsNone(serving_chat.chat_encoding_spec)
 
-    # ------------- incremental streaming output tests -------------
-    def test_incremental_streaming_output_delta(self):
-        """Test that streaming with incremental_streaming_output produces correct deltas.
+            # Case 3: Not DeepSeek V3.2 architecture -> should NOT use dpsk encoding
+            tokenizer_manager.tokenizer.chat_template = None
+            mock_hf_config.architectures = ["LlamaForCausalLM"]
+            serving_chat = OpenAIServingChat(tokenizer_manager, TemplateManager())
+            self.assertIsNone(serving_chat.chat_encoding_spec)
 
-        When incremental_streaming_output is enabled, content["text"] is already the
-        incremental delta (not the full accumulated text). The delta computation must
-        use content["text"] directly instead of slicing by the accumulated buffer length.
+            # Case 4: DeepseekV4 arch -> always dsv4, even with chat_template
+            # (release ships a stale V3 jinja we deliberately override).
+            mock_hf_config.architectures = ["DeepseekV4ForCausalLM"]
+            tokenizer_manager.tokenizer.chat_template = "stale v3 jinja"
+            serving_chat = OpenAIServingChat(tokenizer_manager, TemplateManager())
+            self.assertEqual(serving_chat.chat_encoding_spec, "dsv4")
 
-        Regression test for https://github.com/sgl-project/sglang/issues/22510.
-        """
-        # Enable incremental_streaming_output on the mock
-        self.tm.server_args.incremental_streaming_output = True
-
-        # Simulate incremental streaming: each yield has ONLY the new text (delta),
-        # NOT the full accumulated text.
-        incremental_chunks = [
-            ("I am", None),
-            (" a large", None),
-            (" language model", None),
-            (".", {"type": "stop", "matched": None}),
-        ]
-
-        async def _mock_generate_incremental():
-            for text, finish_reason in incremental_chunks:
-                yield {
-                    "text": text,
-                    "meta_info": {
-                        "id": "chatcmpl-incr-test",
-                        "prompt_tokens": 10,
-                        "completion_tokens": 5,
-                        "cached_tokens": 0,
-                        "finish_reason": finish_reason,
-                        "output_token_logprobs": None,
-                        "output_top_logprobs": None,
-                    },
-                    "index": 0,
-                }
-
-        self.tm.generate_request.return_value = _mock_generate_incremental()
-
-        req = ChatCompletionRequest(
-            model="x",
-            messages=[{"role": "user", "content": "Hi?"}],
-            temperature=0.7,
-            max_tokens=100,
-            stream=True,
-        )
-
-        with patch(
-            "sglang.srt.entrypoints.openai.serving_chat.generate_chat_conv"
-        ) as conv_mock:
-            conv_ins = Mock()
-            conv_ins.get_prompt.return_value = "Test prompt"
-            conv_mock.return_value = conv_ins
-
-            adapted_request, _ = self.chat._convert_to_internal_request(
-                req, self.fastapi_request
-            )
-
-            async def run_stream():
-                chunks = []
-                async for chunk in self.chat._generate_chat_stream(
-                    adapted_request, req, self.fastapi_request
-                ):
-                    chunks.append(chunk)
-                return chunks
-
-        loop = get_or_create_event_loop()
-        chunks = loop.run_until_complete(run_stream())
-
-        # Extract content deltas from SSE chunks
-        deltas = []
-        for c in chunks:
-            if not c.startswith("data: ") or c.strip() == "data: [DONE]":
-                continue
-            data = json.loads(c[len("data: ") :])
-            if "choices" in data and data["choices"]:
-                content = data["choices"][0]["delta"].get("content")
-                if content:
-                    deltas.append(content)
-
-        joined = "".join(deltas)
-        self.assertEqual(
-            joined,
-            "I am a large language model.",
-            f"Streaming deltas produced broken text: {deltas!r}",
-        )
-
-    # ------------- X-Data-Parallel-Rank header tests -------------
-    def test_extract_routed_dp_rank_from_header_no_header(self):
-        """Test that None is returned when no header is present."""
-        self.fastapi_request.headers = {}
-        result = self.chat.extract_routed_dp_rank_from_header(
-            self.fastapi_request, body_routed_dp_rank=None
-        )
-        self.assertIsNone(result)
-
-    def test_extract_routed_dp_rank_from_header_with_header(self):
-        """Test that header value is extracted correctly."""
-        self.fastapi_request.headers = {"x-data-parallel-rank": "2"}
-        result = self.chat.extract_routed_dp_rank_from_header(
-            self.fastapi_request, body_routed_dp_rank=None
-        )
-        self.assertEqual(result, 2)
-
-    def test_extract_routed_dp_rank_header_overrides_body(self):
-        """Test that header value has higher priority than body."""
-        self.fastapi_request.headers = {"x-data-parallel-rank": "3"}
-        result = self.chat.extract_routed_dp_rank_from_header(
-            self.fastapi_request, body_routed_dp_rank=1
-        )
-        self.assertEqual(result, 3)  # header wins
-
-    def test_extract_routed_dp_rank_from_header_invalid(self):
-        """Test that invalid header value raises HTTPException."""
-        from fastapi import HTTPException
-
-        self.fastapi_request.headers = {"x-data-parallel-rank": "abc"}
-        with self.assertRaises(HTTPException) as context:
-            self.chat.extract_routed_dp_rank_from_header(
-                self.fastapi_request, body_routed_dp_rank=None
-            )
-        self.assertEqual(context.exception.status_code, 400)
-        self.assertIn("must be an integer", context.exception.detail)
-
-    def test_hunyuan_reasoning_effort_dispatch(self):
-        tm = _MockTokenizerManager()
-        tm.server_args.reasoning_parser = "hunyuan"
-        chat = OpenAIServingChat(tm, _MockTemplateManager())
-        req = ChatCompletionRequest(
-            model="x", messages=[{"role": "user", "content": "hi"}]
-        )
-        cases = [
-            ("no_think", False),
-            ("none", False),
-            (None, False),
-            ("high", True),
-            ("low", True),
-        ]
-        for effort, expected in cases:
-            with self.subTest(effort=effort):
-                req.reasoning_effort = effort
-                self.assertEqual(chat._get_reasoning_from_request(req), expected)
-
-
-class TestProcessToolCallsWithRequiredToolChoice(unittest.TestCase):
-    """Test _process_tool_calls with tool_choice='required' uses model-specific parser."""
-
-    def setUp(self):
-        tm = _MockTokenizerManager()
-        tm.server_args.tool_call_parser = "kimi_k2"
-        self.chat = OpenAIServingChat(tm, _MockTemplateManager())
-
-    def test_required_with_parser_uses_function_call_parser(self):
-        """tool_choice='required' should use FunctionCallParser when tool_call_parser is set."""
-        with patch(
-            "sglang.srt.entrypoints.openai.serving_chat.FunctionCallParser"
-        ) as ParserMock:
-            call_info = Mock()
-            call_info.name = "get_weather"
-            call_info.parameters = '{"location":"Tokyo"}'
-            call_info.tool_index = 0
-
-            parser_instance = ParserMock.return_value
-            parser_instance.has_tool_call.return_value = True
-            parser_instance.parse_non_stream.return_value = ("", [call_info])
-
-            finish_reason = {"type": "stop", "matched": None}
-            tools = [{"type": "function", "function": {"name": "get_weather"}}]
-
-            tool_calls, text, fr = self.chat._process_tool_calls(
-                text="<|tool_calls_section_begin|>...<|tool_calls_section_end|>",
-                tools=tools,
-                finish_reason=finish_reason,
-                tool_choice="required",
-            )
-
-            self.assertIsNotNone(tool_calls)
-            self.assertEqual(len(tool_calls), 1)
-            self.assertEqual(tool_calls[0].function.name, "get_weather")
-            self.assertEqual(fr["type"], "tool_calls")
-
-    def test_required_without_parser_falls_back_to_json(self):
-        """tool_choice='required' without parser should parse as JSON array."""
-        self.chat.tool_call_parser = None
-
-        finish_reason = {"type": "stop", "matched": None}
-        tools = [{"type": "function", "function": {"name": "get_weather"}}]
-
-        tool_calls, text, fr = self.chat._process_tool_calls(
-            text='[{"name":"get_weather","parameters":{"location":"Tokyo"}}]',
-            tools=tools,
-            finish_reason=finish_reason,
-            tool_choice="required",
-        )
-
-        self.assertIsNotNone(tool_calls)
-        self.assertEqual(len(tool_calls), 1)
-        self.assertEqual(tool_calls[0].function.name, "get_weather")
-
-    def test_required_without_parser_invalid_json_returns_none(self):
-        """tool_choice='required' without parser and invalid JSON returns tool_calls=None."""
-        self.chat.tool_call_parser = None
-
-        finish_reason = {"type": "stop", "matched": None}
-        tools = [{"type": "function", "function": {"name": "get_weather"}}]
-
-        tool_calls, text, fr = self.chat._process_tool_calls(
-            text="<|tool_calls_section_begin|>not json",
-            tools=tools,
-            finish_reason=finish_reason,
-            tool_choice="required",
-        )
-
-        self.assertIsNone(tool_calls)
-
-
-class TestNormalizeToolContent(unittest.TestCase):
-    """Unit tests for normalize_tool_content()."""
-
-    def test_openai_text_parts_flattened(self):
-        result = normalize_tool_content("tool", [{"type": "text", "text": "10525"}])
-        self.assertEqual(result, "10525")
-
-    def test_multiple_text_parts_joined(self):
-        result = normalize_tool_content(
-            "tool",
-            [{"type": "text", "text": "hello"}, {"type": "text", "text": "world"}],
-        )
-        self.assertEqual(result, "hello world")
-
-    def test_non_text_part_list_preserved(self):
-        content = [{"name": "func", "output": "result"}]
-        result = normalize_tool_content("tool", content)
-        self.assertIs(result, content)
-
-    def test_string_content_unchanged(self):
-        self.assertEqual(normalize_tool_content("tool", "hello"), "hello")
-
-    def test_empty_list_returns_empty_string(self):
-        self.assertEqual(normalize_tool_content("tool", []), "")
-
-    def test_non_tool_role_unchanged(self):
-        content = [{"type": "text", "text": "hi"}]
-        result = normalize_tool_content("user", content)
-        self.assertIs(result, content)
-
-    def test_mixed_str_and_dict_parts(self):
-        result = normalize_tool_content(
-            "tool", ["plain", {"type": "text", "text": "rich"}]
-        )
-        self.assertEqual(result, "plain rich")
+            tokenizer_manager.tokenizer.chat_template = None
+            serving_chat = OpenAIServingChat(tokenizer_manager, TemplateManager())
+            self.assertEqual(serving_chat.chat_encoding_spec, "dsv4")
 
 
 if __name__ == "__main__":

@@ -1066,6 +1066,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                 require_reasoning=obj.require_reasoning,
                 return_hidden_states=obj.return_hidden_states,
                 return_routed_experts=obj.return_routed_experts,
+                return_indexer_topk=obj.return_indexer_topk,
                 routed_dp_rank=obj.routed_dp_rank,
                 disagg_prefill_dp_rank=obj.disagg_prefill_dp_rank,
                 priority=obj.priority,
@@ -1801,6 +1802,8 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                     meta_info["routed_experts"] = pybase64.b64encode(
                         routed_experts_tensor.numpy().tobytes()
                     ).decode("utf-8")
+            if getattr(recv_obj, "indexer_topk", None):
+                meta_info["indexer_topk"] = recv_obj.indexer_topk[i]
             if getattr(recv_obj, "customized_info", None):
                 for k, v in recv_obj.customized_info.items():
                     meta_info[k] = v[i]

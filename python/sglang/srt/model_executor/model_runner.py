@@ -100,6 +100,11 @@ from sglang.srt.layers.attention.attention_registry import (
     ATTENTION_BACKENDS,
     attn_backend_wrapper,
 )
+from sglang.srt.layers.attention.indexer_topk_capturer import (
+    create_indexer_capturer,
+    get_global_indexer_capturer,
+    set_global_indexer_capturer,
+)
 from sglang.srt.layers.attention.nsa.utils import is_nsa_enable_prefill_cp
 from sglang.srt.layers.attention.tbo_backend import TboAttnBackend
 from sglang.srt.layers.dp_attention import (
@@ -354,7 +359,9 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         self.req_to_token_pool = req_to_token_pool
         self.token_to_kv_pool_allocator = token_to_kv_pool_allocator
         self.is_hybrid_swa = model_config.is_hybrid_swa
-        self.is_hybrid_swa_compress = model_config.is_hybrid_swa_compress
+        self.is_hybrid_swa_compress = getattr(
+            model_config, "is_hybrid_swa_compress", False
+        )
         self.use_mla_backend = self.model_config.attention_arch == AttentionArch.MLA
         self.attention_chunk_size = model_config.attention_chunk_size
         self.forward_pass_id = 0
@@ -459,8 +466,8 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         if self.device == "cpu":
             self.init_threads_binding()
 
-        # Get available memory before model loading
-        pre_model_load_memory = self.init_torch_distributed()
+        # Get memory before model loading
+        self.total_gpu_memory = self.init_torch_distributed()
 
         # Initialize MooncakeTransferEngine
         self.init_shared_mooncake_transfer_engine()
@@ -487,7 +494,7 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         self.hisparse_coordinator = None
 
         # Initialize the model runner
-        self.initialize(pre_model_load_memory)
+        self.initialize()
         self.check_quantized_moe_compatibility()
 
         if self.is_multimodal:
@@ -531,7 +538,7 @@ class ModelRunner(ModelRunnerKVCacheMixin):
                 port=self.dist_port,
             )
 
-    def initialize(self, pre_model_load_memory: float):
+    def initialize(self):
         server_args = self.server_args
 
         self.memory_saver_adapter = TorchMemorySaverAdapter.create(
@@ -625,6 +632,8 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         self.end_layer = getattr(self.model, "end_layer", model_num_layers)
         self.num_effective_layers = self.end_layer - self.start_layer
 
+        self.adjust_hybrid_swa_layers_for_pp()
+
         # For LoopCoder models, each loop has its own layer_id, so we need to multiply by loop_num
         loop_num = getattr(self.model_config.hf_config, "loop_num", 1)
         if loop_num > 1:
@@ -638,23 +647,6 @@ class ModelRunner(ModelRunnerKVCacheMixin):
                 and (self.num_effective_layers == model_num_layers)
             )
         ), "PP is not compatible with MTP models."
-
-        # Consider PP, so use start_layer and end_layer.
-        full_attention_layer_ids = [
-            layer_idx
-            for layer_idx in range(self.start_layer, self.end_layer + 1)
-            if hasattr(self.model_config, "full_attention_layer_ids")
-            and layer_idx in self.model_config.full_attention_layer_ids
-        ]
-        swa_attention_layer_ids = [
-            layer_idx
-            for layer_idx in range(self.start_layer, self.end_layer + 1)
-            if hasattr(self.model_config, "swa_attention_layer_ids")
-            and layer_idx in self.model_config.swa_attention_layer_ids
-        ]
-        # Update back to model_config.
-        self.model_config.swa_attention_layer_ids = swa_attention_layer_ids
-        self.model_config.full_attention_layer_ids = full_attention_layer_ids
 
         # Apply torchao quantization
         torchao_applied = getattr(self.model, "torchao_applied", False)
@@ -690,7 +682,7 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         self.configure_kv_cache_dtype()
 
         # Init memory pool and attention backends
-        self.init_memory_pool(pre_model_load_memory)
+        self.init_memory_pool()
 
         # Init ngram embedding token table
         self.maybe_init_ngram_embedding()
@@ -722,6 +714,7 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         # Must be called BEFORE init_device_graphs() so CUDA graph capture
         # runs with aux hidden state capture enabled.
         self.init_aux_hidden_state_capture()
+        self.init_indexer_capturer()
 
         if self.device == "cuda" or self.device == "musa":
             self.init_cublas()
@@ -751,6 +744,28 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         self.init_piecewise_cuda_graphs()
 
         self.prealloc_symmetric_memory_pool()
+
+    def adjust_hybrid_swa_layers_for_pp(self):
+        if not self.is_hybrid_swa:
+            return
+
+        if self.model_config.is_swa_with_compressed_attention:
+            return
+
+        full_attention_layer_ids = [
+            layer_idx
+            for layer_idx in range(self.start_layer, self.end_layer + 1)
+            if hasattr(self.model_config, "full_attention_layer_ids")
+            and layer_idx in self.model_config.full_attention_layer_ids
+        ]
+        swa_attention_layer_ids = [
+            layer_idx
+            for layer_idx in range(self.start_layer, self.end_layer + 1)
+            if hasattr(self.model_config, "swa_attention_layer_ids")
+            and layer_idx in self.model_config.swa_attention_layer_ids
+        ]
+        self.model_config.swa_attention_layer_ids = swa_attention_layer_ids
+        self.model_config.full_attention_layer_ids = full_attention_layer_ids
 
     def init_routed_experts_capturer(self):
         if not self.server_args.disable_shared_experts_fusion and hasattr(
@@ -788,6 +803,17 @@ class ModelRunner(ModelRunnerKVCacheMixin):
                     "set_dflash_layers_to_capture, which is required for DFLASH."
                 )
             self.model.set_dflash_layers_to_capture(self.dflash_target_layer_ids)
+
+    def init_indexer_capturer(self):
+        set_global_indexer_capturer(
+            create_indexer_capturer(
+                enable=get_global_server_args().enable_return_indexer_topk,
+                model_config=self.model_config,
+                num_tokens=self.max_total_num_tokens + self.page_size,
+                max_running_requests=self.max_running_requests,
+                device=self.device,
+            )
+        )
 
     def remote_instance_init_transfer_engine(self):
         try:
@@ -2979,6 +3005,12 @@ class ModelRunner(ModelRunnerKVCacheMixin):
             no_copy_to_cpu=no_copy_to_cpu,
         )
 
+        get_global_indexer_capturer().on_forward_end(
+            forward_batch=forward_batch,
+            can_run_graph=output.can_run_graph,
+            cuda_graph_batch=getattr(self.graph_runner, "bs", None),
+        )
+
         if self.eplb_manager is not None:
             self.eplb_manager.on_forward_pass_end()
 
@@ -3007,10 +3039,12 @@ class ModelRunner(ModelRunnerKVCacheMixin):
         )
 
         if (
-            self.hisparse_coordinator is not None
-            and forward_batch.forward_mode.is_decode()
+            forward_batch.forward_mode.is_decode()
+            and self.hisparse_coordinator is not None
         ):
+            forward_batch.hisparse_coordinator = self.hisparse_coordinator
             self.hisparse_coordinator.wait_for_pending_backup()
+            self.hisparse_coordinator.num_real_reqs.fill_(forward_batch.batch_size)
 
         if can_run_graph:
             ret = self.graph_runner.replay(

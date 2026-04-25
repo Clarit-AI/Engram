@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 from abc import ABC
 from typing import Optional
@@ -9,10 +8,13 @@ import torch
 
 from sglang.srt.configs.model_config import ModelConfig
 from sglang.srt.layers.dp_attention import (
+    attn_tp_all_gather_into_tensor,
     get_attention_dp_rank,
+    get_attention_tp_size,
     get_dp_local_info,
     is_dp_attention_enabled,
 )
+from sglang.srt.layers.moe import get_moe_a2a_backend
 from sglang.srt.mem_cache.memory_pool import ReqToTokenPool
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.server_args import get_global_server_args
@@ -25,25 +27,6 @@ _MB = 1024 * 1024
 
 def get_tensor_size_bytes(t: torch.Tensor):
     return np.prod(t.shape) * t.dtype.itemsize
-
-
-@dataclasses.dataclass
-class RoutedExpertsOutput:
-    """Holds GPU tensors captured during forward for overlap scheduling.
-    Call copy_to_cpu() inside forward stream (before copy_done.record()),
-    then finalize() after copy_done.synchronize().
-    """
-
-    out_cache_loc: torch.Tensor
-    routed_experts: torch.Tensor
-    host_cache: "_RoutedExpertsHostCache"
-
-    def copy_to_cpu(self):
-        self.out_cache_loc = self.out_cache_loc.to("cpu", non_blocking=True)
-        self.routed_experts = self.routed_experts.to("cpu", non_blocking=True)
-
-    def finalize(self):
-        self.host_cache.buffer[self.out_cache_loc] = self.routed_experts
 
 
 class _RoutedExpertsDeviceCache:
@@ -162,9 +145,7 @@ class RoutedExpertsCapturer(ABC):
     ):
         raise NotImplementedError
 
-    def on_forward_end(
-        self, forward_batch, can_run_graph, cuda_graph_batch, no_copy_to_cpu=False
-    ) -> Optional[RoutedExpertsOutput]:
+    def on_forward_end(self, forward_batch, can_run_graph, cuda_graph_batch):
         raise NotImplementedError
 
     def get_host_cache(self):
@@ -203,14 +184,16 @@ class _RoutedExpertsCapturerReal(RoutedExpertsCapturer):
             device=device,
         )
 
-    def _get_local_range(self, forward_batch, can_run_graph, cuda_graph_batch):
-        if is_dp_attention_enabled():
-            local_start_pos, local_num_tokens = get_dp_local_info(forward_batch)
-            if can_run_graph:
-                local_start_pos = get_attention_dp_rank() * cuda_graph_batch
-            return local_start_pos, local_start_pos + local_num_tokens
-        else:
-            return 0, forward_batch.out_cache_loc.shape[0]
+        if get_moe_a2a_backend().is_deepep():
+            attn_tp_size = get_attention_tp_size() if is_dp_attention_enabled() else 1
+            self.gather_buffer = torch.empty(
+                (
+                    self.device_cache.buffer.shape[0] * attn_tp_size,
+                    self.device_cache.buffer.shape[2],
+                ),
+                dtype=torch.int32,
+                device=device,
+            )
 
     def _sync_fwd_experts_buffer_DtoH(
         self,
@@ -218,32 +201,31 @@ class _RoutedExpertsCapturerReal(RoutedExpertsCapturer):
         can_run_graph: bool,
         cuda_graph_batch: int,
     ):
-        local_start_pos, local_end_pos = self._get_local_range(
-            forward_batch, can_run_graph, cuda_graph_batch
-        )
+        if is_dp_attention_enabled():
+            local_start_pos, local_num_tokens = get_dp_local_info(forward_batch)
+            # handle with cuda graph padding
+            if can_run_graph:
+                local_start_pos = get_attention_dp_rank() * cuda_graph_batch
+                local_end_pos = local_start_pos + local_num_tokens
+            else:
+                local_end_pos = local_start_pos + local_num_tokens
+        else:
+            local_start_pos = 0
+            local_end_pos = forward_batch.out_cache_loc.shape[0]
+
+        # FIXME: sync explicitly here, overlap scheduler breaks here.
         out_cache_loc_cpu = forward_batch.out_cache_loc.cpu()
         self.host_cache.buffer[out_cache_loc_cpu] = self.device_cache.buffer[
             local_start_pos:local_end_pos, :, : self.num_experts_per_tok
         ].cpu()
 
-    def _prepare_routed_experts_output(
-        self,
-        forward_batch: ForwardBatch,
-        can_run_graph: bool,
-        cuda_graph_batch: int,
-    ) -> RoutedExpertsOutput:
-        local_start_pos, local_end_pos = self._get_local_range(
-            forward_batch, can_run_graph, cuda_graph_batch
-        )
-        return RoutedExpertsOutput(
-            out_cache_loc=forward_batch.out_cache_loc,
-            routed_experts=self.device_cache.buffer[
-                local_start_pos:local_end_pos, :, : self.num_experts_per_tok
-            ],
-            host_cache=self.host_cache,
-        )
-
     def capture(self, layer_id: int, topk_ids: torch.Tensor):
+        if get_moe_a2a_backend().is_deepep():
+            local_topk_ids = topk_ids
+            topk_ids = self.gather_buffer[
+                : local_topk_ids.size(0) * get_attention_tp_size()
+            ]
+            attn_tp_all_gather_into_tensor(topk_ids, local_topk_ids)
         self.device_cache.capture_fwd_routed_experts(layer_id, topk_ids)
 
     def get_routed_experts(
@@ -257,22 +239,12 @@ class _RoutedExpertsCapturerReal(RoutedExpertsCapturer):
         )
         return self.get_host_cache().buffer[cache_pool_idx]
 
-    def on_forward_end(
-        self, forward_batch, can_run_graph, cuda_graph_batch, no_copy_to_cpu=False
-    ) -> Optional[RoutedExpertsOutput]:
-        if no_copy_to_cpu:
-            return self._prepare_routed_experts_output(
-                forward_batch=forward_batch,
-                can_run_graph=can_run_graph,
-                cuda_graph_batch=cuda_graph_batch,
-            )
-        else:
-            self._sync_fwd_experts_buffer_DtoH(
-                forward_batch=forward_batch,
-                can_run_graph=can_run_graph,
-                cuda_graph_batch=cuda_graph_batch,
-            )
-            return None
+    def on_forward_end(self, forward_batch, can_run_graph, cuda_graph_batch):
+        self._sync_fwd_experts_buffer_DtoH(
+            forward_batch=forward_batch,
+            can_run_graph=can_run_graph,
+            cuda_graph_batch=cuda_graph_batch,
+        )
 
     def get_host_cache(self):
         return self.host_cache
@@ -304,10 +276,8 @@ class _RoutedExpertsCapturerNoop(RoutedExpertsCapturer):
     ):
         pass
 
-    def on_forward_end(
-        self, forward_batch, can_run_graph, cuda_graph_batch, no_copy_to_cpu=False
-    ) -> Optional[RoutedExpertsOutput]:
-        return None
+    def on_forward_end(self, forward_batch, can_run_graph, cuda_graph_batch):
+        pass
 
     def get_host_cache(self):
         pass
@@ -331,7 +301,6 @@ def set_global_experts_capturer(capturer: RoutedExpertsCapturer):
 def extract_routed_experts_from_meta_info(data):
     # To solve the performance issue, we return the experts_ids in base64
     # We left this function for user to change it back to normal int32
-    # See detokenizer_manager::_extract_routed_experts
     routed_experts_base64 = data["meta_info"].get("routed_experts", None)
     routed_experts = np.frombuffer(
         pybase64.b64decode(routed_experts_base64.encode("utf-8")), dtype=np.int32

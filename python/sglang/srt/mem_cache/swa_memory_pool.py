@@ -1,25 +1,19 @@
 import logging
-from typing import Dict, List, Optional, Tuple
+import weakref
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 
+from sglang.srt.distributed.parallel_state import get_tp_group
 from sglang.srt.layers.radix_attention import RadixAttention
 from sglang.srt.mem_cache.allocator import (
     BaseTokenToKVPoolAllocator,
     PagedTokenToKVPoolAllocator,
     TokenToKVPoolAllocator,
 )
+from sglang.srt.mem_cache.deepseekv4_memory_pool import DeepSeekV4TokenToKVPool
 from sglang.srt.mem_cache.memory_pool import KVCache, MHATokenToKVPool
 from sglang.srt.mem_cache.utils import maybe_init_custom_mem_pool
-from sglang.srt.utils import is_npu
-from sglang.srt.utils.common import get_num_new_pages
-
-_is_npu = is_npu()
-
-if _is_npu:
-    from sglang.srt.hardware_backend.npu.allocator_npu import (
-        NPUPagedTokenToKVPoolAllocator,
-    )
 
 logger = logging.getLogger(__name__)
 GB = 1024 * 1024 * 1024
@@ -238,50 +232,49 @@ class SWATokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
         page_size: int,
         dtype: torch.dtype,
         device: str,
-        kvcache: SWAKVPool,
+        kvcache: Union[SWAKVPool, DeepSeekV4TokenToKVPool],
         need_sort: bool,
     ):
-        assert isinstance(kvcache, SWAKVPool)
+        assert isinstance(kvcache, (SWAKVPool, DeepSeekV4TokenToKVPool))
         self._size_full = size
         self._size_swa = size_swa
         self.dtype = dtype
         self.device = device
         self.page_size = page_size
 
+        full_kv_pool = getattr(kvcache, "full_kv_pool", None)
+        swa_kv_pool = getattr(kvcache, "swa_kv_pool", None)
+
         if page_size == 1:
             self.full_attn_allocator = TokenToKVPoolAllocator(
                 size,
                 dtype,
                 device,
-                kvcache.full_kv_pool,
+                full_kv_pool,
                 need_sort,
             )
             self.swa_attn_allocator = TokenToKVPoolAllocator(
                 size_swa,
                 dtype,
                 device,
-                kvcache.swa_kv_pool,
+                swa_kv_pool,
                 need_sort,
             )
         else:
-            if _is_npu:
-                PagedTokenToKVPoolAllocatorClass = NPUPagedTokenToKVPoolAllocator
-            else:
-                PagedTokenToKVPoolAllocatorClass = PagedTokenToKVPoolAllocator
-            self.full_attn_allocator = PagedTokenToKVPoolAllocatorClass(
+            self.full_attn_allocator = PagedTokenToKVPoolAllocator(
                 size,
                 page_size,
                 dtype,
                 device,
-                kvcache.full_kv_pool,
+                full_kv_pool,
                 need_sort,
             )
-            self.swa_attn_allocator = PagedTokenToKVPoolAllocatorClass(
+            self.swa_attn_allocator = PagedTokenToKVPoolAllocator(
                 size_swa,
                 page_size,
                 dtype,
                 device,
-                kvcache.swa_kv_pool,
+                swa_kv_pool,
                 need_sort,
             )
         # Note: append one more item of value -1 in the end so -1 maps to -1.
@@ -306,7 +299,7 @@ class SWATokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
 
         self.clear()
         self._kvcache = kvcache
-        self._kvcache.register_mapping(self.full_to_swa_index_mapping)
+        self._kvcache.register_mapping(weakref.proxy(self.full_to_swa_index_mapping))
 
     def available_size(self):
         return min(
@@ -359,12 +352,7 @@ class SWATokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
         assert alloc_full_indices is not None
         assert alloc_swa_indices is not None
 
-        if _is_npu:
-            self.full_to_swa_index_mapping[alloc_full_indices.to(torch.int64)] = (
-                alloc_swa_indices.to(torch.int64)
-            )
-        else:
-            self.full_to_swa_index_mapping[alloc_full_indices] = alloc_swa_indices
+        self.full_to_swa_index_mapping[alloc_full_indices] = alloc_swa_indices
         return alloc_full_indices
 
     def alloc_extend(
@@ -377,13 +365,12 @@ class SWATokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
         extend_num_tokens: int,
     ):
         assert self.page_size > 1
-
-        num_new_pages = get_num_new_pages(
-            seq_lens=seq_lens_cpu, page_size=self.page_size, prefix_lens=prefix_lens_cpu
-        )
-        if num_new_pages > self.full_attn_allocator.available_size() // self.page_size:
+        num_tokens = extend_num_tokens + len(seq_lens) * self.page_size
+        msg = f"[ALLOC-EXTEND-{get_tp_group().rank}] {num_tokens=}, {extend_num_tokens=}, {len(seq_lens)=}, {self.page_size=}"
+        msg += f", {self.full_attn_allocator.available_size()=}, {self.swa_attn_allocator.available_size()=}"
+        if num_tokens > self.full_attn_allocator.available_size():
             return None
-        if num_new_pages > self.swa_attn_allocator.available_size() // self.page_size:
+        if num_tokens > self.swa_attn_allocator.available_size():
             return None
 
         swa_last_loc = self.translate_loc_from_full_to_swa(last_loc)
@@ -407,12 +394,7 @@ class SWATokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
         assert alloc_full_indices is not None
         assert alloc_swa_indices is not None
 
-        if _is_npu:
-            self.full_to_swa_index_mapping[alloc_full_indices.to(torch.int64)] = (
-                alloc_swa_indices.to(torch.int64)
-            )
-        else:
-            self.full_to_swa_index_mapping[alloc_full_indices] = alloc_swa_indices
+        self.full_to_swa_index_mapping[alloc_full_indices] = alloc_swa_indices
 
         return alloc_full_indices
 
@@ -435,12 +417,7 @@ class SWATokenToKVPoolAllocator(BaseTokenToKVPoolAllocator):
         if alloc_full_indices is None or alloc_swa_indices is None:
             return None
 
-        if _is_npu:
-            self.full_to_swa_index_mapping[alloc_full_indices.to(torch.int64)] = (
-                alloc_swa_indices.to(torch.int64)
-            )
-        else:
-            self.full_to_swa_index_mapping[alloc_full_indices] = alloc_swa_indices
+        self.full_to_swa_index_mapping[alloc_full_indices] = alloc_swa_indices
 
         return alloc_full_indices
 
