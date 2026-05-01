@@ -3,10 +3,8 @@ name: Nightly Test (AMD)
 
 on:
   schedule:
-    if: github.repository == 'sgl-project/sglang'
     - cron: '30 17 * * *'
   push:
-    if: github.repository == 'sgl-project/sglang'
     branches:
       - main
     paths:
