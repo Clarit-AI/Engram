@@ -303,15 +303,18 @@ def test_save_load_roundtrip_and_quarantine():
         result = validate_state_tensors(loaded_conv, loaded_temporal)
         assert result.is_valid is True
 
-        # Now corrupt the file on disk and verify load raises ValueError
-        conv_dir = Path(tmp_dir) / "roundtrip-conv"
+        # Now corrupt the file on disk and verify load raises ValueError.
+        # MambaSnapshotManager prefixes conversation directories with "conversation_".
+        conv_dir = Path(tmp_dir) / "conversation_roundtrip-conv"
         snapshot_files = list(conv_dir.glob("*.safetensors"))
         assert len(snapshot_files) > 0
-        # Overwrite with garbage to trigger deserialization or validation failure
+        # Overwrite with garbage to trigger deserialization or validation failure.
+        # SnapshotValidationError subclasses ValueError; raw garbage trips the
+        # safetensors deserializer which raises plain ValueError, so accept either.
         for f in snapshot_files:
             f.write_bytes(b"corrupted data")
 
-        with pytest.raises(SnapshotValidationError):
+        with pytest.raises(ValueError):
             manager.load_snapshot("roundtrip-conv", turn_number=0)
 
 
@@ -365,6 +368,7 @@ def test_warm_tier_rejects_nan_temporal():
 def test_warm_tier_rejects_all_zeros_strict():
     """Warm-tier save with all-zero state (strict=True) should be rejected."""
     tm = _make_tier_manager()
+    tm.host_pool.save_state.return_value = True
 
     conv = [torch.zeros(24, 4, 16, 3, dtype=torch.float32)]
     temporal = torch.zeros(24, 4, 16, 64, dtype=torch.float32)
