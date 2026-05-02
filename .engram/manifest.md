@@ -1,11 +1,11 @@
 <!-- ENGRAM_MODIFIED — Fork file manifest: canonical registry of all Engram changes -->
 # Engram Fork Manifest
 
-> **Engram:** v0.2.0 (pre-merge; target v0.3.0)
-> **Last updated:** 2026-04-24
+> **Engram:** v0.2.0 → v0.3.0 (PR #56 pending merge to main)
+> **Last updated:** 2026-05-01 (post-PR-56 marker reconciliation: kv_cache_mixin reverted to upstream; hf_transformers_utils → hf_transformers/common.py; new pool_configurator.py port)
 >
 > Auto-generated from `git diff upstream/main...HEAD` and ENGRAM_MODIFIED markers.
-> Commit: 2d047c4996f13fc1bfc08a7fb6f1eedd7f2b2906 (+ pre-merge snapshot.py addition)
+> Reference commit: `aa492865d` (the PR #56 merge commit) + `f231ad763` (server_args ENGRAM_CONFLICT_REVIEW cleanup) + `9770ab640` (nightly-test-amd.yml trigger-guard removal)
 
 ## How to use this file
 
@@ -22,8 +22,10 @@
 | Added files (A) | 177 |
 | Deleted files (D) | 7 |
 | Renamed files (R) | 4 |
-| Total ENGRAM_MODIFIED headers | 86 |
-| Total BEGIN/END ENGRAM blocks | 322 |
+| Total ENGRAM_MODIFIED headers | 87 |
+| Total BEGIN/END ENGRAM blocks | 319 |
+
+**Block-count delta from prior baseline (322 → 319, net −3):** 2 upstream job removals in CI workflows (no longer present in upstream `pr-test-amd.yml` etc.) + 1 SSL-validation feature adoption by upstream (fork's `_handle_ssl_validation` block in `server_args.py` deduplicated against upstream's now-identical implementation). Structural moves (kv_cache_mixin → pool_configurator, hf_transformers_utils → hf_transformers/common.py) net to zero.
 
 ## High Conflict Risk — Modified Upstream Files ⚠️
 
@@ -33,19 +35,23 @@ These are the files where upstream changes will most likely conflict with Engram
 |------|--------|-----|-------------|
 | `python/sglang/srt/managers/scheduler.py` | 15 | +1223 | Mamba state management, snapshot save/restore, conversation tracking |
 | `python/sglang/srt/managers/tokenizer_manager.py` | 9 | +98 | Snapshot and agent token management |
-| `python/sglang/srt/server_args.py` | 3 | +262 | Snapshot/Mamba CLI args, memory tiers, agent tools, SSL validation, IPv6 URL |
+| `python/sglang/srt/server_args.py` | 2 | +261 | Snapshot/Mamba CLI args, memory tiers, agent tools, IPv6 URL (SSL block removed — upstream adopted identical implementation, now deduplicated) |
 | `python/sglang/srt/entrypoints/http_server.py` | 3 | +208 | Snapshot HTTP endpoints, agent API routes, socket pre-binding |
 | `python/sglang/srt/mem_cache/mamba_radix_cache.py` | 3 | +22 | Mamba radix cache extensions |
 | `python/sglang/srt/managers/io_struct.py` | 3 | +138 | Snapshot and agent request/response data structures |
-| `python/sglang/srt/model_executor/model_runner_kv_cache_mixin.py` | 2 | +113 | KV cache Mamba state integration |
 | `python/sglang/srt/managers/scheduler_output_processor_mixin.py` | 3 | +113 | Snapshot output processing hooks |
 | `python/sglang/srt/managers/schedule_batch.py` | 2 | +8 | Snapshot batch field |
-| `python/sglang/srt/configs/model_config.py` | 2 | +37 | Mamba config adaptations (safe architecture access, multimodal guards) |
+| `python/sglang/srt/configs/model_config.py` | 2 | +37 | Mamba config adaptations (safe architecture access, multimodal guards). Has 1 deferred `ENGRAM_CONFLICT_REVIEW` marker at line 402 (null-guard question, low-risk Phase 4 follow-up) |
 
-### Core Engine — Other Modified Files (subtotal: 24 blocks)
+**Removed from this table by PR #56:**
+- `python/sglang/srt/model_executor/model_runner_kv_cache_mixin.py` — file reverted to upstream verbatim. The pure-SSM token-pool sizing logic ported to `python/sglang/srt/model_executor/pool_configurator.py` (see "Other Modified" table) as a `PureSSMMemoryPoolConfigurator` subclass + factory dispatch branch.
+
+### Core Engine — Other Modified Files (subtotal: 26 blocks)
 
 | File | Blocks | +/- | Description |
 |------|--------|-----|-------------|
+| `python/sglang/srt/model_executor/pool_configurator.py` | 2 | +~50 | **NEW (PR #56):** Pure-SSM memory-pool dispatch — `PureSSMMemoryPoolConfigurator` subclass + factory branch. Ported from the now-reverted `model_runner_kv_cache_mixin.py` to align with upstream's #21985-era architecture refactor. |
+| `python/sglang/srt/utils/hf_transformers/common.py` | 2 | +~10 | **NEW (PR #56):** Mamba2Config registry entry. Replaces the equivalent block in the now-shimmed `hf_transformers_utils.py`. |
 | `python/sglang/srt/mem_cache/memory_pool.py` | 1 | +9 | Mamba memory pool hooks |
 | `python/sglang/srt/observability/trace.py` | 0 | +2 | Safer exception handling in host ID detection |
 | `python/sglang/srt/model_executor/model_runner.py` | 0 | +15 | Mamba2Config support, safe architecture access |
@@ -54,7 +60,6 @@ These are the files where upstream changes will most likely conflict with Engram
 | `python/sglang/srt/entrypoints/openai/serving_completions.py` | 1 | — | Snapshot passthrough in completions |
 | `python/sglang/srt/observability/req_time_stats.py` | 1 | — | Snapshot timing statistics |
 | `python/sglang/srt/models/nemotron_h.py` | 0 | — | Mamba state hooks for Nemotron-H |
-| `python/sglang/srt/utils/hf_transformers_utils.py` | 2 | — | Mamba2Config registry entry |
 | `python/sglang/srt/utils/network.py` | 2 | — | Network utilities for snapshot system |
 | `python/sglang/srt/utils/common.py` | 2 | — | Snapshot utility functions |
 | `python/sglang/__init__.py` | 2 | — | Snapshot module import |
@@ -286,37 +291,41 @@ The following are not fork-differentiated and accept upstream changes verbatim:
 
 ## Marking Coverage
 
-| Metric | Count |
-|--------|-------|
-| ENGRAM_MODIFIED headers | 86 |
-| BEGIN/END ENGRAM blocks | 322 |
-| Modified files without headers | 8 (all small/cosmetic: go.mod, go.sum, examples, etc.) |
-| Added files without headers | ~100+ (pure additions, no markers needed) |
+| Metric | Count | Scope |
+|--------|-------|-------|
+| ENGRAM_MODIFIED headers | 87 | repo-wide grep across `*.py *.yml *.yaml *.md *.json *.cfg *.sh` (excludes `node_modules .gitnexus .venv __pycache__ .git/`) |
+| BEGIN/END ENGRAM blocks | 319 | broad scope (whole repo `*.py *.yml *.yaml`) |
+| Modified files without headers | 8 (all small/cosmetic: go.mod, go.sum, examples, etc.) | — |
+| Added files without headers | ~100+ (pure additions, no markers needed) | — |
+
+**Scope alignment note (added 2026-05-01):** the auto-memory weekly review uses a narrower scope (`python/`, `.github/`, `.engram/` only), which yields lower counts (~67 headers, ~317 blocks). Comparisons across review snapshots must use the same scope or the deltas are noise. The numbers above are broad-scope; auto-memory's are narrow-scope.
 
 ## Block Count by Subsystem
 
-### High Conflict Risk (45 total)
+### High Conflict Risk (42 total)
 | Subsystem | Files | Blocks |
 |-----------|-------|--------|
 | Scheduler | 1 | 15 |
 | Tokenizer Manager | 1 | 9 |
 | HTTP Server | 1 | 3 |
-| Server Args | 1 | 3 |
+| Server Args | 1 | 2 |
 | Mamba Radix Cache | 1 | 3 |
 | IO Struct | 1 | 3 |
-| Model Runner KV Cache Mixin | 1 | 2 |
 | Scheduler Output Processor | 1 | 3 |
 | Schedule Batch | 1 | 2 |
 | Model Config | 1 | 2 |
 
-### Other Modified (24 total)
+(Note: `Model Runner KV Cache Mixin` removed — file reverted to upstream in PR #56. Server Args dropped 1 block — SSL adoption.)
+
+### Other Modified (28 total)
 | File | Blocks |
 |------|--------|
+| pool_configurator (NEW) | 2 |
+| hf_transformers/common.py (NEW location) | 2 |
 | OpenAI protocol | 2 |
 | OpenAI serving_chat | 1 |
 | OpenAI serving_completions | 1 |
 | req_time_stats | 1 |
-| hf_transformers_utils | 2 |
 | network | 2 |
 | common | 2 |
 | __init__.py | 2 |
@@ -326,9 +335,11 @@ The following are not fork-differentiated and accept upstream changes verbatim:
 | memory_pool | 1 |
 | .gitignore | 3 |
 | .pre-commit-config.yaml | 2 |
-| All others (13 files) | 0 |
+| All others (~13 files) | 0 |
 
-**Grand total: 69 blocks** (45 high conflict + 24 other modified = 69 blocks in modified Python files; 322 total blocks across all file types per global grep)
+**Grand total: 70 blocks** (42 high conflict + 28 other modified = 70 blocks in marked Python files; 319 total blocks across all file types per global grep)
+
+(Net change from prior baseline: 69 → 70 = +2 added — pool_configurator + hf_transformers/common.py — minus 1 removed — Server Args SSL dedup.)
 
 ### Per-file verification
 Run `grep -c "BEGIN ENGRAM" <filepath>` on any file listed above to verify.
