@@ -73,7 +73,7 @@ def test_chunk_indices_offsets_correctness():
     total_seqlens = 10
     chunk_indices, chunk_offsets = (
         Mamba2Metadata._query_start_loc_to_chunk_indices_offsets(
-            query_start_loc, chunk_size, total_seqlans
+            query_start_loc, chunk_size, total_seqlens
         )
     )
     expected_indices = torch.tensor([0, 0, 1], dtype=torch.int32)
@@ -86,7 +86,7 @@ def test_chunk_indices_offsets_correctness():
     ), f"chunk_offsets mismatch: got {chunk_offsets}, expected {expected_offsets}"
 
 
-def test_has_initial_states_flag():
+def test_has_initial_states_flag(forward_batch):
     N = 4
     # query_start_loc must match extend_seq_lens=[5]*4 → cumsum [0,5,10,15,20]
     query_start_loc = torch.tensor([0, 5, 10, 15, 20], dtype=torch.int32)
@@ -95,7 +95,6 @@ def test_has_initial_states_flag():
         query_start_loc=query_start_loc,
         mamba_cache_indices=mamba_cache_indices,
     )
-    forward_batch = forward_batch()
     forward_batch.extend_num_tokens = 20
     forward_batch.extend_seq_lens = [5] * N
     forward_batch.extend_seq_lens_cpu = [5] * N
