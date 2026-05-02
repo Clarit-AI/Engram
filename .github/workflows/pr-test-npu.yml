@@ -1,4 +1,4 @@
-# ENGRAM_MODIFIED — CI guard: job disabled on fork (upstream-only)
+# ENGRAM_MODIFIED — fork guard: disable upstream-only CI
 name: PR Test (NPU)
 
 on:
@@ -27,7 +27,7 @@ concurrency:
 jobs:
   # ==================== Check Changes ==================== #
   check-changes:
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang'
     # --- END ENGRAM ---
     runs-on: ubuntu-latest
@@ -76,7 +76,7 @@ jobs:
   # ==================== PR Gate ==================== #
   pr-gate:
     needs: check-changes
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.changes_exist == 'true'
     # --- END ENGRAM ---
     uses: ./.github/workflows/pr-gate.yml
@@ -84,7 +84,7 @@ jobs:
 
   stage-b-test-1-npu-a2:
     needs: [check-changes, pr-gate]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.main_package == 'true'
     # --- END ENGRAM ---
     runs-on: linux-aarch64-a2-1
@@ -137,7 +137,7 @@ jobs:
 
   stage-b-test-2-npu-a2:
     needs: [check-changes, pr-gate]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.main_package == 'true'
     # --- END ENGRAM ---
     runs-on: linux-aarch64-a2-2
@@ -190,7 +190,7 @@ jobs:
 
   stage-b-test-4-npu-a3:
     needs: [check-changes, pr-gate]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.main_package == 'true'
     # --- END ENGRAM ---
     runs-on: linux-aarch64-a3-4
@@ -240,7 +240,7 @@ jobs:
 
   stage-b-test-16-npu-a3:
     needs: [check-changes, pr-gate]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.main_package == 'true'
     # --- END ENGRAM ---
     runs-on: linux-aarch64-a3-16
@@ -289,7 +289,7 @@ jobs:
 
   multimodal-gen-test-1-npu-a3:
     needs: [check-changes, pr-gate]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.multimodal_gen == 'true'
     # --- END ENGRAM ---
     runs-on: linux-aarch64-a3-2
@@ -337,7 +337,7 @@ jobs:
 
   multimodal-gen-test-2-npu-a3:
     needs: [check-changes, pr-gate]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.multimodal_gen == 'true'
     # --- END ENGRAM ---
     runs-on: linux-aarch64-a3-16
@@ -385,7 +385,7 @@ jobs:
 
   multimodal-gen-test-8-npu-a3:
     needs: [check-changes, pr-gate]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && needs.check-changes.outputs.multimodal_gen == 'true'
     # --- END ENGRAM ---
     runs-on: linux-aarch64-a3-8
@@ -444,7 +444,7 @@ jobs:
         multimodal-gen-test-2-npu-a3,
         multimodal-gen-test-8-npu-a3,
       ]
-    # --- BEGIN ENGRAM: fork CI guard ---
+    # --- BEGIN ENGRAM: fork guard ---
     if: github.repository == 'sgl-project/sglang' && always()
     # --- END ENGRAM ---
     runs-on: ubuntu-latest

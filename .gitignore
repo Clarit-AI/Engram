@@ -198,6 +198,7 @@ work_dirs/
 !assets/engram-logo-square.png
 !assets/archive/logo_square.png
 # --- END ENGRAM ---
+!docs_new/images/*.png
 
 # Prerequisites
 *.d
@@ -267,6 +268,7 @@ inputs/
 
 # setuptools-scm generated version file
 python/sglang/_version.py
+python/kernel.lock
 
 # MUSA section
 # Generated source files by torchada
@@ -310,3 +312,4 @@ test/phases/results/*.json
 vercel_sdk_provider/
 # --- END ENGRAM ---
 .gitnexus
+artifacts/
