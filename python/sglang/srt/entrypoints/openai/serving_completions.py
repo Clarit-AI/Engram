@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# ENGRAM_MODIFIED — Snapshot passthrough in completions
-
 import logging
 import time
 from http import HTTPStatus
@@ -33,6 +31,9 @@ from sglang.srt.parser.code_completion_parser import (
     generate_completion_prompt_from_request,
 )
 from sglang.utils import convert_json_schema_to_str
+
+# ENGRAM_MODIFIED — Snapshot passthrough in completions
+
 
 if TYPE_CHECKING:
     from sglang.srt.managers.template_manager import TemplateManager

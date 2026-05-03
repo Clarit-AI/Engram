@@ -96,7 +96,8 @@ def is_deepseek_nsa(config) -> bool:
     )
     return (
         architectures is not None
-        and len(architectures) > 0  # ENGRAM_CHANGED: Engram guards against empty architectures list for pure SSM models
+        and len(architectures)
+        > 0  # ENGRAM_CHANGED: Engram guards against empty architectures list for pure SSM models
         and architectures[0]
         in [
             "DeepseekV3ForCausalLM",

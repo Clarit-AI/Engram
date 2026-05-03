@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional, Type, Union
 import torch
 from huggingface_hub import snapshot_download
 
-from sglang.srt.configs import (
+from sglang.srt.configs import (  # --- BEGIN ENGRAM: Mamba2 config registration ---; --- END ENGRAM ---
     AfmoeConfig,
     BailingHybridConfig,
     ChatGLMConfig,
@@ -39,9 +39,7 @@ from sglang.srt.configs import (
     KimiLinearConfig,
     KimiVLConfig,
     LongcatFlashConfig,
-    # --- BEGIN ENGRAM: Mamba2 config registration ---
     Mamba2Config,
-    # --- END ENGRAM ---
     MultiModalityConfig,
     NemotronH_Nano_Omni_Reasoning_V3_Config,
     NemotronH_Nano_VL_V2_Config,

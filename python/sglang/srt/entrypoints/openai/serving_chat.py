@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-# ENGRAM_MODIFIED — Snapshot passthrough in chat
-
 import copy
 import json
 import logging
@@ -55,6 +53,9 @@ from sglang.srt.managers.io_struct import GenerateReqInput
 from sglang.srt.parser.conversation import generate_chat_conv
 from sglang.srt.parser.jinja_template_utils import process_content_for_template_format
 from sglang.srt.parser.reasoning_parser import ReasoningParser
+
+# ENGRAM_MODIFIED — Snapshot passthrough in chat
+
 
 _SSE_DATA_B = b"data: "
 _SSE_NL_B = b"\n\n"

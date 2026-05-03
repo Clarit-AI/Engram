@@ -1544,4 +1544,3 @@ jobs:
             exit 1
           fi
           echo "All ROCm 7.2 nightly test jobs passed"
-

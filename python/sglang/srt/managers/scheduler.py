@@ -21,8 +21,10 @@ import os
 import signal
 import sys
 import time
+
 # --- BEGIN ENGRAM: snapshot restore request IDs ---
 import uuid
+
 # --- END ENGRAM ---
 from collections import deque
 from contextlib import nullcontext
@@ -85,7 +87,7 @@ from sglang.srt.layers.quantization.fp4_utils import initialize_fp4_gemm_config
 from sglang.srt.layers.quantization.fp8_utils import initialize_fp8_gemm_config
 from sglang.srt.lora.lora_overlap_loader import LoRAOverlapLoader
 from sglang.srt.managers.hisparse_coordinator import HiSparseCoordinator
-from sglang.srt.managers.io_struct import (
+from sglang.srt.managers.io_struct import (  # --- BEGIN ENGRAM: snapshot request routing ---; --- END ENGRAM ---
     AbortReq,
     ActiveRanksOutput,
     AddExternalCorpusReqInput,
@@ -101,9 +103,7 @@ from sglang.srt.managers.io_struct import (
     ClearHiCacheReqOutput,
     CloseSessionReqInput,
     ContinueGenerationReqInput,
-    # --- BEGIN ENGRAM: snapshot request routing ---
     DeleteSnapshotReqInput,
-    # --- END ENGRAM ---
     DestroyWeightsUpdateGroupReqInput,
     DetachHiCacheStorageReqInput,
     DetachHiCacheStorageReqOutput,
@@ -118,9 +118,7 @@ from sglang.srt.managers.io_struct import (
     GetInternalStateReq,
     GetInternalStateReqOutput,
     GetLoadsReqInput,
-    # --- BEGIN ENGRAM: snapshot request routing ---
     GetSnapshotInfoReqInput,
-    # --- END ENGRAM ---
     GetWeightsByNameReqInput,
     HealthCheckOutput,
     InitWeightsSendGroupForRemoteInstanceReqInput,
@@ -128,9 +126,7 @@ from sglang.srt.managers.io_struct import (
     InitWeightsUpdateGroupReqInput,
     ListExternalCorporaReqInput,
     ListExternalCorporaReqOutput,
-    # --- BEGIN ENGRAM: snapshot request routing ---
     ListSnapshotsReqInput,
-    # --- END ENGRAM ---
     LoadLoRAAdapterFromTensorsReqInput,
     LoadLoRAAdapterFromTensorsReqOutput,
     LoadLoRAAdapterReqInput,
@@ -141,15 +137,11 @@ from sglang.srt.managers.io_struct import (
     ReleaseMemoryOccupationReqInput,
     RemoveExternalCorpusReqInput,
     RemoveExternalCorpusReqOutput,
-    # --- BEGIN ENGRAM: snapshot request routing ---
     RestoreSnapshotReqInput,
-    # --- END ENGRAM ---
     ResumeMemoryOccupationReqInput,
     RpcReqInput,
     RpcReqOutput,
-    # --- BEGIN ENGRAM: snapshot request routing ---
     SaveSnapshotReqInput,
-    # --- END ENGRAM ---
     SendWeightsToRemoteInstanceReqInput,
     SendWeightsToRemoteInstanceReqOutput,
     SetInternalStateReq,
@@ -1316,6 +1308,7 @@ class Scheduler(
         # Restore snapshots if auto-restore is enabled
         if server_args.snapshot_auto_restore:
             self.restore_snapshots_on_startup()
+
     # --- END ENGRAM ---
 
     # --- BEGIN ENGRAM: snapshot save, list, info, restore, and eviction handlers ---
@@ -2063,6 +2056,7 @@ class Scheduler(
 
         except Exception as e:
             logger.error(f"Error handling Mamba state eviction: {e}", exc_info=True)
+
     # --- END ENGRAM ---
 
     # --- BEGIN ENGRAM: agent tool framework initialization ---
@@ -2134,6 +2128,7 @@ class Scheduler(
             self.tool_registry = None
             self.tool_parser = None
             self.tool_executor = None
+
     # --- END ENGRAM ---
     def _get_draft_kv_pool(self):
         """Return (draft_token_to_kv_pool, draft_model_config) for the current
@@ -4316,6 +4311,7 @@ class Scheduler(
                 turn_number=turn_number,
                 additional_context=None,
             )
+
     # --- END ENGRAM ---
 
     def maybe_send_health_check_signal(self):

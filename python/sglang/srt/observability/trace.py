@@ -148,7 +148,10 @@ def __get_host_id() -> str:
         try:
             with open("/etc/machine-id", "r") as f:
                 return f.read().strip()
-        except (OSError, UnicodeError):  # ENGRAM_CHANGED: Engram narrows bare except to specific, safe exceptions
+        except (
+            OSError,
+            UnicodeError,
+        ):  # ENGRAM_CHANGED: Engram narrows bare except to specific, safe exceptions
             pass
 
     mac = uuid.getnode()

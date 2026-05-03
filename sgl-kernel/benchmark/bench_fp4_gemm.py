@@ -1,6 +1,7 @@
 # ENGRAM_MODIFIED — Benchmark fork tweak
 import argparse
 import csv
+
 # ENGRAM_CHANGED: Engram removes the unused os import from this benchmark harness.
 from functools import partial
 from typing import List, Tuple

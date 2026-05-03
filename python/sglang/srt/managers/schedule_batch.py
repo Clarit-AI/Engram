@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-# ENGRAM_MODIFIED — Snapshot batch field
-
 from sglang.srt.dllm.config import DllmConfig
 from sglang.srt.model_executor.forward_batch_info import ForwardBatch
 from sglang.srt.utils.common import ceil_align, is_pin_memory_available
+
+# ENGRAM_MODIFIED — Snapshot batch field
+
 
 # Copyright 2023-2024 SGLang Team
 # Licensed under the Apache License, Version 2.0 (the "License");
