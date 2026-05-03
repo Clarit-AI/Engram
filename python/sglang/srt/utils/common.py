@@ -203,6 +203,8 @@ def is_mps() -> bool:
 def get_numa_node(gpu_id):
     """Return the NUMA node for gpu_id, or None if unavailable."""
     return None
+
+
 # --- END ENGRAM ---
 
 
@@ -1454,6 +1456,8 @@ def maybe_torch_compile(*args, **kwargs):
         return func
 
     return decorator
+
+
 # --- END ENGRAM ---
 
 

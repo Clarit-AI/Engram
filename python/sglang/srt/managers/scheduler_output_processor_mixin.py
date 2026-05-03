@@ -435,6 +435,7 @@ class SchedulerOutputProcessorMixin:
                 prefill_stats=batch.prefill_stats,
                 can_run_cuda_graph=can_run_cuda_graph,
             )
+
     # --- END ENGRAM ---
 
     def process_batch_result_decode(

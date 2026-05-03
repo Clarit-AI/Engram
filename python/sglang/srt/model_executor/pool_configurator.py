@@ -297,9 +297,7 @@ def _is_pure_ssm(mr: ModelRunner) -> bool:
     if cfg is None:
         return False
     effective_attention_layers = [
-        i
-        for i in cfg.full_attention_layer_ids
-        if mr.start_layer <= i < mr.end_layer
+        i for i in cfg.full_attention_layer_ids if mr.start_layer <= i < mr.end_layer
     ]
     return len(effective_attention_layers) == 0
 

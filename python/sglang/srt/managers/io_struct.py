@@ -2249,6 +2249,8 @@ class DeleteSnapshotReqOutput(BaseReq):
 
     success: bool = False
     message: Optional[str] = None
+
+
 # --- END ENGRAM ---
 
 

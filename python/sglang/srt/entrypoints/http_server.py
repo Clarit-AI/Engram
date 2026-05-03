@@ -16,6 +16,7 @@ The entry point of inference server. (SRT = SGLang Runtime)
 
 This file implements HTTP APIs for the inference engine via fastapi.
 """
+
 # ENGRAM_MODIFIED — Snapshot HTTP endpoints, agent API routes, socket pre-binding
 
 import asyncio
@@ -110,22 +111,34 @@ from sglang.srt.entrypoints.warmup import execute_warmups
 from sglang.srt.environ import envs
 from sglang.srt.function_call.function_call_parser import FunctionCallParser
 from sglang.srt.managers.io_struct import (
+    DeleteSnapshotReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
+)
+from sglang.srt.managers.io_struct import (
+    GetSnapshotInfoReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
+)
+from sglang.srt.managers.io_struct import (
+    ListSnapshotsReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
+)
+from sglang.srt.managers.io_struct import (
+    RestoreSnapshotReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
+)
+from sglang.srt.managers.io_struct import (
+    SaveSnapshotReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
+)
+from sglang.srt.managers.io_struct import (
     AbortReq,
     AttachHiCacheStorageReqInput,
     CheckWeightsReqInput,
     CloseSessionReqInput,
     ConfigureLoggingReq,
     ContinueGenerationReqInput,
-    DeleteSnapshotReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
     DestroyWeightsUpdateGroupReqInput,
     DumperControlReqInput,
     EmbeddingReqInput,
     GenerateReqInput,
-    GetSnapshotInfoReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
     GetWeightsByNameReqInput,
     InitWeightsSendGroupForRemoteInstanceReqInput,
     InitWeightsUpdateGroupReqInput,
-    ListSnapshotsReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
     LoadLoRAAdapterFromTensorsReqInput,
     LoadLoRAAdapterReqInput,
     OpenSessionReqInput,
@@ -133,9 +146,7 @@ from sglang.srt.managers.io_struct import (
     PauseGenerationReqInput,
     ProfileReqInput,
     ReleaseMemoryOccupationReqInput,
-    RestoreSnapshotReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
     ResumeMemoryOccupationReqInput,
-    SaveSnapshotReqInput,  # ENGRAM_CHANGED: Engram adds snapshot request types
     SendWeightsToRemoteInstanceReqInput,
     SeparateReasoningReqInput,
     SetInternalStateReq,
@@ -1438,6 +1449,8 @@ async def delete_snapshot(obj: DeleteSnapshotReqInput, request: Request):
             },
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
         )
+
+
 # --- END ENGRAM ---
 
 

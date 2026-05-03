@@ -36,6 +36,9 @@ from torch import nn
 
 from sglang.jit_kernel.ngram_embedding import update_token_table
 from sglang.srt.configs import (
+    Mamba2Config,  # ENGRAM_CHANGED: Engram adds Mamba2Config for pure SSM model support
+)
+from sglang.srt.configs import (
     BailingHybridConfig,
     FalconH1Config,
     GraniteMoeHybridConfig,
@@ -45,7 +48,6 @@ from sglang.srt.configs import (
     Lfm2Config,
     Lfm2MoeConfig,
     Lfm2VlConfig,
-    Mamba2Config,  # ENGRAM_CHANGED: Engram adds Mamba2Config for pure SSM model support
     NemotronH_Nano_VL_V2_Config,
     NemotronHConfig,
     Qwen3_5Config,

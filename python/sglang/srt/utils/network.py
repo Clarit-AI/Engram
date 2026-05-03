@@ -420,6 +420,8 @@ def configure_ipv6(dist_init_addr):
     except ValueError:
         raise ValueError(f"invalid port in IPv6 address: '{port_str}'")
     return port, host
+
+
 # --- END ENGRAM ---
 
 
@@ -564,6 +566,7 @@ class NetworkAddress:
         if host.startswith("[") and host.endswith("]"):
             host = host[1:-1]
         return NetworkAddress(host, port)
+
     # --- END ENGRAM ---
 
     def __str__(self) -> str:

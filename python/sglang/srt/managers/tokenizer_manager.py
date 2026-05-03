@@ -49,7 +49,7 @@ from sglang.srt.lora.lora_registry import LoRARef, LoRARegistry
 from sglang.srt.managers.async_dynamic_batch_tokenizer import AsyncDynamicbatchTokenizer
 from sglang.srt.managers.disagg_service import start_disagg_service
 from sglang.srt.managers.embed_types import PositionalEmbeds
-from sglang.srt.managers.io_struct import (
+from sglang.srt.managers.io_struct import (  # --- BEGIN ENGRAM: snapshot request routing types ---; --- END ENGRAM ---
     AbortReq,
     ActiveRanksOutput,
     BatchEmbeddingOutput,
@@ -59,31 +59,23 @@ from sglang.srt.managers.io_struct import (
     BatchTokenizedGenerateReqInput,
     ConfigureLoggingReq,
     ContinueGenerationReqInput,
-    # --- BEGIN ENGRAM: snapshot request routing types ---
     DeleteSnapshotReqInput,
     DeleteSnapshotReqOutput,
-    # --- END ENGRAM ---
     EmbeddingReqInput,
     FreezeGCReq,
     GenerateReqInput,
-    # --- BEGIN ENGRAM: snapshot request routing types ---
     GetSnapshotInfoReqInput,
     GetSnapshotInfoReqOutput,
-    # --- END ENGRAM ---
     HealthCheckOutput,
-    # --- BEGIN ENGRAM: snapshot request routing types ---
     ListSnapshotsReqInput,
     ListSnapshotsReqOutput,
-    # --- END ENGRAM ---
     LoadLoRAAdapterReqInput,
     OpenSessionReqOutput,
     PauseGenerationReqInput,
-    # --- BEGIN ENGRAM: snapshot request routing types ---
     RestoreSnapshotReqInput,
     RestoreSnapshotReqOutput,
     SaveSnapshotReqInput,
     SaveSnapshotReqOutput,
-    # --- END ENGRAM ---
     SessionParams,
     TokenizedEmbeddingReqInput,
     TokenizedGenerateReqInput,
@@ -1600,6 +1592,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         await self.send_to_scheduler.send_pyobj(obj)
         recv_obj = await self.snapshot_delete_result_queue.get()
         return recv_obj
+
     # --- END ENGRAM ---
 
     async def update_weights_from_disk(
