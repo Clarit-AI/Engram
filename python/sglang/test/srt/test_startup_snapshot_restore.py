@@ -142,7 +142,13 @@ def test_restore_snapshots_on_startup_continues_after_failure(tmp_path, caplog):
 
     assert host_pool.has_state("healthy")
     assert conversation_tracker.get_tier("healthy") == ConversationTier.WARM
-    assert "Failed to restore conversation broken on startup" in caplog.text
+    # Match on semantic content, not exact wording — the underlying tier_manager
+    # log message has been reworded ("Quarantined snapshot for conversation X:
+    # failed to restore during startup: ...") and may be reworded again.
+    assert "broken" in caplog.text, f"expected 'broken' in caplog: {caplog.text!r}"
+    assert (
+        "failed to restore" in caplog.text.lower()
+    ), f"expected 'failed to restore' in caplog: {caplog.text!r}"
     assert (
         "Startup restore complete: 1/2 conversation(s) pre-loaded to WARM tier"
         in caplog.text
