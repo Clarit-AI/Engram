@@ -2302,6 +2302,26 @@ class Scheduler(
             req.origin_input_ids = metadata.fill_ids  # keep as list for downstream code
             logger.info(f"Synced fill_ids after restore, len={len(metadata.fill_ids)}")
 
+            # Conv_id conflict resolution: state is authoritative for the conversation
+            # it belongs to. If req.conversation_id differs from effective_conv_id,
+            # log a warning and overwrite (mirrors Finding 5 fix in
+            # _maybe_hydrate_from_pending_restore for the symmetric pending path).
+            if (
+                getattr(req, "conversation_id", None)
+                and req.conversation_id != effective_conv_id
+            ):
+                logger.warning(
+                    "Live restore: req.conversation_id=%s differs from effective_conv_id=%s "
+                    "for rid=%s; overwriting req.conversation_id with effective_conv_id "
+                    "(state is authoritative for the conversation it belongs to)",
+                    req.conversation_id,
+                    effective_conv_id,
+                    recv_req.rid,
+                )
+                req.conversation_id = effective_conv_id
+            elif not getattr(req, "conversation_id", None):
+                req.conversation_id = effective_conv_id
+
             # Reset health baselines after restore to avoid false anomalies
             if self.state_health_monitor is not None:
                 self.state_health_monitor.reset_baseline(effective_conv_id)
