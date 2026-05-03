@@ -86,7 +86,7 @@ SERVER_PID=$!
 WAITED=0
 MAX_WAIT=300
 while [ $WAITED -lt $MAX_WAIT ]; do
-    if curl -s "http://localhost:$PORT/health" | grep -q "ok" 2>/dev/null; then
+    if [ "$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PORT/health")" = "200" ]; then
         break
     fi
     sleep 5
@@ -128,7 +128,7 @@ else
     log_info "Test 3: Snapshot save/restore roundtrip..."
 
     # Establish context with a fact
-    CONV_ID="validate-sync-$(date +%s)"
+    RID="validate-sync-$(date +%s)-$$"
     curl -s "http://localhost:$PORT/v1/chat/completions" \
         -H "Content-Type: application/json" \
         -d '{
@@ -136,13 +136,13 @@ else
             "messages": [{"role": "user", "content": "Remember this: the secret code is DELTA-7. Acknowledge."}],
             "max_tokens": 50,
             "temperature": 0,
-            "conversation_id": "'"$CONV_ID"'"
+            "rid": "'"$RID"'"
         }' > "$LOG_DIR/establish.json" 2>&1
 
     # Save snapshot
-    SAVE_RESPONSE=$(curl -s "http://localhost:$PORT/snapshot/save" \
+    SAVE_RESPONSE=$(curl -s "http://localhost:$PORT/save_snapshot" \
         -H "Content-Type: application/json" \
-        -d '{"conversation_id": "'"$CONV_ID"'"}')
+        -d '{"rid": "'"$RID"'"}')
 
     if echo "$SAVE_RESPONSE" | grep -qi "error"; then
         log_fail "Snapshot save failed: $SAVE_RESPONSE"
@@ -159,9 +159,9 @@ else
     log_info "Snapshot files on disk: $SNAP_COUNT"
 
     # Restore snapshot
-    RESTORE_RESPONSE=$(curl -s "http://localhost:$PORT/snapshot/restore" \
+    RESTORE_RESPONSE=$(curl -s "http://localhost:$PORT/restore_snapshot" \
         -H "Content-Type: application/json" \
-        -d '{"conversation_id": "'"$CONV_ID"'"}')
+        -d '{"rid": "'"$RID"'"}')
 
     if echo "$RESTORE_RESPONSE" | grep -qi "error"; then
         log_fail "Snapshot restore failed: $RESTORE_RESPONSE"
@@ -179,7 +179,7 @@ else
             "messages": [{"role": "user", "content": "What was the secret code I told you?"}],
             "max_tokens": 30,
             "temperature": 0,
-            "conversation_id": "'"$CONV_ID"'"
+            "rid": "'"$RID"'"
         }')
 
     RECALL_TEXT=$(echo "$RECALL_RESPONSE" | python -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" 2>/dev/null || echo "PARSE_ERROR")
