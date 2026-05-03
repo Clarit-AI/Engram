@@ -85,10 +85,12 @@ def _build_scheduler():
 
 
 def _make_state(value: float = 1.0):
+    """Build a (conv_states, temporal_states) pair filled with `value`."""
     return [torch.full((1, 2), value)], torch.full((1, 2), value + 1)
 
 
 def _make_req(rid: str, conversation_id=None, mamba_pool_idx=None):
+    """Build a minimal Req-shaped SimpleNamespace for hydration tests."""
     return SimpleNamespace(
         rid=rid,
         conversation_id=conversation_id,
