@@ -26,7 +26,9 @@ import time
 import uuid
 
 # --- END ENGRAM ---
-from collections import deque
+# --- END ENGRAM ---
+# --- BEGIN ENGRAM: pending restore registry ---
+from collections import OrderedDict, deque
 from contextlib import nullcontext
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -311,6 +313,31 @@ class EmbeddingBatchResult:
                 )
 
         self.copy_done.record()
+
+
+# --- BEGIN ENGRAM: pending restore registry entry + capacity ---
+PENDING_RESTORE_REGISTRY_MAX = 256
+
+
+@dataclass
+class PendingRestoreEntry:
+    """Loaded snapshot state staged for a future incoming request.
+
+    Populated by handle_restore_snapshot when the originating Req has already
+    completed, and consumed by _maybe_hydrate_from_pending_restore on the next
+    incoming Req with a matching rid (or conversation_id alias). The Mamba
+    state is held in CPU host tensors here and moved into a freshly allocated
+    pool slot at consumption time via inject_state_to_pool.
+    """
+
+    conv_states: List[torch.Tensor]
+    temporal_states: torch.Tensor
+    fill_ids: Optional[List[int]]
+    conversation_id: str
+    timestamp: float
+
+
+# --- END ENGRAM ---
 
 
 def validate_dflash_request(req: Req) -> Optional[str]:
@@ -1020,6 +1047,15 @@ class Scheduler(
         self.state_health_monitor = None
         self._health_check_counter = {}  # conversation_id → snapshot count
 
+        # Pending-restore registry: rid (and conversation_id alias) → loaded
+        # snapshot state staged for the next incoming request. Populated by
+        # handle_restore_snapshot when the originating Req has already finished;
+        # consumed by _maybe_hydrate_from_pending_restore during request
+        # creation. Bounded by PENDING_RESTORE_REGISTRY_MAX with LRU eviction.
+        self.pending_restore_registry: "OrderedDict[str, PendingRestoreEntry]" = (
+            OrderedDict()
+        )
+
         # Only initialize if snapshot persistence is enabled
         if not server_args.enable_snapshot_persistence:
             logger.info("Snapshot persistence disabled (standard mode)")
@@ -1339,6 +1375,7 @@ class Scheduler(
             tier_manager=self.tier_manager,
             restore_logger=logger,
         )
+
     # --- END ENGRAM: restore_snapshots_on_startup implementation ---
 
     def _find_request_by_rid(self, rid: str):
@@ -1362,6 +1399,188 @@ class Scheduler(
                 return req
 
         return None
+
+    def _load_snapshot_for_pending_restore(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int],
+        branch_name: Optional[str],
+    ):
+        """Load a snapshot for staging into the pending-restore registry.
+
+        Prefers the WARM tier when no specific turn or branch is requested
+        (latest state, host RAM, ~10-50ms). Falls back to disk for explicit
+        turn/branch selection or when the WARM tier has no entry. Returns
+        (conv_states, temporal_states, metadata) where metadata is a dict from
+        the WARM tier or a MambaSnapshotMetadata from disk, or None when no
+        snapshot is available.
+        """
+        if (
+            self.tier_manager is not None
+            and turn_number is None
+            and branch_name is None
+            and self.tier_manager.host_pool.has_state(conversation_id)
+        ):
+            warm = self.tier_manager.restore_from_warm_tier(conversation_id)
+            if warm is not None:
+                return warm
+
+        try:
+            return self.snapshot_manager.load_snapshot(
+                conversation_id, turn_number, branch_name
+            )
+        except (FileNotFoundError, ValueError):
+            return None
+
+    def _stage_pending_restore(
+        self,
+        rid: str,
+        conversation_id: str,
+        conv_states: List[torch.Tensor],
+        temporal_states: torch.Tensor,
+        fill_ids: Optional[List[int]],
+    ) -> None:
+        """Stash a loaded snapshot in the pending-restore registry.
+
+        Indexed by both rid and conversation_id so a follow-up request can hit
+        on either key. Bounded by PENDING_RESTORE_REGISTRY_MAX with LRU eviction
+        of the oldest entry when capacity is exceeded.
+        """
+        if getattr(self, "pending_restore_registry", None) is None:
+            return
+
+        entry = PendingRestoreEntry(
+            conv_states=conv_states,
+            temporal_states=temporal_states,
+            fill_ids=list(fill_ids) if fill_ids is not None else None,
+            conversation_id=conversation_id,
+            timestamp=time.time(),
+        )
+
+        keys = [rid]
+        if conversation_id and conversation_id != rid:
+            keys.append(conversation_id)
+
+        for key in keys:
+            if key in self.pending_restore_registry:
+                self.pending_restore_registry.pop(key)
+            self.pending_restore_registry[key] = entry
+
+        while len(self.pending_restore_registry) > PENDING_RESTORE_REGISTRY_MAX:
+            evicted_key, _ = self.pending_restore_registry.popitem(last=False)
+            logger.debug(
+                "pending-restore registry: evicted oldest entry key=%s "
+                "(capacity=%d)",
+                evicted_key,
+                PENDING_RESTORE_REGISTRY_MAX,
+            )
+
+    def _maybe_hydrate_from_pending_restore(self, req) -> bool:
+        """Attach restored Mamba state to ``req`` if its rid (or conversation_id)
+        has a staged entry in the pending-restore registry.
+
+        Allocates a fresh mamba_pool slot, injects the staged state into it,
+        and assigns ``req.mamba_pool_idx``. The new turn's tokens stay in
+        ``req.origin_input_ids`` unmodified — the SSM state in the pool slot
+        carries the prior conversation history, so prefill processes only the
+        new tokens on top of injected state.
+
+        Returns True when state was attached, False otherwise.
+        """
+        registry = getattr(self, "pending_restore_registry", None)
+        if not registry:
+            return False
+        if getattr(req, "mamba_pool_idx", None) is not None:
+            return False
+
+        rid = req.rid
+        conv_id = getattr(req, "conversation_id", None)
+
+        entry = registry.get(rid)
+        matched_key = rid if entry is not None else None
+        if entry is None and conv_id and conv_id != rid:
+            entry = registry.get(conv_id)
+            matched_key = conv_id if entry is not None else None
+        if entry is None:
+            return False
+
+        mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+        if mamba_pool is None:
+            logger.warning(
+                "pending-restore registry hit for rid=%s but mamba_pool "
+                "unavailable; skipping hydration",
+                rid,
+            )
+            return False
+
+        new_pool_idx = mamba_pool.alloc(1)
+        if new_pool_idx is None:
+            logger.warning(
+                "pending-restore registry hit for rid=%s but no free Mamba "
+                "pool slots; skipping hydration",
+                rid,
+            )
+            return False
+
+        new_pool_idx_0d = new_pool_idx[0]
+        new_pool_idx_scalar = new_pool_idx_0d.item()
+
+        try:
+            self.snapshot_manager.inject_state_to_pool(
+                entry.conv_states,
+                entry.temporal_states,
+                mamba_pool,
+                new_pool_idx_scalar,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to inject pending-restore state for rid=%s: %s",
+                rid,
+                e,
+                exc_info=True,
+            )
+            try:
+                mamba_pool.free(new_pool_idx)
+            except Exception as cleanup_error:
+                logger.error(
+                    "Failed to free mamba pool slot during pending-restore "
+                    "hydration cleanup: %s",
+                    cleanup_error,
+                )
+            return False
+
+        req.mamba_pool_idx = new_pool_idx_0d
+        if not getattr(req, "conversation_id", None):
+            req.conversation_id = entry.conversation_id
+
+        # Touch the registry entry to mark it most-recently-used. Entries stay
+        # after consumption so back-to-back requests with the same rid reuse
+        # the staged state without requiring another /restore_snapshot call.
+        if matched_key is not None and matched_key in registry:
+            registry.move_to_end(matched_key)
+        if (
+            entry.conversation_id
+            and entry.conversation_id != matched_key
+            and entry.conversation_id in registry
+        ):
+            registry.move_to_end(entry.conversation_id)
+
+        # Reset health baselines so anomaly detection treats restored state
+        # as a fresh starting point rather than a divergence from prior live
+        # state.
+        if self.state_health_monitor is not None:
+            self.state_health_monitor.reset_baseline(entry.conversation_id)
+            self._health_check_counter[entry.conversation_id] = 0
+
+        logger.info(
+            "pending-restore registry hit: hydrated rid=%s "
+            "(matched_key=%s, conv_id=%s, mamba_pool_idx=%d)",
+            rid,
+            matched_key,
+            entry.conversation_id,
+            new_pool_idx_scalar,
+        )
+        return True
 
     def handle_save_snapshot(self, recv_req):
         """Handle a manual snapshot save request from the Lang API.
@@ -1836,20 +2055,74 @@ class Scheduler(
             # Find the request by rid
             req = self._find_request_by_rid(recv_req.rid)
             if req is None:
-                # Request has already completed — check if snapshot exists for this rid.
-                # If it does, the state is available for future requests; report success.
-                snapshot_exists = (
-                    self.tier_manager is not None
-                    and self.tier_manager.host_pool.has_state(effective_conv_id)
-                ) or bool(self.snapshot_manager.get_latest_snapshot(effective_conv_id))
-                if snapshot_exists:
+                # Request has already completed. Load the snapshot and stage it
+                # in the pending-restore registry so the next incoming request
+                # with this rid (or conversation_id) hydrates from it.
+                loaded = self._load_snapshot_for_pending_restore(
+                    effective_conv_id, recv_req.turn_number, recv_req.branch_name
+                )
+                if loaded is None:
                     return RestoreSnapshotReqOutput(
-                        success=True,
-                        message=f"Snapshot state available for future requests (rid={recv_req.rid})",
-                        token_count=None,
+                        success=False,
+                        message=(
+                            f"Snapshot not found: conversation={effective_conv_id}, "
+                            f"turn={recv_req.turn_number}, "
+                            f"branch={recv_req.branch_name}"
+                        ),
                     )
+                conv_states_p, temporal_states_p, metadata_p = loaded
+
+                # Model compatibility check — same guard as the live-req path.
+                running_model = getattr(self.server_args, "model_path", None)
+                snap_model = (
+                    metadata_p.get("model_name")
+                    if isinstance(metadata_p, dict)
+                    else getattr(metadata_p, "model_name", None)
+                )
+                if running_model and snap_model and snap_model != running_model:
+                    return RestoreSnapshotReqOutput(
+                        success=False,
+                        message=(
+                            f"Model mismatch: snapshot from "
+                            f"'{snap_model}', server running '{running_model}'"
+                        ),
+                    )
+
+                fill_ids_p = (
+                    metadata_p.get("fill_ids")
+                    if isinstance(metadata_p, dict)
+                    else getattr(metadata_p, "fill_ids", None)
+                )
+                token_count_p = (
+                    metadata_p.get("token_count")
+                    if isinstance(metadata_p, dict)
+                    else getattr(metadata_p, "token_count", None)
+                )
+
+                self._stage_pending_restore(
+                    rid=recv_req.rid,
+                    conversation_id=effective_conv_id,
+                    conv_states=conv_states_p,
+                    temporal_states=temporal_states_p,
+                    fill_ids=fill_ids_p,
+                )
+
+                logger.info(
+                    "Snapshot staged for pending restore: "
+                    "conversation=%s, rid=%s, token_count=%s",
+                    effective_conv_id,
+                    recv_req.rid,
+                    token_count_p,
+                )
+
                 return RestoreSnapshotReqOutput(
-                    success=False, message=f"Request not found: {recv_req.rid}"
+                    success=True,
+                    message=(
+                        f"Snapshot staged for next request "
+                        f"(rid={recv_req.rid}, conversation_id={effective_conv_id})"
+                    ),
+                    token_count=token_count_p,
+                    rid=recv_req.rid,
                 )
 
             # Check that request is idle (not currently running)
@@ -3276,6 +3549,14 @@ class Scheduler(
                 self.init_req_max_new_tokens(req)
                 self._add_request_to_queue(req)
                 return
+
+        # --- BEGIN ENGRAM: pending-restore registry hydration ---
+        # If /restore_snapshot was called for this rid (or conversation_id) and
+        # the originating Req had already finished, the loaded state was staged
+        # in the pending-restore registry. Hydrate this fresh Req from that
+        # entry so the model sees the restored Mamba state at prefill.
+        self._maybe_hydrate_from_pending_restore(req)
+        # --- END ENGRAM ---
 
         # initialize before returning
         self.init_req_max_new_tokens(req)
