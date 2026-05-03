@@ -20,6 +20,8 @@ from sglang.srt.snapshot.mamba_host_pool import MambaHostPool
 from sglang.srt.snapshot.mamba_snapshot import (
     MambaSnapshotManager,
     MambaSnapshotMetadata,
+    SnapshotValidationError,
+    validate_state_tensors,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,6 +168,7 @@ class TierManager:
         conv_states: List[torch.Tensor],
         temporal_states: torch.Tensor,
         metadata: Optional[dict] = None,
+        validation_policy: str = "log_and_continue",
     ) -> bool:
         """
         Save state to Tier 2 (host RAM).
@@ -177,10 +180,32 @@ class TierManager:
             conv_states: Convolution state tensors
             temporal_states: Temporal state tensor
             metadata: Optional metadata
+            validation_policy: How to handle validation failure.
+                "log_and_continue" (default): log warning, reject save.
+                "raise": raise SnapshotValidationError.
 
         Returns:
             True if saved successfully
         """
+        # --- BEGIN ENGRAM: Tier 1 validation on warm-tier save ---
+        validation_result = validate_state_tensors(conv_states, temporal_states)
+        if not validation_result.is_valid:
+            error_detail = "; ".join(validation_result.errors)
+            if validation_policy == "raise":
+                raise SnapshotValidationError(
+                    f"Warm-tier save rejected for {conversation_id}: "
+                    f"{error_detail}"
+                )
+            logger.warning(
+                "Warm-tier save rejected (corrupted state) for %s: %s",
+                conversation_id,
+                error_detail,
+            )
+            return False
+        for w in validation_result.warnings:
+            logger.warning("State validation warning (warm-tier save): %s", w)
+        # --- END ENGRAM: Tier 1 validation on warm-tier save ---
+
         with self._lock:
             # Save to host pool
             success = self.host_pool.save_state(
