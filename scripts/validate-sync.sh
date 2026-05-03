@@ -76,7 +76,7 @@ python -m sglang.launch_server \
     --port "$PORT" \
     --enable-snapshot-persistence \
     --snapshot-dir "$SNAPSHOT_DIR" \
-    --snapshot-trigger-policy manual_only \
+    --snapshot-trigger-policy every_turn \
     --mem-fraction-static 0.80 \
     --disable-cuda-graph \
     > "$LOG_DIR/server.log" 2>&1 &
