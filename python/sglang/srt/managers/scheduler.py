@@ -1047,14 +1047,17 @@ class Scheduler(
         self.state_health_monitor = None
         self._health_check_counter = {}  # conversation_id → snapshot count
 
-        # Pending-restore registry: rid (and conversation_id alias) → loaded
-        # snapshot state staged for the next incoming request. Populated by
-        # handle_restore_snapshot when the originating Req has already finished;
-        # consumed by _maybe_hydrate_from_pending_restore during request
-        # creation. Bounded by PENDING_RESTORE_REGISTRY_MAX with LRU eviction.
+        # Pending-restore registry: canonical rid → loaded snapshot state staged
+        # for the next incoming request. Populated by handle_restore_snapshot when
+        # the originating Req has already finished; consumed by
+        # _maybe_hydrate_from_pending_restore during request creation. Bounded by
+        # PENDING_RESTORE_REGISTRY_MAX on logical (canonical) entries with LRU
+        # eviction. conversation_id aliases are tracked separately in
+        # pending_restore_aliases so replacement and eviction remain atomic.
         self.pending_restore_registry: "OrderedDict[str, PendingRestoreEntry]" = (
             OrderedDict()
         )
+        self.pending_restore_aliases: "Dict[str, str]" = {}  # alias → canonical rid
 
         # Only initialize if snapshot persistence is enabled
         if not server_args.enable_snapshot_persistence:
@@ -1442,13 +1445,28 @@ class Scheduler(
     ) -> None:
         """Stash a loaded snapshot in the pending-restore registry.
 
-        Indexed by both rid and conversation_id so a follow-up request can hit
-        on either key. Bounded by PENDING_RESTORE_REGISTRY_MAX with LRU eviction
-        of the oldest entry when capacity is exceeded.
+        Canonical OrderedDict keyed by rid, plus a separate alias map for
+        conversation_id → canonical rid. Bounded by PENDING_RESTORE_REGISTRY_MAX
+        on logical (canonical) entries with LRU eviction.
+
+        Aliases whose value collides with an existing canonical entry evict that
+        canonical first, ensuring one logical entry is never stored under
+        multiple keys.
         """
         if getattr(self, "pending_restore_registry", None) is None:
             return
 
+        canonical = rid
+
+        # Drop any old entry for this canonical key
+        if canonical in self.pending_restore_registry:
+            self.pending_restore_registry.pop(canonical)
+        # Drop any aliases that previously pointed at this canonical
+        for alias_key, target in list(self.pending_restore_aliases.items()):
+            if target == canonical:
+                del self.pending_restore_aliases[alias_key]
+
+        # Insert canonical
         entry = PendingRestoreEntry(
             conv_states=conv_states,
             temporal_states=temporal_states,
@@ -1456,26 +1474,33 @@ class Scheduler(
             conversation_id=conversation_id,
             timestamp=time.time(),
         )
+        self.pending_restore_registry[canonical] = entry
 
-        keys = [rid]
-        if conversation_id and conversation_id != rid:
-            keys.append(conversation_id)
+        # Map conversation_id alias if distinct from canonical
+        if conversation_id and conversation_id != canonical:
+            # If conv_id was previously a canonical key for a different entry,
+            # evict that entry first
+            if conversation_id in self.pending_restore_registry:
+                self.pending_restore_registry.pop(conversation_id)
+                for alias_key, target in list(self.pending_restore_aliases.items()):
+                    if target == conversation_id:
+                        del self.pending_restore_aliases[alias_key]
+            self.pending_restore_aliases[conversation_id] = canonical
 
-        for key in keys:
-            if key in self.pending_restore_registry:
-                self.pending_restore_registry.pop(key)
-            self.pending_restore_registry[key] = entry
-
+        # Eviction: bound applies to canonical (logical) entries
         while len(self.pending_restore_registry) > PENDING_RESTORE_REGISTRY_MAX:
-            evicted_key, _ = self.pending_restore_registry.popitem(last=False)
+            evicted_canonical, _ = self.pending_restore_registry.popitem(last=False)
+            for alias_key, target in list(self.pending_restore_aliases.items()):
+                if target == evicted_canonical:
+                    del self.pending_restore_aliases[alias_key]
             logger.debug(
-                "pending-restore registry: evicted oldest entry key=%s "
+                "pending-restore registry: evicted oldest canonical=%s "
                 "(capacity=%d)",
-                evicted_key,
+                evicted_canonical,
                 PENDING_RESTORE_REGISTRY_MAX,
             )
 
-    def _maybe_hydrate_from_pending_restore(self, req) -> bool:
+    def _maybe_hydrate_from_pending_restore(self, req) -> Optional[bool]:
         """Attach restored Mamba state to ``req`` if its rid (or conversation_id)
         has a staged entry in the pending-restore registry.
 
@@ -1485,39 +1510,47 @@ class Scheduler(
         carries the prior conversation history, so prefill processes only the
         new tokens on top of injected state.
 
-        Returns True when state was attached, False otherwise.
+        Returns:
+            None  — no staged entry for this rid/conv_id (true miss, normal flow)
+            True  — staged entry hydrated successfully
+            False — staged entry exists but could not be applied (pool unavailable,
+                    pool full, or inject_state_to_pool raised). Caller MUST surface
+                    this as an error and not proceed with the request, otherwise the
+                    client gets silent fresh-start behavior despite a successful
+                    /restore_snapshot.
         """
         registry = getattr(self, "pending_restore_registry", None)
         if not registry:
-            return False
+            return None
         if getattr(req, "mamba_pool_idx", None) is not None:
-            return False
+            return None
 
         rid = req.rid
         conv_id = getattr(req, "conversation_id", None)
 
-        entry = registry.get(rid)
-        matched_key = rid if entry is not None else None
-        if entry is None and conv_id and conv_id != rid:
-            entry = registry.get(conv_id)
-            matched_key = conv_id if entry is not None else None
-        if entry is None:
-            return False
+        # Lookup: canonical first, then resolve via alias
+        canonical = rid if rid in registry else None
+        if canonical is None and conv_id and conv_id != rid:
+            canonical = self.pending_restore_aliases.get(conv_id)
+        if canonical is None or canonical not in registry:
+            return None
+
+        entry = registry[canonical]
 
         mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
         if mamba_pool is None:
-            logger.warning(
+            logger.error(
                 "pending-restore registry hit for rid=%s but mamba_pool "
-                "unavailable; skipping hydration",
+                "unavailable; hydration will fail",
                 rid,
             )
             return False
 
         new_pool_idx = mamba_pool.alloc(1)
         if new_pool_idx is None:
-            logger.warning(
+            logger.error(
                 "pending-restore registry hit for rid=%s but no free Mamba "
-                "pool slots; skipping hydration",
+                "pool slots; hydration will fail",
                 rid,
             )
             return False
@@ -1553,17 +1586,10 @@ class Scheduler(
         if not getattr(req, "conversation_id", None):
             req.conversation_id = entry.conversation_id
 
-        # Touch the registry entry to mark it most-recently-used. Entries stay
-        # after consumption so back-to-back requests with the same rid reuse
-        # the staged state without requiring another /restore_snapshot call.
-        if matched_key is not None and matched_key in registry:
-            registry.move_to_end(matched_key)
-        if (
-            entry.conversation_id
-            and entry.conversation_id != matched_key
-            and entry.conversation_id in registry
-        ):
-            registry.move_to_end(entry.conversation_id)
+        # Touch the canonical entry to mark it most-recently-used.
+        # Entries stay after consumption so back-to-back requests with the
+        # same rid reuse the staged state without another /restore_snapshot.
+        registry.move_to_end(canonical)
 
         # Reset health baselines so anomaly detection treats restored state
         # as a fresh starting point rather than a divergence from prior live
@@ -1574,9 +1600,9 @@ class Scheduler(
 
         logger.info(
             "pending-restore registry hit: hydrated rid=%s "
-            "(matched_key=%s, conv_id=%s, mamba_pool_idx=%d)",
+            "(canonical=%s, conv_id=%s, mamba_pool_idx=%d)",
             rid,
-            matched_key,
+            canonical,
             entry.conversation_id,
             new_pool_idx_scalar,
         )
@@ -3555,7 +3581,22 @@ class Scheduler(
         # the originating Req had already finished, the loaded state was staged
         # in the pending-restore registry. Hydrate this fresh Req from that
         # entry so the model sees the restored Mamba state at prefill.
-        self._maybe_hydrate_from_pending_restore(req)
+        hydration_result = self._maybe_hydrate_from_pending_restore(req)
+        if hydration_result is False:
+            # Staged entry exists but could not be applied (pool unavailable,
+            # pool full, or inject_state_to_pool raised). Surface as a
+            # request-level error — the client successfully called
+            # /restore_snapshot and has a legitimate expectation that state is
+            # restored.
+            error_msg = (
+                f"Pending-restore hydration failed for rid={req.rid}: "
+                "snapshot was staged but could not be applied (pool exhaustion "
+                "or inject error). Check server logs and pool capacity."
+            )
+            req.set_finish_with_abort(error_msg)
+            self._add_request_to_queue(req)
+            return
+        # None or True: proceed normally
         # --- END ENGRAM ---
 
         # initialize before returning

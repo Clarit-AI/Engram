@@ -6,6 +6,10 @@ exercise the producer (_stage_pending_restore), capacity bound + LRU eviction,
 key aliasing (rid + conversation_id), and the consumer hydration semantics
 (_maybe_hydrate_from_pending_restore) including pool allocation and Req-state
 mutation.
+
+The registry uses a canonical OrderedDict (rid → entry) plus a separate alias
+map (conv_id → canonical rid). Tests validate that replacement, eviction, and
+lookup are atomic across all keys mapping to a given logical entry.
 """
 
 import os
@@ -60,10 +64,18 @@ class _FakeSnapshotManager:
         )
 
 
+class _FailingSnapshotManager:
+    """Raises RuntimeError on every inject_state_to_pool call."""
+
+    def inject_state_to_pool(self, conv_states, temporal_states, mamba_pool, idx):
+        raise RuntimeError("inject_state_to_pool failure")
+
+
 def _build_scheduler():
     """Build a bare Scheduler with only the fields the registry methods touch."""
     scheduler = Scheduler.__new__(Scheduler)
     scheduler.pending_restore_registry = OrderedDict()
+    scheduler.pending_restore_aliases = {}
     scheduler.snapshot_manager = _FakeSnapshotManager()
     scheduler.state_health_monitor = None
     scheduler._health_check_counter = {}
@@ -85,7 +97,13 @@ def _make_req(rid: str, conversation_id=None, mamba_pool_idx=None):
     )
 
 
+# ---------------------------------------------------------------------------
+# Producer tests — _stage_pending_restore
+# ---------------------------------------------------------------------------
+
+
 def test_stage_indexes_by_rid_and_conversation_id():
+    """Canonical entry keyed by rid; conversation_id stored as alias."""
     scheduler, _ = _build_scheduler()
     conv_states, temporal_states = _make_state()
 
@@ -97,12 +115,11 @@ def test_stage_indexes_by_rid_and_conversation_id():
         fill_ids=[1, 2, 3],
     )
 
+    # Canonical entry is in the registry, not under the alias key
     assert "rid-A" in scheduler.pending_restore_registry
-    assert "conv-1" in scheduler.pending_restore_registry
-    assert (
-        scheduler.pending_restore_registry["rid-A"]
-        is scheduler.pending_restore_registry["conv-1"]
-    )
+    assert "conv-1" not in scheduler.pending_restore_registry
+    # Alias maps conv_id → canonical rid
+    assert scheduler.pending_restore_aliases["conv-1"] == "rid-A"
     assert scheduler.pending_restore_registry["rid-A"].fill_ids == [1, 2, 3]
 
 
@@ -119,6 +136,7 @@ def test_stage_when_rid_equals_conversation_id_uses_single_key():
     )
 
     assert list(scheduler.pending_restore_registry.keys()) == ["same-id"]
+    assert scheduler.pending_restore_aliases == {}
 
 
 def test_stage_evicts_oldest_when_over_capacity():
@@ -169,18 +187,129 @@ def test_stage_replaces_existing_entry_for_same_rid():
     assert torch.equal(entry.conv_states[0], conv_states_new[0])
 
 
+# ---------------------------------------------------------------------------
+# Finding 1 tests — multi-key replacement, cross-rid replacement, eviction
+# ---------------------------------------------------------------------------
+
+
+def test_multi_key_replacement_same_rid_different_conv():
+    """Stage rid-A/conv-1 then rid-A/conv-2: old alias is gone, new entry
+    reachable via both rid-A and conv-2."""
+    scheduler, _ = _build_scheduler()
+    cs1, ts1 = _make_state(1.0)
+    cs2, ts2 = _make_state(2.0)
+
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-1",
+        conv_states=cs1,
+        temporal_states=ts1,
+        fill_ids=[1],
+    )
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-2",
+        conv_states=cs2,
+        temporal_states=ts2,
+        fill_ids=[2],
+    )
+
+    # Old alias conv-1 must be gone
+    assert "conv-1" not in scheduler.pending_restore_aliases
+    assert "conv-1" not in scheduler.pending_restore_registry
+    # New alias conv-2 points to canonical rid-A
+    assert scheduler.pending_restore_aliases["conv-2"] == "rid-A"
+    # Canonical entry holds the new data
+    assert scheduler.pending_restore_registry["rid-A"].fill_ids == [2]
+    assert torch.equal(
+        scheduler.pending_restore_registry["rid-A"].conv_states[0], cs2[0]
+    )
+
+
+def test_cross_rid_same_conv_replacement():
+    """Stage rid-A/conv-1 then rid-B/conv-1: rid-A removed, rid-B and conv-1
+    both resolve to entry-2."""
+    scheduler, _ = _build_scheduler()
+    cs1, ts1 = _make_state(1.0)
+    cs2, ts2 = _make_state(2.0)
+
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-1",
+        conv_states=cs1,
+        temporal_states=ts1,
+        fill_ids=[1],
+    )
+    scheduler._stage_pending_restore(
+        rid="rid-B",
+        conversation_id="conv-1",
+        conv_states=cs2,
+        temporal_states=ts2,
+        fill_ids=[2],
+    )
+
+    # rid-A should be fully evicted (conv-1 collided as canonical with another entry)
+    assert "rid-A" not in scheduler.pending_restore_registry
+    # rid-B is the new canonical
+    assert "rid-B" in scheduler.pending_restore_registry
+    assert scheduler.pending_restore_registry["rid-B"].fill_ids == [2]
+    # conv-1 alias points to rid-B
+    assert scheduler.pending_restore_aliases.get("conv-1") == "rid-B"
+
+
+def test_multi_key_eviction_with_distinct_keys():
+    """Stage MAX+5 pairs all with conv != rid.
+    Assert canonical size == MAX and alias map contains only surviving aliases."""
+    scheduler, _ = _build_scheduler()
+    cs, ts = _make_state()
+    n = PENDING_RESTORE_REGISTRY_MAX + 5
+
+    for i in range(n):
+        scheduler._stage_pending_restore(
+            rid=f"rid-{i}",
+            conversation_id=f"conv-{i}",
+            conv_states=cs,
+            temporal_states=ts,
+            fill_ids=[i],
+        )
+
+    # Canonical size bounded to MAX
+    assert len(scheduler.pending_restore_registry) == PENDING_RESTORE_REGISTRY_MAX
+
+    # Oldest 5 canonicals evicted
+    for i in range(5):
+        assert f"rid-{i}" not in scheduler.pending_restore_registry
+        # Their aliases should also be gone
+        assert f"conv-{i}" not in scheduler.pending_restore_aliases
+
+    # Every alias in the map points to a surviving canonical
+    for alias, canonical in scheduler.pending_restore_aliases.items():
+        assert canonical in scheduler.pending_restore_registry
+
+    # Latest entry is present in both structures
+    assert f"rid-{n - 1}" in scheduler.pending_restore_registry
+    assert scheduler.pending_restore_aliases[f"conv-{n - 1}"] == f"rid-{n - 1}"
+
+
+# ---------------------------------------------------------------------------
+# Consumer tests — _maybe_hydrate_from_pending_restore
+# ---------------------------------------------------------------------------
+
+
 def test_hydrate_misses_when_registry_empty():
+    """Tri-state: true miss returns None."""
     scheduler, _ = _build_scheduler()
     req = _make_req("rid-missing")
 
     hit = scheduler._maybe_hydrate_from_pending_restore(req)
 
-    assert hit is False
+    assert hit is None
     assert req.mamba_pool_idx is None
     assert scheduler.snapshot_manager.injected == []
 
 
 def test_hydrate_hits_by_rid_and_attaches_pool_slot():
+    """Tri-state: successful hydration returns True."""
     scheduler, mamba_pool = _build_scheduler()
     conv_states, temporal_states = _make_state()
     scheduler._stage_pending_restore(
@@ -204,6 +333,7 @@ def test_hydrate_hits_by_rid_and_attaches_pool_slot():
 
 
 def test_hydrate_falls_back_to_conversation_id_when_rid_misses():
+    """Tri-state: alias resolution finds the canonical entry, returns True."""
     scheduler, _ = _build_scheduler()
     conv_states, temporal_states = _make_state()
     scheduler._stage_pending_restore(
@@ -213,7 +343,7 @@ def test_hydrate_falls_back_to_conversation_id_when_rid_misses():
         temporal_states=temporal_states,
         fill_ids=[1],
     )
-    # Different rid but same conversation_id
+    # Different rid but same conversation_id — resolves via alias
     req = _make_req("rid-different", conversation_id="conv-1")
 
     hit = scheduler._maybe_hydrate_from_pending_restore(req)
@@ -223,6 +353,7 @@ def test_hydrate_falls_back_to_conversation_id_when_rid_misses():
 
 
 def test_hydrate_skips_when_req_already_has_pool_slot():
+    """Tri-state: already-hydrated request returns None (true miss)."""
     scheduler, _ = _build_scheduler()
     conv_states, temporal_states = _make_state()
     scheduler._stage_pending_restore(
@@ -237,12 +368,13 @@ def test_hydrate_skips_when_req_already_has_pool_slot():
 
     hit = scheduler._maybe_hydrate_from_pending_restore(req)
 
-    assert hit is False
+    assert hit is None
     assert req.mamba_pool_idx is existing_idx
     assert scheduler.snapshot_manager.injected == []
 
 
 def test_hydrate_returns_false_when_pool_exhausted():
+    """Tri-state: staged entry, pool full, returns False, no pool slot leaked."""
     scheduler, mamba_pool = _build_scheduler()
     mamba_pool._next = mamba_pool._capacity  # full
     conv_states, temporal_states = _make_state()
@@ -262,6 +394,7 @@ def test_hydrate_returns_false_when_pool_exhausted():
 
 
 def test_hydrate_consumption_keeps_entry_for_back_to_back_requests():
+    """Tri-state: back-to-back hydration returns True each time, fresh slots."""
     scheduler, _ = _build_scheduler()
     conv_states, temporal_states = _make_state()
     scheduler._stage_pending_restore(
@@ -280,6 +413,90 @@ def test_hydrate_consumption_keeps_entry_for_back_to_back_requests():
     assert scheduler._maybe_hydrate_from_pending_restore(req2) is True
     assert req1.mamba_pool_idx.item() != req2.mamba_pool_idx.item()
     assert len(scheduler.snapshot_manager.injected) == 2
+
+
+# ---------------------------------------------------------------------------
+# Finding 2 tests — tri-state hydration (true miss, success, exhausted, error)
+# ---------------------------------------------------------------------------
+
+
+def test_tri_state_true_miss_empty_registry():
+    """Empty registry returns None (true miss)."""
+    scheduler, _ = _build_scheduler()
+    req = _make_req("rid-absent")
+
+    result = scheduler._maybe_hydrate_from_pending_restore(req)
+
+    assert result is None
+
+
+def test_tri_state_success_returns_true():
+    """Staged entry with available pool returns True and allocates slot."""
+    scheduler, _ = _build_scheduler()
+    cs, ts = _make_state()
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-1",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[1],
+    )
+    req = _make_req("rid-A")
+
+    result = scheduler._maybe_hydrate_from_pending_restore(req)
+
+    assert result is True
+    assert req.mamba_pool_idx is not None
+    assert len(scheduler.snapshot_manager.injected) == 1
+
+
+def test_tri_state_pool_exhausted_returns_false_no_leak():
+    """Pool full: returns False, no slot was allocated (so nothing to leak)."""
+    scheduler, mamba_pool = _build_scheduler()
+    mamba_pool._next = mamba_pool._capacity  # pool already full
+    cs, ts = _make_state()
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="rid-A",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[1],
+    )
+    req = _make_req("rid-A")
+
+    result = scheduler._maybe_hydrate_from_pending_restore(req)
+
+    assert result is False
+    assert req.mamba_pool_idx is None
+    # alloc() returned None, so no inject was attempted
+    assert scheduler.snapshot_manager.injected == []
+
+
+def test_tri_state_inject_error_returns_false_and_frees_slot():
+    """inject_state_to_pool raises: returns False, allocated pool slot freed."""
+    scheduler, mamba_pool = _build_scheduler()
+    scheduler.snapshot_manager = _FailingSnapshotManager()
+    cs, ts = _make_state()
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="rid-A",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[1],
+    )
+    req = _make_req("rid-A")
+
+    result = scheduler._maybe_hydrate_from_pending_restore(req)
+
+    assert result is False
+    assert req.mamba_pool_idx is None
+    # The allocated slot (idx 0) should have been freed during cleanup
+    assert len(mamba_pool._freed) == 1
+
+
+# ---------------------------------------------------------------------------
+# Dataclass sanity
+# ---------------------------------------------------------------------------
 
 
 def test_pending_restore_entry_dataclass_fields():
