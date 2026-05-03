@@ -292,6 +292,125 @@ def test_multi_key_eviction_with_distinct_keys():
 
 
 # ---------------------------------------------------------------------------
+# Finding 3 + Case B tests — alias remap evicts old canonical
+# ---------------------------------------------------------------------------
+
+
+def test_stage_evicts_old_canonical_when_alias_remapped():
+    """Finding 3: staging rid-B/conv-1 after rid-A/conv-1 evicts rid-A
+    and all its aliases. The old canonical must not remain reachable."""
+    scheduler, _ = _build_scheduler()
+    cs1, ts1 = _make_state(1.0)
+    cs2, ts2 = _make_state(2.0)
+
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-1",
+        conv_states=cs1,
+        temporal_states=ts1,
+        fill_ids=[1],
+    )
+    scheduler._stage_pending_restore(
+        rid="rid-B",
+        conversation_id="conv-1",
+        conv_states=cs2,
+        temporal_states=ts2,
+        fill_ids=[2],
+    )
+
+    # Old canonical rid-A must be gone — alias was remapped
+    assert "rid-A" not in scheduler.pending_restore_registry
+    # No leftover alias for rid-A
+    assert "rid-A" not in scheduler.pending_restore_aliases
+    # conv-1 alias now points at rid-B
+    assert scheduler.pending_restore_aliases.get("conv-1") == "rid-B"
+    # Only one canonical entry remains
+    assert len(scheduler.pending_restore_registry) == 1
+    assert scheduler.pending_restore_registry["rid-B"].fill_ids == [2]
+
+
+def test_stage_evicts_old_canonical_when_rid_was_previously_alias():
+    """Case B: staging rid-R/conv-X after rid-P/conv-R evicts rid-P.
+    rid-R was previously an alias for rid-P; after staging as canonical
+    there must be no orphan alias rid-R→rid-P remaining."""
+    scheduler, _ = _build_scheduler()
+    cs1, ts1 = _make_state(1.0)
+    cs2, ts2 = _make_state(2.0)
+
+    # First: rid-P is canonical, conv-R alias → rid-P (so rid-R is an alias)
+    scheduler._stage_pending_restore(
+        rid="rid-P",
+        conversation_id="conv-R",
+        conv_states=cs1,
+        temporal_states=ts1,
+        fill_ids=[1],
+    )
+    # Second: rid-R is now the new canonical with its own alias conv-X
+    scheduler._stage_pending_restore(
+        rid="rid-R",
+        conversation_id="conv-X",
+        conv_states=cs2,
+        temporal_states=ts2,
+        fill_ids=[2],
+    )
+
+    # Old canonical rid-P must be gone (rid-R was its alias, now promoted)
+    assert "rid-P" not in scheduler.pending_restore_registry
+    # No orphan alias rid-R→rid-P remains
+    assert "rid-R" not in scheduler.pending_restore_aliases
+    # The old alias conv-R from the rid-P entry must be gone too
+    assert "conv-R" not in scheduler.pending_restore_aliases
+    # Only rid-R canonical exists
+    assert len(scheduler.pending_restore_registry) == 1
+    assert scheduler.pending_restore_registry["rid-R"].fill_ids == [2]
+    # conv-X alias points to rid-R
+    assert scheduler.pending_restore_aliases.get("conv-X") == "rid-R"
+
+
+def test_orphan_alias_does_not_resurrect_on_eviction():
+    """Evict an entry whose alias was previously remapped.
+    Assert no stale alias resurrects the old canonical on subsequent hydration."""
+    scheduler, _ = _build_scheduler()
+    cs, ts = _make_state()
+
+    # Fill registry with MAX entries, each with distinct rid and conv_id
+    for i in range(PENDING_RESTORE_REGISTRY_MAX):
+        scheduler._stage_pending_restore(
+            rid=f"rid-{i}",
+            conversation_id=f"conv-{i}",
+            conv_states=cs,
+            temporal_states=ts,
+            fill_ids=[i],
+        )
+
+    # Remap an existing alias → new canonical (Finding 3 scenario)
+    # rid-0/conv-0 exists; stage rid-NEW/conv-0 to force remap
+    scheduler._stage_pending_restore(
+        rid="rid-NEW",
+        conversation_id="conv-0",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[999],
+    )
+
+    # Old canonical rid-0 must be gone
+    assert "rid-0" not in scheduler.pending_restore_registry
+    # conv-0 alias points at rid-NEW
+    assert scheduler.pending_restore_aliases.get("conv-0") == "rid-NEW"
+
+    # Hydration via old rid-0 must be a true miss (None), not resurrect stale state
+    req = _make_req("rid-0")
+    result = scheduler._maybe_hydrate_from_pending_restore(req)
+    assert result is None
+
+    # Hydration via alias conv-0 hits the new canonical rid-NEW
+    req2 = _make_req("rid-different", conversation_id="conv-0")
+    result2 = scheduler._maybe_hydrate_from_pending_restore(req2)
+    assert result2 is True
+    assert req2.mamba_pool_idx is not None
+
+
+# ---------------------------------------------------------------------------
 # Consumer tests — _maybe_hydrate_from_pending_restore
 # ---------------------------------------------------------------------------
 

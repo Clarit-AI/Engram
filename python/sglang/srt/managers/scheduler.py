@@ -1466,6 +1466,21 @@ class Scheduler(
             if target == canonical:
                 del self.pending_restore_aliases[alias_key]
 
+        # Case B: canonical (rid) was previously an alias for some other
+        # canonical. Evict that other canonical + all aliases targeting it
+        # so the new canonical insertion doesn't leave a stale entry
+        # reachable via direct rid lookup on that other canonical's key.
+        if canonical in self.pending_restore_aliases:
+            other_canonical = self.pending_restore_aliases[canonical]
+            if (
+                other_canonical != canonical
+                and other_canonical in self.pending_restore_registry
+            ):
+                self.pending_restore_registry.pop(other_canonical)
+            for alias_key, target in list(self.pending_restore_aliases.items()):
+                if target == other_canonical:
+                    del self.pending_restore_aliases[alias_key]
+
         # Insert canonical
         entry = PendingRestoreEntry(
             conv_states=conv_states,
@@ -1485,6 +1500,19 @@ class Scheduler(
                 for alias_key, target in list(self.pending_restore_aliases.items()):
                     if target == conversation_id:
                         del self.pending_restore_aliases[alias_key]
+
+            # Finding 3: conv_id was previously an alias for some other
+            # canonical. Evict that other canonical + all aliases targeting
+            # it so the stale entry isn't left reachable via direct rid
+            # lookup on that old canonical's key.
+            old_canonical = self.pending_restore_aliases.get(conversation_id)
+            if old_canonical is not None and old_canonical != canonical:
+                if old_canonical in self.pending_restore_registry:
+                    self.pending_restore_registry.pop(old_canonical)
+                for alias_key, target in list(self.pending_restore_aliases.items()):
+                    if target == old_canonical:
+                        del self.pending_restore_aliases[alias_key]
+
             self.pending_restore_aliases[conversation_id] = canonical
 
         # Eviction: bound applies to canonical (logical) entries
