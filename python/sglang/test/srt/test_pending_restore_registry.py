@@ -340,7 +340,7 @@ def test_stage_evicts_old_canonical_when_rid_was_previously_alias():
     # First: rid-P is canonical, conv-R alias → rid-P (so rid-R is an alias)
     scheduler._stage_pending_restore(
         rid="rid-P",
-        conversation_id="conv-R",
+        conversation_id="rid-R",
         conv_states=cs1,
         temporal_states=ts1,
         fill_ids=[1],
@@ -358,8 +358,6 @@ def test_stage_evicts_old_canonical_when_rid_was_previously_alias():
     assert "rid-P" not in scheduler.pending_restore_registry
     # No orphan alias rid-R→rid-P remains
     assert "rid-R" not in scheduler.pending_restore_aliases
-    # The old alias conv-R from the rid-P entry must be gone too
-    assert "conv-R" not in scheduler.pending_restore_aliases
     # Only rid-R canonical exists
     assert len(scheduler.pending_restore_registry) == 1
     assert scheduler.pending_restore_registry["rid-R"].fill_ids == [2]

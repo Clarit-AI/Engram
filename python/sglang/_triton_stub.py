@@ -221,6 +221,9 @@ def install() -> None:
     td = _make_mock("triton.tools.tensor_descriptor")
     tools.tensor_descriptor = td
 
+    # triton.compiler  (used by torch._inductor.runtime.triton_compat)
+    triton.compiler = _make_mock("triton.compiler")
+
     # triton.backends / triton.backends.compiler  (used by torch._inductor)
     backends = _make_mock("triton.backends")
     triton.backends = backends
