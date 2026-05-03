@@ -140,12 +140,20 @@ else
         }' > "$LOG_DIR/establish.json" 2>&1
 
     # Save snapshot
-    SAVE_RESPONSE=$(curl -s "http://localhost:$PORT/save_snapshot" \
+    SAVE_HTTP_CODE=$(curl -s -o "$LOG_DIR/save_response.json" -w "%{http_code}" \
+        "http://localhost:$PORT/save_snapshot" \
         -H "Content-Type: application/json" \
         -d '{"rid": "'"$RID"'"}')
+    SAVE_RESPONSE=$(cat "$LOG_DIR/save_response.json")
 
-    if echo "$SAVE_RESPONSE" | grep -qi "error"; then
-        log_fail "Snapshot save failed: $SAVE_RESPONSE"
+    if [ "$SAVE_HTTP_CODE" != "200" ]; then
+        log_fail "Snapshot save returned HTTP $SAVE_HTTP_CODE: $SAVE_RESPONSE"
+        cat "$LOG_DIR/server.log" | tail -50
+        exit 1
+    fi
+    if ! echo "$SAVE_RESPONSE" | python -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('success') is True else 1)" 2>/dev/null; then
+        log_fail "Snapshot save body missing success:true: $SAVE_RESPONSE"
+        cat "$LOG_DIR/server.log" | tail -50
         exit 1
     fi
     log_pass "Snapshot saved"
@@ -159,12 +167,20 @@ else
     log_info "Snapshot files on disk: $SNAP_COUNT"
 
     # Restore snapshot
-    RESTORE_RESPONSE=$(curl -s "http://localhost:$PORT/restore_snapshot" \
+    RESTORE_HTTP_CODE=$(curl -s -o "$LOG_DIR/restore_response.json" -w "%{http_code}" \
+        "http://localhost:$PORT/restore_snapshot" \
         -H "Content-Type: application/json" \
         -d '{"rid": "'"$RID"'"}')
+    RESTORE_RESPONSE=$(cat "$LOG_DIR/restore_response.json")
 
-    if echo "$RESTORE_RESPONSE" | grep -qi "error"; then
-        log_fail "Snapshot restore failed: $RESTORE_RESPONSE"
+    if [ "$RESTORE_HTTP_CODE" != "200" ]; then
+        log_fail "Snapshot restore returned HTTP $RESTORE_HTTP_CODE: $RESTORE_RESPONSE"
+        cat "$LOG_DIR/server.log" | tail -50
+        exit 1
+    fi
+    if ! echo "$RESTORE_RESPONSE" | python -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('success') is True else 1)" 2>/dev/null; then
+        log_fail "Snapshot restore body missing success:true: $RESTORE_RESPONSE"
+        cat "$LOG_DIR/server.log" | tail -50
         exit 1
     fi
     log_pass "Snapshot restored"

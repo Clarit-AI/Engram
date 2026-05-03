@@ -342,4 +342,4 @@ The following are not fork-differentiated and accept upstream changes verbatim:
 (Net change from prior baseline: 69 → 70 = +2 added — pool_configurator + hf_transformers/common.py — minus 1 removed — Server Args SSL dedup.)
 
 ### Per-file verification
-Run `grep -c "BEGIN ENGRAM" <filepath>` on any file listed above to verify.
+Run `grep -F -c -- "BEGIN ENGRAM" <filepath>` on any file listed above to verify.
