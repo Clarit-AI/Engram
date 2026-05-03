@@ -1528,6 +1528,31 @@ class Scheduler(
                 PENDING_RESTORE_REGISTRY_MAX,
             )
 
+    def _clear_pending_restore(self, rid: str, conversation_id: Optional[str]) -> None:
+        """Remove any pending-restore entry for (rid, conversation_id).
+
+        Called after a live /restore_snapshot succeeds (path-B-with-live-req) to
+        prevent _maybe_hydrate_from_pending_restore from later resurrecting stale
+        state for a follow-up request with the same rid or conv_id.
+        """
+        registry = getattr(self, "pending_restore_registry", None)
+        aliases = getattr(self, "pending_restore_aliases", None)
+        if not registry:
+            return
+
+        # Resolve canonical via rid first, then via conversation_id alias
+        canonical = rid if rid in registry else None
+        if canonical is None and conversation_id and aliases:
+            canonical = aliases.get(conversation_id)
+        if canonical is None or canonical not in registry:
+            return
+
+        del registry[canonical]
+        if aliases:
+            for alias_key, target in list(aliases.items()):
+                if target == canonical:
+                    del aliases[alias_key]
+
     def _maybe_hydrate_from_pending_restore(self, req) -> Optional[bool]:
         """Attach restored Mamba state to ``req`` if its rid (or conversation_id)
         has a staged entry in the pending-restore registry.
@@ -1558,6 +1583,7 @@ class Scheduler(
 
         # Lookup: canonical first, then resolve via alias
         canonical = rid if rid in registry else None
+        matched_via_rid = canonical is not None
         if canonical is None and conv_id and conv_id != rid:
             canonical = self.pending_restore_aliases.get(conv_id)
         if canonical is None or canonical not in registry:
@@ -1611,7 +1637,27 @@ class Scheduler(
             return False
 
         req.mamba_pool_idx = new_pool_idx_0d
-        if not getattr(req, "conversation_id", None):
+        # Assign or reconcile conversation_id from the hydrated entry.
+        # When the entry was matched via rid (not alias) and the request
+        # already carries a different conversation_id, the entry's is
+        # authoritative — state belongs to the conversation stored with it,
+        # not to whatever the request happened to carry.
+        if (
+            matched_via_rid
+            and getattr(req, "conversation_id", None)
+            and req.conversation_id != entry.conversation_id
+        ):
+            logger.warning(
+                "pending-restore hydration: req.conversation_id=%s differs from "
+                "entry.conversation_id=%s for rid=%s; overwriting "
+                "req.conversation_id with entry's (state is authoritative for "
+                "the conversation it belongs to)",
+                req.conversation_id,
+                entry.conversation_id,
+                rid,
+            )
+            req.conversation_id = entry.conversation_id
+        elif not getattr(req, "conversation_id", None):
             req.conversation_id = entry.conversation_id
 
         # Touch the canonical entry to mark it most-recently-used.
@@ -2244,6 +2290,10 @@ class Scheduler(
             self.snapshot_manager.inject_state_to_pool(
                 conv_states, temporal_states, mamba_pool, req.mamba_pool_idx
             )
+
+            # Clear any pending-restore entry so a follow-up request with the
+            # same rid doesn't hydrate from the now-stale staged entry.
+            self._clear_pending_restore(recv_req.rid, effective_conv_id)
 
             # Sync fill_ids from metadata to request
             req.fill_ids = torch.tensor(

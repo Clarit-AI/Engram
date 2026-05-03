@@ -612,6 +612,119 @@ def test_tri_state_inject_error_returns_false_and_frees_slot():
 
 
 # ---------------------------------------------------------------------------
+# Finding 4 tests — _clear_pending_restore
+# ---------------------------------------------------------------------------
+
+
+def test_clear_pending_restore_removes_canonical_and_aliases():
+    """Stage rid-A/conv-1, clear via rid, assert registry and aliases are empty."""
+    scheduler, _ = _build_scheduler()
+    cs, ts = _make_state()
+
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-1",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[1],
+    )
+
+    scheduler._clear_pending_restore(rid="rid-A", conversation_id="conv-1")
+
+    assert "rid-A" not in scheduler.pending_restore_registry
+    assert "conv-1" not in scheduler.pending_restore_aliases
+    assert len(scheduler.pending_restore_registry) == 0
+    assert len(scheduler.pending_restore_aliases) == 0
+
+
+def test_clear_pending_restore_resolves_via_alias():
+    """Stage rid-A/conv-1, clear via unmatched rid + alias conv-1; entry gone."""
+    scheduler, _ = _build_scheduler()
+    cs, ts = _make_state()
+
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-1",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[1],
+    )
+
+    scheduler._clear_pending_restore(rid="rid-other", conversation_id="conv-1")
+
+    assert "rid-A" not in scheduler.pending_restore_registry
+    assert "conv-1" not in scheduler.pending_restore_aliases
+    assert len(scheduler.pending_restore_registry) == 0
+
+
+def test_clear_pending_restore_no_op_on_miss():
+    """Empty registry: call raises no exception and leaves state unchanged."""
+    scheduler, _ = _build_scheduler()
+
+    scheduler._clear_pending_restore("rid-absent", "conv-absent")
+
+    assert len(scheduler.pending_restore_registry) == 0
+    assert len(scheduler.pending_restore_aliases) == 0
+
+
+# ---------------------------------------------------------------------------
+# Finding 5 tests — conv_id conflict resolution during hydration
+# ---------------------------------------------------------------------------
+
+
+def test_hydrate_warns_and_overwrites_on_conv_mismatch(caplog):
+    """stage rid-A/conv-X, hydrate with req.conversation_id=conv-Y.
+    Warning logged, req.conversation_id overwritten to conv-X, hydration ok."""
+    scheduler, _ = _build_scheduler()
+    cs, ts = _make_state()
+
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-X",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[1],
+    )
+
+    req = _make_req("rid-A", conversation_id="conv-Y")
+    import logging
+
+    caplog.set_level(logging.WARNING)
+
+    result = scheduler._maybe_hydrate_from_pending_restore(req)
+
+    assert result is True
+    assert req.conversation_id == "conv-X"
+    # Warning was emitted for the conflict
+    assert any(
+        "differs from" in record.message and "conv-Y" in record.message
+        for record in caplog.records
+    )
+
+
+def test_hydrate_alias_path_does_not_warn_on_conv_match():
+    """stage rid-A/conv-1, hydrate with different rid + matching conv_id=conv-1.
+    No warning needed — alias path by construction matches the correct entry."""
+    scheduler, _ = _build_scheduler()
+    cs, ts = _make_state()
+
+    scheduler._stage_pending_restore(
+        rid="rid-A",
+        conversation_id="conv-1",
+        conv_states=cs,
+        temporal_states=ts,
+        fill_ids=[1],
+    )
+
+    req = _make_req("rid-different", conversation_id="conv-1")
+    result = scheduler._maybe_hydrate_from_pending_restore(req)
+
+    assert result is True
+    assert req.conversation_id == "conv-1"
+    assert req.mamba_pool_idx is not None
+
+
+# ---------------------------------------------------------------------------
 # Dataclass sanity
 # ---------------------------------------------------------------------------
 
