@@ -361,9 +361,9 @@ def write_outputs(results_by_conv: dict[str, list[dict]], output_dir: str, mode:
         csv_tmp = f"/tmp/{stem}_summary.csv"
         with open(json_tmp, "w") as f:
             json.dump(summary, f, indent=2)
-        subprocess.run(["aws", "s3", "cp", json_tmp, json_path], check=True)
+        subprocess.run(["s3cmd", "put", json_tmp, json_path], check=True)
         _write_csv(flat_qa, csv_tmp)
-        subprocess.run(["aws", "s3", "cp", csv_tmp, csv_path], check=True)
+        subprocess.run(["s3cmd", "put", csv_tmp, csv_path], check=True)
     else:
         os.makedirs(output_dir, exist_ok=True)
         with open(json_path, "w") as f:
