@@ -15,8 +15,6 @@
 
 """Inference-only NemotronH model."""
 
-# ENGRAM_MODIFIED — Mamba state hooks for Nemotron-H
-
 from collections.abc import Iterable
 from typing import Optional, Union
 

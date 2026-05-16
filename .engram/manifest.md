@@ -18,11 +18,11 @@
 
 | Category | Count |
 |----------|-------|
-| Modified files (M) | 79 |
+| Modified files (M) | 78 |
 | Added files (A) | 177 |
 | Deleted files (D) | 7 |
 | Renamed files (R) | 4 |
-| Total ENGRAM_MODIFIED headers | 87 |
+| Total ENGRAM_MODIFIED headers | 86 |
 | Total BEGIN/END ENGRAM blocks | 319 |
 
 **Block-count delta from prior baseline (322 → 319, net −3):** 2 upstream job removals in CI workflows (no longer present in upstream `pr-test-amd.yml` etc.) + 1 SSL-validation feature adoption by upstream (fork's `_handle_ssl_validation` block in `server_args.py` deduplicated against upstream's now-identical implementation). Structural moves (kv_cache_mixin → pool_configurator, hf_transformers_utils → hf_transformers/common.py) net to zero.
@@ -59,7 +59,6 @@ These are the files where upstream changes will most likely conflict with Engram
 | `python/sglang/srt/entrypoints/openai/serving_chat.py` | 1 | — | Snapshot passthrough in chat |
 | `python/sglang/srt/entrypoints/openai/serving_completions.py` | 1 | — | Snapshot passthrough in completions |
 | `python/sglang/srt/observability/req_time_stats.py` | 1 | — | Snapshot timing statistics |
-| `python/sglang/srt/models/nemotron_h.py` | 0 | — | Mamba state hooks for Nemotron-H |
 | `python/sglang/srt/utils/network.py` | 2 | — | Network utilities for snapshot system |
 | `python/sglang/srt/utils/common.py` | 2 | — | Snapshot utility functions |
 | `python/sglang/__init__.py` | 2 | — | Snapshot module import |
@@ -293,7 +292,7 @@ The following are not fork-differentiated and accept upstream changes verbatim:
 
 | Metric | Count | Scope |
 |--------|-------|-------|
-| ENGRAM_MODIFIED headers | 87 | repo-wide grep across `*.py *.yml *.yaml *.md *.json *.cfg *.sh` (excludes `node_modules .gitnexus .venv __pycache__ .git/`) |
+| ENGRAM_MODIFIED headers | 86 | repo-wide grep across `*.py *.yml *.yaml *.md *.json *.cfg *.sh` (excludes `node_modules .gitnexus .venv __pycache__ .git/ .remember/`) |
 | BEGIN/END ENGRAM blocks | 319 | broad scope (whole repo `*.py *.yml *.yaml`) |
 | Modified files without headers | 8 (all small/cosmetic: go.mod, go.sum, examples, etc.) | — |
 | Added files without headers | ~100+ (pure additions, no markers needed) | — |
@@ -335,7 +334,7 @@ The following are not fork-differentiated and accept upstream changes verbatim:
 | memory_pool | 1 |
 | .gitignore | 3 |
 | .pre-commit-config.yaml | 2 |
-| All others (~13 files) | 0 |
+| All others (~12 files) | 0 |
 
 **Grand total: 70 blocks** (42 high conflict + 28 other modified = 70 blocks in marked Python files; 319 total blocks across all file types per global grep)
 
