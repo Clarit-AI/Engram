@@ -974,13 +974,9 @@ class NemotronHForCausalLM(nn.Module):
                         continue
                     is_expert_weight = True
                     name_mapped = name.replace(weight_name, param_name)
-                    # --- BEGIN ENGRAM: removed upstream defensive guard ---
-                    # Upstream wraps the next line with:
-                    #     if name_mapped not in params_dict:
-                    #         continue
-                    # Engram fork removed it; rationale TBD (see PR body for follow-up).
+                    if name_mapped not in params_dict:
+                        continue
                     param = params_dict[name_mapped]
-                    # --- END ENGRAM ---
                     param.weight_loader(
                         param,
                         loaded_weight,
