@@ -1,6 +1,7 @@
 # ENGRAM_MODIFIED — Benchmark fork tweak
 import argparse
 import csv
+import logging
 
 # ENGRAM_CHANGED: Engram removes the unused os import from this benchmark harness.
 from functools import partial
@@ -9,7 +10,11 @@ from typing import List, Tuple
 import torch
 import triton
 from flashinfer import mm_fp4
+from flashinfer.autotuner import autotune
+from flashinfer.jit.core import logger as flashinfer_logger
 from flashinfer.testing import bench_gpu_time
+
+flashinfer_logger.setLevel(logging.ERROR)
 
 from sglang.jit_kernel.nvfp4 import cutlass_scaled_fp4_mm, scaled_fp4_quant
 from sglang.srt.utils import (
@@ -152,9 +157,9 @@ def _run_mm_fp4(a_fp4, b_fp4_T, a_sf, b_sf_T, alpha, dtype, res_fi, backend):
         x_log=False,
         line_arg="provider",
         line_vals=(
-            ["sglang_cutlass", "cutlass", "cudnn", "trtllm", "auto"]
+            ["sglang_cutlass", "cutlass", "cudnn", "trtllm", "cute-dsl", "auto"]
             if is_sm100_supported()
-            else ["sglang_cutlass", "cutlass", "cudnn", "auto"]
+            else ["sglang_cutlass", "cutlass", "cudnn", "cute-dsl", "auto"]
         ),
         line_names=(
             [
@@ -162,6 +167,7 @@ def _run_mm_fp4(a_fp4, b_fp4_T, a_sf, b_sf_T, alpha, dtype, res_fi, backend):
                 "flashinfer cutlass fp4",
                 "cudnn fp4",
                 "trtllm fp4",
+                "cute-dsl fp4",
                 "auto fp4 (cudnn/cutlass)",
             ]
             if is_sm100_supported()
@@ -169,6 +175,7 @@ def _run_mm_fp4(a_fp4, b_fp4_T, a_sf, b_sf_T, alpha, dtype, res_fi, backend):
                 "sglang cutlass fp4",
                 "flashinfer cutlass fp4",
                 "cudnn fp4",
+                "cute-dsl fp4",
                 "auto fp4",
             ]
         ),
@@ -178,6 +185,7 @@ def _run_mm_fp4(a_fp4, b_fp4_T, a_sf, b_sf_T, alpha, dtype, res_fi, backend):
                 ("orange", "solid"),
                 ("blue", "solid"),
                 ("green", "solid"),
+                ("brown", "solid"),
                 ("purple", "solid"),
             ]
             if is_sm100_supported()
@@ -185,6 +193,7 @@ def _run_mm_fp4(a_fp4, b_fp4_T, a_sf, b_sf_T, alpha, dtype, res_fi, backend):
                 ("red", "solid"),
                 ("orange", "solid"),
                 ("blue", "solid"),
+                ("brown", "solid"),
                 ("purple", "solid"),
             ]
         ),
@@ -226,6 +235,17 @@ def benchmark(batch_size, provider, N, K, dtype, correctness, csv_file):
             use_cuda_graph=True,
         )
     elif provider == "cutlass":
+        with autotune():
+            _run_mm_fp4(
+                a_fp4,
+                b_fp4_T,
+                a_scale_interleaved,
+                b_sf_T,
+                alpha,
+                dtype,
+                res_fi,
+                backend="cutlass",
+            )
         times_ms = bench_gpu_time(
             fn=partial(_run_mm_fp4, backend="cutlass"),
             input_args=(
@@ -240,6 +260,17 @@ def benchmark(batch_size, provider, N, K, dtype, correctness, csv_file):
             use_cuda_graph=True,
         )
     elif provider == "cudnn":
+        with autotune():
+            _run_mm_fp4(
+                a_fp4,
+                b_fp4_T,
+                a_scale_interleaved,
+                b_sf_T,
+                alpha,
+                dtype,
+                res_fi,
+                backend="cudnn",
+            )
         times_ms = bench_gpu_time(
             fn=partial(_run_mm_fp4, backend="cudnn"),
             input_args=(
@@ -256,12 +287,59 @@ def benchmark(batch_size, provider, N, K, dtype, correctness, csv_file):
     elif provider == "trtllm":
         a_sf_u8 = a_scale_interleaved.to(torch.uint8)
         b_sf_u8_T = b_sf_T.to(torch.uint8)
+        with autotune():
+            _run_mm_fp4(
+                a_fp4,
+                b_fp4_T,
+                a_sf_u8,
+                b_sf_u8_T,
+                alpha,
+                dtype,
+                res_fi,
+                backend="trtllm",
+            )
         times_ms = bench_gpu_time(
             fn=partial(_run_mm_fp4, backend="trtllm"),
             input_args=(a_fp4, b_fp4_T, a_sf_u8, b_sf_u8_T, alpha, dtype, res_fi),
             use_cuda_graph=True,
         )
+    elif provider == "cute-dsl":
+        with autotune():
+            _run_mm_fp4(
+                a_fp4,
+                b_fp4_T,
+                a_scale_interleaved,
+                b_sf_T,
+                alpha,
+                dtype,
+                res_fi,
+                backend="cute-dsl",
+            )
+        times_ms = bench_gpu_time(
+            fn=partial(_run_mm_fp4, backend="cute-dsl"),
+            input_args=(
+                a_fp4,
+                b_fp4_T,
+                a_scale_interleaved,
+                b_sf_T,
+                alpha,
+                dtype,
+                res_fi,
+            ),
+            use_cuda_graph=True,
+        )
     elif provider == "auto":
+        with autotune():
+            _run_mm_fp4(
+                a_fp4,
+                b_fp4_T,
+                a_scale_interleaved,
+                b_sf_T,
+                alpha,
+                dtype,
+                res_fi,
+                backend="auto",
+            )
         times_ms = bench_gpu_time(
             fn=partial(_run_mm_fp4, backend="auto"),
             input_args=(

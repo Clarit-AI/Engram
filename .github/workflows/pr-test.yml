@@ -1,4 +1,14 @@
-# ENGRAM_MODIFIED — CI guard: job disabled on fork (upstream-only)
+# ENGRAM_MODIFIED — FORK CI ARCHITECTURE
+# Engram maintains its own stage-* dispatch system in this file:
+#   - target_stage / pr_head_sha / include_wheel_build workflow_dispatch inputs
+#   - wait-for-stage-a / wait-for-stage-b orchestration jobs
+#   - inline stage-a/b/c-* test jobs with hardware-specific runner choices
+# Upstream factored equivalent test jobs into ./.github/workflows/_pr-test-stage.yml
+# (reusable workflow) and renamed jobs stage-* -> base-*. Adopting that refactor
+# requires a strategic CI architecture decision — DO NOT auto-resolve sync
+# conflicts here by accepting upstream's base-* rename or its reusable-workflow
+# call sites. See tracking issue (filed post-merge from sync 2026-05-15) before
+# touching the dispatch system, stage-* jobs, or test_parallel_dispatch logic.
 name: PR Test
 # Dynamic run-name for /rerun-stage commands to enable URL lookup
 # Format: "[stage-name] sha" for fork PRs, "[stage-name]" for non-fork, default for normal runs
@@ -11,16 +21,19 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      # --- BEGIN ENGRAM: fork-only dispatch inputs ---
       target_stage:
         description: "Specific stage to run (optional, for quick testing)"
         required: false
         type: string
         default: ""
+      # --- END ENGRAM ---
       force_continue_on_error:
         description: "Force continue-on-error (test scheduled CI behavior)"
         required: false
         type: boolean
         default: false
+      # --- BEGIN ENGRAM: fork-only dispatch inputs (rerun-stage support) ---
       pr_head_sha:
         description: "PR head SHA to checkout (for /rerun-stage on fork PRs)"
         required: false
@@ -31,6 +44,7 @@ on:
         required: false
         type: boolean
         default: false
+      # --- END ENGRAM ---
       test_parallel_dispatch:
         description: "Test parallel dispatch behavior (simulates scheduled run)"
         required: false

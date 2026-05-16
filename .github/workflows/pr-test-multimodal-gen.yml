@@ -1,4 +1,12 @@
-# ENGRAM_MODIFIED — fork guard: disable upstream-only CI
+# ENGRAM_MODIFIED — FORK CI ARCHITECTURE (paired with pr-test.yml)
+# This workflow is called by pr-test.yml's stage-* dispatch jobs and inherits
+# fork-specific inputs: b200_runner, pr_head_sha, target_stage.
+# Upstream restructured equivalent jobs to use runner_config + runs_on_map and
+# moved test bodies into ./.github/workflows/_pr-test-stage.yml. DO NOT
+# auto-resolve sync conflicts here by adopting upstream's input signature —
+# the call site in pr-test.yml's stage-* jobs depends on this contract.
+# See tracking issue (filed post-merge from sync 2026-05-15) before touching
+# the fork-only inputs or the dispatch routing logic.
 name: PR Test - Multimodal Gen
 
 on:
@@ -10,25 +18,31 @@ on:
       sgl_kernel:
         required: true
         type: string
+      # --- BEGIN ENGRAM: fork-only dispatch inputs ---
       b200_runner:
         required: true
         type: string
+      # --- END ENGRAM ---
       continue_on_error:
         required: false
         type: string
         default: 'false'
+      # --- BEGIN ENGRAM: fork-only dispatch inputs (rerun-stage support) ---
       pr_head_sha:
         required: false
         type: string
         default: ''
+      # --- END ENGRAM ---
       git_ref:
         required: false
         type: string
         default: ''
+      # --- BEGIN ENGRAM: fork-only dispatch inputs (stage selector) ---
       target_stage:
         required: false
         type: string
         default: ''
+      # --- END ENGRAM ---
       test_parallel_dispatch:
         required: false
         type: string
