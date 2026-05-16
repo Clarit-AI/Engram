@@ -2493,7 +2493,6 @@ def _setup_and_run_http_server(
                     ssl_ca_certs=server_args.ssl_ca_certs,
                     ssl_keyfile_password=server_args.ssl_keyfile_password,
                 )
-        # --- END ENGRAM ---
         else:
             # Multiple tokenizer and http processes
             from uvicorn.config import LOGGING_CONFIG
