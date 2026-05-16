@@ -15,8 +15,6 @@
 
 """Inference-only NemotronH model."""
 
-# ENGRAM_MODIFIED — Mamba state hooks for Nemotron-H
-
 from collections.abc import Iterable
 from typing import Optional, Union
 
@@ -974,6 +972,8 @@ class NemotronHForCausalLM(nn.Module):
                         continue
                     is_expert_weight = True
                     name_mapped = name.replace(weight_name, param_name)
+                    if name_mapped not in params_dict:
+                        continue
                     param = params_dict[name_mapped]
                     param.weight_loader(
                         param,
