@@ -124,7 +124,7 @@ Per the no-local-test rule in effect across the sync workstream:
 
 - **Per commit:** `python -m py_compile` on every touched `.py` file. ENGRAM block balance check on every touched file (BEGIN count == END count). `scripts/policy/check_protected_paths.py` invocation if any protected paths are touched.
 - **End of port (pre-PR):** Full-repo block balance check. Full-repo `python -m py_compile` smoke (catch import cycles introduced by new fork files). `engram-markers --strict` if such a tool exists; otherwise `grep -c` based check.
-- **PR review gate:** Same draft-PR pattern as PR #71. Pytest remains env-blocked locally; CI runs the full suite on push. PR description must enumerate the 13–15 commits with their target files and surface explicit attention to the open-question resolutions in Phase D.
+- **PR review gate:** Same draft-PR pattern as PR #71. Pytest remains env-blocked locally; CI runs the full suite on push. PR description must enumerate the 13–16 commits with their target files and surface explicit attention to the open-question resolutions in Phase D.
 - **Post-merge (H200):** Re-run KHA-360 diagnostic harness (already scaffolded on `feat/kha-360-diagnostic-harness`) against the ported tree before the next upstream sync attempts. Snapshot save/restore is the load-bearing fork capability; if any of M2, M3, S7, S8, S12, or S13/S14 was re-homed incorrectly, the diagnostic surfaces it. **Confirm KHA-360 harness readiness before Phase A starts; flag any gaps as a blocking parallel workstream.**
 
 ### Rollback strategy
