@@ -88,8 +88,7 @@ Order minimizes cross-commit churn and front-loads the lowest-uncertainty work.
 
 1. Port M1 (diffusion LLM batch result processing) → `batch_result_processor.py`.
 2. Port M2 (snapshot finished-request state) → `batch_result_processor.py`.
-3. Port M3 (restore_snapshot output routing) → target TBD during execution (BRP or output_streamer).
-4. Delete `scheduler_output_processor_mixin.py`.
+3. Port M3 (restore_snapshot output routing) → `batch_result_processor.py`, and delete `scheduler_output_processor_mixin.py` in the same commit (the file's last remaining block). (Deletion bundles with M3's port since M3 is the file's last block.) If execution reveals M3 belongs in `output_streamer.py` instead of BRP, port it there instead — the BRP-vs-output_streamer read happens here, in Phase A.
 
 **Phase B — Module-level fork helpers (1 commit).** Pure extraction, no upstream conflict surface.
 
@@ -101,13 +100,13 @@ Order minimizes cross-commit churn and front-loads the lowest-uncertainty work.
 6b. Extract S8 (snapshot RPC handlers: save/list/info/restore/eviction) into `scheduler_snapshot_handlers.py`. ~1100 lines.
 7. Extract S9 (agent tool framework) into `scheduler_agent_system.py`. ~70 lines.
 
-**Phase D — Component-class re-homing (5–8 commits, depending on open-question resolution).**
+**Phase D — Component-class re-homing (4–7 commits, depending on open-question resolution).**
 
 8. Port S13 (auto-snapshot trigger) → `batch_result_processor.py`.
 9. Port S14 (post-forward snapshot hook) → `batch_result_processor.py`.
 10. Port S5 (metrics config) → `metrics_reporter.py`.
-11. Resolve open questions for S10, S11, S12 by reading `request_receiver.py`. Port each to its determined home — likely all three to `request_receiver.py`, possibly bundled into one commit since they're a tight call-site cluster.
-12. (Optional) Resolve open question for M3 — if it should be in `output_streamer.py` rather than BRP, port now.
+11. Resolve open questions for S10, S11, S12 by reading `request_receiver.py`. Port each to its determined home — likely all three to `request_receiver.py`, bundled into one commit since they're a tight call-site cluster; up to 3 commits if the read shows they split.
+12. (Contingent) If Phase A determined M3 belongs in `output_streamer.py` but couldn't fully relocate it without the Phase D request-path context, complete the relocation here. No-op if M3's Phase A home was correct.
 
 **Phase E — Scheduler.__init__ wiring (1 commit).** Update `Scheduler` to instantiate the new fork subsystems alongside upstream's component instantiations.
 
@@ -117,7 +116,7 @@ Order minimizes cross-commit churn and front-loads the lowest-uncertainty work.
 
 14. Fix L29 orphan END + L30 unclosed BEGIN. Re-scope L30 to wrap only `OrderedDict`. Verify global block balance.
 
-**Total: 14–16 commits.** Each commit is independently AST-parseable and block-balanced. CI gates per commit: `python -m py_compile` on touched files + `scripts/policy/check_protected_paths.py` invocation + `engram-markers` block balance check (need to extract from existing tooling; if not standalone, run on the full repo).
+**Total: 13–16 commits.** Each commit is independently AST-parseable and block-balanced. CI gates per commit: `python -m py_compile` on touched files + `scripts/policy/check_protected_paths.py` invocation + `engram-markers` block balance check (need to extract from existing tooling; if not standalone, run on the full repo).
 
 ## 6. Validation strategy
 
@@ -153,7 +152,7 @@ Enables overseer review without re-reading the full diff at each checkpoint.
 
 ### Remaining open questions
 
-1. **M3 target ambiguity.** "restore_snapshot stateful-generate output routing" could live in `batch_result_processor.py` (if it's a result-finalization hook) or `output_streamer.py` (if it's a per-token dispatch hook). Decided during Phase A by reading both upstream files. Worst case: the hook genuinely spans both, requires splitting into two ports.
+1. **M3 target ambiguity.** "restore_snapshot stateful-generate output routing" could live in `batch_result_processor.py` (if it's a result-finalization hook) or `output_streamer.py` (if it's a per-token dispatch hook). Decided during Phase A by reading both upstream files. Worst case: the hook genuinely spans both, requires splitting into two ports. **Resolution: first port attempted in Phase A to BRP; relocation to `output_streamer.py` is a contingent Phase D step (§5 step 12) if the Phase A read shows it's a per-token dispatch hook.**
 2. **S10/S11/S12 target ambiguity.** Three blocks all sit in the same call-site cluster (request ingress / req-creation path). Whether they relocate to `request_receiver.py` or stay on `Scheduler` depends on how thinly `request_receiver.py` was carved out. Decided during Phase D by reading `request_receiver.py`.
 3. **Risk: KV-cache builder relocation.** `init_cache_with_memory_pool` → `build_kv_cache` may have moved fork-relevant initialization off the Scheduler that we expected to be there. Not directly an ENGRAM-block port, but the snapshot system's interaction with the cache surface is load-bearing. Audit during Phase C.
 4. **Risk: `EmbeddingBatchResult` relocation.** Upstream moved this dataclass out of `scheduler.py` (PR #25638). Our `PendingRestoreEntry` lives adjacent in the current scheduler.py. Confirm during Phase B that the new location upstream chose for `EmbeddingBatchResult` is compatible with also housing `PendingRestoreEntry`, OR keep them in separate fork-only files (the resolved Q4 marker policy means a fork-only file is cheap to add).
