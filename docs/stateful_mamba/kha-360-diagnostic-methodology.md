@@ -44,13 +44,20 @@ demonstrating recall and the whole investigation needs a different
 target.”* In that case, the next step is to design a hybrid-friendly recall
 test surface form before retrying.
 
-### Phase 2 — KV-restoration probe (only if Phase 1 passed)
+### Phase 2 — restore + question-only chat-prefill probe (only if Phase 1 passed)
 
 Establishes the fact in turn 1, saves the snapshot, restores the snapshot,
 and asks the recall question in a **separate** turn 2 with the fact absent
-from the current prompt. If a pure-Mamba2 control (Codestral) passes but
-the hybrid target fails under identical methodology, (B) is confirmed and
-attention-KV restoration becomes a required snapshot-system capability.
+from the current prompt.
+
+This phase is not a literal zero-prefill test. It restores the SSM state,
+then prefills the new recall-question tokens through `/v1/chat/completions`
+on the same `rid`. It also does not exercise the older restore-and-generate
+API shape that uses `create_new_request=true` plus `continuation_ids`.
+
+If a pure-Mamba2 control (Codestral) passes but the hybrid target fails under
+identical methodology, (B) is confirmed and attention-KV restoration becomes a
+required snapshot-system capability for this chat-turn restore path.
 
 ## Target model
 
@@ -64,12 +71,17 @@ the "snapshot path works" reference. Run with `--control`.
 
 ## Verdict matrix
 
-| Baseline (target) | KV probe (control) | KV probe (target) | Verdict                                                                  |
-| ----------------- | ------------------ | ----------------- | ------------------------------------------------------------------------ |
-| FAIL              | n/a                | n/a               | Methodology redesign. Surface form dominates; pick a different test.     |
-| PASS              | PASS               | PASS              | SSM-only restore is sufficient on hybrid; original 4/5 was surface-form noise. Close KHA-360. |
-| PASS              | PASS               | FAIL              | **KV restoration gap CONFIRMED.** File implementation ticket for attention-KV snapshot support. |
-| PASS              | FAIL               | any               | Control regression — investigate snapshot path itself before drawing any hybrid conclusion. |
+| Baseline (target) | Chat-prefill probe (control) | Chat-prefill probe (target) | Verdict                                                                  |
+| ----------------- | ---------------------------- | --------------------------- | ------------------------------------------------------------------------ |
+| FAIL              | n/a                          | n/a                         | Methodology redesign. Surface form dominates; pick a different test.     |
+| PASS              | PASS                         | PASS                        | SSM-only restore is sufficient on this hybrid chat-turn path. |
+| PASS              | PASS                         | FAIL                        | Hybrid chat-turn recall likely needs attention-KV snapshot support. |
+| PASS              | FAIL                         | any                         | Control regression — investigate snapshot path itself before drawing any hybrid conclusion. |
+
+The script must separately assert structural save/restore success before
+classifying behavioral recall. A behavioral failure after successful restore is
+not the same finding as failed snapshot loading, a missed pending-restore
+registry hydration, or a restore API error.
 
 ## Cost envelope
 

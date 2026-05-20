@@ -8,7 +8,7 @@
 #       recall facts in the recall-question surface form even when the fact
 #       is in-context.
 #   (B) Attention KV restoration gap — the snapshot system restores SSM
-#       state but not attention KV; hybrid models need both.
+#       state but not attention KV; hybrid models may need both.
 #
 # Phase 1 (baseline) must run first. If baseline fails, the chosen target
 # model cannot demonstrate recall under the test methodology and (B) cannot
@@ -38,6 +38,7 @@ CONTROL_MODEL="${CONTROL_MODEL:-mistralai/Codestral-Mamba-7B-v0.1}"
 PHASE="${PHASE:-all}"
 RUN_CONTROL=false
 PORT="${PORT:-30000}"
+SERVER_LOG="${SERVER_LOG:-}"
 RUN_DIR="$(mktemp -d /tmp/kha-360-XXXXXX)"
 REPORT_PATH="$RUN_DIR/report.md"
 
@@ -59,6 +60,48 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 log_pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $1"; }
 log_info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
+
+json_success_true() {
+    local path="$1"
+    python - "$path" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    data = json.load(f)
+sys.exit(0 if data.get("success") is True else 1)
+PY
+}
+
+json_message() {
+    local path="$1"
+    python - "$path" <<'PY' 2>/dev/null || true
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    data = json.load(f)
+print(data.get("message", ""))
+PY
+}
+
+append_server_evidence() {
+    local label="$1"
+    local rid="$2"
+
+    {
+        echo
+        echo "### Server evidence: $label"
+        echo
+        if [[ -n "$SERVER_LOG" && -f "$SERVER_LOG" ]]; then
+            echo '```'
+            grep -E "$rid|pending-restore registry hit|Injected state to pool idx|Snapshot staged for pending restore" "$SERVER_LOG" | tail -80 || true
+            echo '```'
+        else
+            echo "SERVER_LOG was not set or did not point to a readable file; classify hydration from server logs manually."
+        fi
+    } >> "$REPORT_PATH"
+}
 
 # --- Diagnostic prompts ---
 #
@@ -119,14 +162,18 @@ phase_baseline() {
 }
 
 # ============================================================================
-# PHASE 2 — KV-restoration probe (snapshot save/restore + recall in NEW turn)
+# PHASE 2 — restore + question-only chat-prefill probe
 # ============================================================================
 # Only run if baseline passed for this model. Establish fact via turn 1, save
-# snapshot, restore snapshot, ask recall question in a SEPARATE turn (no fact
-# in current prompt). For pure-Mamba2 models the SSM state alone should be
-# sufficient (control case). For hybrid models the SSM state is restored but
-# attention KV is not — if recall fails on hybrid but passes on control, (B)
-# is confirmed.
+# snapshot, restore snapshot in-place, then ask the recall question in a
+# SEPARATE chat turn. The fact is absent from the current prompt, but the
+# question itself is still prefilling through /v1/chat/completions on top of
+# the restored state. This is not the historical create_new_request +
+# continuation_ids restore-and-generate path.
+#
+# For pure-Mamba2 models the SSM state alone should be sufficient (control
+# case). For hybrid models the SSM state is restored but attention KV is not;
+# if recall fails on hybrid but passes on control, (B) is confirmed.
 #
 # Expected pass (control): response contains "$EXPECTED_TOKEN".
 # Expected fail (hybrid): refusal / hallucination → confirms KV gap.
@@ -148,16 +195,40 @@ phase_kv_probe() {
         }" > "$RUN_DIR/$label-establish.json"
 
     # Save snapshot
-    curl -s "http://localhost:$PORT/save_snapshot" \
+    local save_http_code
+    save_http_code=$(curl -s -o "$RUN_DIR/$label-save.json" -w "%{http_code}" \
+        "http://localhost:$PORT/save_snapshot" \
         -H "Content-Type: application/json" \
-        -d "{\"rid\": \"$rid\"}" > "$RUN_DIR/$label-save.json"
+        -d "{\"rid\": \"$rid\"}")
+
+    if [[ "$save_http_code" != "200" ]] || ! json_success_true "$RUN_DIR/$label-save.json"; then
+        log_fail "Snapshot save failed structurally for $label ($model): HTTP $save_http_code"
+        echo "KV_${label}_STRUCTURAL=save_failed" >> "$RUN_DIR/state.env"
+        echo "[$label] save response:" >> "$REPORT_PATH"
+        cat "$RUN_DIR/$label-save.json" >> "$REPORT_PATH"
+        return 4
+    fi
+    log_pass "Snapshot save succeeded for $label ($model)"
 
     # Restore snapshot
-    curl -s "http://localhost:$PORT/restore_snapshot" \
+    local restore_http_code
+    restore_http_code=$(curl -s -o "$RUN_DIR/$label-restore.json" -w "%{http_code}" \
+        "http://localhost:$PORT/restore_snapshot" \
         -H "Content-Type: application/json" \
-        -d "{\"rid\": \"$rid\"}" > "$RUN_DIR/$label-restore.json"
+        -d "{\"rid\": \"$rid\"}")
 
-    # Turn 2 — ask recall question only (fact NOT in current prompt)
+    if [[ "$restore_http_code" != "200" ]] || ! json_success_true "$RUN_DIR/$label-restore.json"; then
+        log_fail "Snapshot restore failed structurally for $label ($model): HTTP $restore_http_code"
+        echo "KV_${label}_STRUCTURAL=restore_failed" >> "$RUN_DIR/state.env"
+        echo "[$label] restore response:" >> "$REPORT_PATH"
+        cat "$RUN_DIR/$label-restore.json" >> "$REPORT_PATH"
+        return 4
+    fi
+    log_pass "Snapshot restore succeeded for $label ($model): $(json_message "$RUN_DIR/$label-restore.json")"
+    echo "KV_${label}_STRUCTURAL=restore_success_pending_hydration_check" >> "$RUN_DIR/state.env"
+
+    # Turn 2 — ask recall question only (fact NOT in current prompt). This
+    # request should consume the pending restore entry for the rid.
     local response
     response=$(curl -s "http://localhost:$PORT/v1/chat/completions" \
         -H "Content-Type: application/json" \
@@ -178,6 +249,8 @@ phase_kv_probe() {
         log_fail "KV probe recall FAILED for $label ($model)"
         echo "KV_${label}_PASS=0" >> "$RUN_DIR/state.env"
     fi
+
+    append_server_evidence "$label" "$rid"
 }
 
 # ============================================================================
@@ -203,14 +276,15 @@ write_report_header() {
 Target model: $TARGET_MODEL
 Control model: $CONTROL_MODEL (run=$RUN_CONTROL)
 Run dir: $RUN_DIR
+Server log: ${SERVER_LOG:-not provided}
 
 ## Verdict matrix
 
 | baseline | control kv | target kv | verdict |
 |----------|------------|-----------|---------|
 | FAIL     | n/a        | n/a       | Methodology redesign — model cannot recall in this surface form |
-| PASS     | PASS       | PASS      | SSM-only restore sufficient on hybrid — original failure was surface form |
-| PASS     | PASS       | FAIL      | **KV restoration gap CONFIRMED** — file attention-KV snapshot impl ticket |
+| PASS     | PASS       | PASS      | SSM-only restore sufficient for this hybrid chat-prefill path |
+| PASS     | PASS       | FAIL      | Hybrid recall likely needs attention-KV snapshot support |
 | PASS     | FAIL       | any       | Control regression — investigate snapshot path before hybrid conclusion |
 
 ## Raw observations
