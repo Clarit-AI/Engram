@@ -1,0 +1,40 @@
+[2026-05-20 21:06:21] INFO:     127.0.0.1:60106 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:06:37] INFO:     127.0.0.1:51768 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:06:39] INFO:     127.0.0.1:51784 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:45] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=4
+[2026-05-20 21:14:46] Saved to WARM tier: kha-301-smoke-1779311684-418126-3, host_pool_size=5
+[2026-05-20 21:14:46] Saved to WARM tier: kha-301-smoke-1779311684-418126-4, host_pool_size=6
+[2026-05-20 21:14:46] Saved to WARM tier: kha-301-smoke-1779311684-418126-2, host_pool_size=7
+[2026-05-20 21:14:46] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=7
+[2026-05-20 21:14:46] Decode batch, #running-req: 4, #full token: 94, full token usage: 0.00, mamba num: 8, mamba usage: 0.07, cuda graph: False, gen throughput (token/s): 0.11, #queue-req: 0
+[2026-05-20 21:14:47] Saved to WARM tier: kha-301-smoke-1779311684-418126-3, host_pool_size=7
+[2026-05-20 21:14:47] Saved to WARM tier: kha-301-smoke-1779311684-418126-4, host_pool_size=7
+[2026-05-20 21:14:47] Saved to WARM tier: kha-301-smoke-1779311684-418126-2, host_pool_size=7
+[2026-05-20 21:14:48] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=7
+[2026-05-20 21:14:48] INFO:     127.0.0.1:41672 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:48] INFO:     127.0.0.1:41678 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:48] INFO:     127.0.0.1:41680 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:48] INFO:     127.0.0.1:41690 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:49] Saved to WARM tier: kha-301-smoke-1779311684-418126-4, host_pool_size=7
+[2026-05-20 21:14:50] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=7
+[2026-05-20 21:14:50] Saved to WARM tier: kha-301-smoke-1779311684-418126-2, host_pool_size=7
+[2026-05-20 21:14:50] Saved to WARM tier: kha-301-smoke-1779311684-418126-3, host_pool_size=7
+[2026-05-20 21:14:51] Saved to WARM tier: kha-301-smoke-1779311684-418126-4, host_pool_size=7
+[2026-05-20 21:14:51] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=7
+[2026-05-20 21:14:51] Saved to WARM tier: kha-301-smoke-1779311684-418126-2, host_pool_size=7
+[2026-05-20 21:14:51] Saved to WARM tier: kha-301-smoke-1779311684-418126-3, host_pool_size=7
+[2026-05-20 21:14:52] Saved to WARM tier: kha-301-smoke-1779311684-418126-4, host_pool_size=7
+[2026-05-20 21:14:52] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=7
+[2026-05-20 21:14:52] Saved to WARM tier: kha-301-smoke-1779311684-418126-2, host_pool_size=7
+[2026-05-20 21:14:52] Saved to WARM tier: kha-301-smoke-1779311684-418126-3, host_pool_size=7
+[2026-05-20 21:14:53] Decode batch, #running-req: 4, #full token: 126, full token usage: 0.00, mamba num: 5, mamba usage: 0.05, cuda graph: False, gen throughput (token/s): 26.57, #queue-req: 0
+[2026-05-20 21:14:53] Saved to WARM tier: kha-301-smoke-1779311684-418126-4, host_pool_size=7
+[2026-05-20 21:14:53] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=7
+[2026-05-20 21:14:53] Saved to WARM tier: kha-301-smoke-1779311684-418126-2, host_pool_size=7
+[2026-05-20 21:14:54] Saved to WARM tier: kha-301-smoke-1779311684-418126-3, host_pool_size=7
+[2026-05-20 21:14:54] Saved to WARM tier: kha-301-smoke-1779311684-418126-4, host_pool_size=7
+[2026-05-20 21:14:54] Saved to WARM tier: kha-301-smoke-1779311684-418126-1, host_pool_size=7
+[2026-05-20 21:14:54] INFO:     127.0.0.1:41764 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:54] INFO:     127.0.0.1:41774 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:54] INFO:     127.0.0.1:41780 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+[2026-05-20 21:14:54] INFO:     127.0.0.1:41786 - "POST /v1/chat/completions HTTP/1.1" 200 OK

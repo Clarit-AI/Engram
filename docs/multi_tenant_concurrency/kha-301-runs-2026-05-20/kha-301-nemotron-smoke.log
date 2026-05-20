@@ -1,0 +1,16 @@
+[1;33m[INFO][0m model=/workspace/models/nemotron-3-nano-omni-30b  n=4  run_dir=/tmp/kha-301-PNwV4O
+[1;33m[INFO][0m spawning 4 concurrent sessions ...
+[1;33m[INFO][0m all sessions complete
+[0;32m[PASS][0m session 1: save=200 restore=200
+[0;32m[PASS][0m session 2: save=200 restore=200
+[0;32m[PASS][0m session 3: save=200 restore=200
+[0;32m[PASS][0m session 4: save=200 restore=200
+
+[1;33m[INFO][0m crosstalk check across 4 sessions:
+  session 1 (own=ZULU-1): own-token-seen='' content='The user asks: "What was the secret code I told you earlier?" There's no prior context in this conversation. The user is'
+  session 2 (own=ZULU-2): own-token-seen='' content='The user asks: "What was the secret code I told you earlier?" There's no prior context in this conversation. The user is'
+  session 3 (own=ZULU-3): own-token-seen='' content='The user asks: "What was the secret code I told you earlier?" There's no prior context in this conversation. The user is'
+  session 4 (own=ZULU-4): own-token-seen='' content='The user asks: "What was the secret code I told you earlier?" There's no prior context in this conversation. The user is'
+[0;32m[PASS][0m no crosstalk between sessions
+
+Smoke artifacts under: /tmp/kha-301-PNwV4O
