@@ -41,11 +41,11 @@ on:
           - nightly-8-gpu-deepseek-v32
           - nightly-8-gpu-deepseek-v32-mtp
           - nightly-8-gpu-deepseek-v3-kv-fp8
-          - nightly-8-gpu-kimi-k25
+          - nightly-8-gpu-kimi-k26
           - nightly-8-gpu-qwen3-235b
           - nightly-8-gpu-qwen35
-          - nightly-8-gpu-glm5
-          - nightly-8-gpu-minimax-m25
+          - nightly-8-gpu-glm51
+          - nightly-8-gpu-minimax-m27
           - nightly-1-gpu-zimage-turbo
           - nightly-test-1-gpu-mi35x
           - nightly-accuracy-8-gpu-mi35x
@@ -58,11 +58,11 @@ on:
           - nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp
           - nightly-perf-8-gpu-mi35x-deepseek-v32-basic
           - nightly-perf-8-gpu-mi35x-deepseek-v32-mtp
-          - nightly-8-gpu-mi35x-kimi-k25
+          - nightly-8-gpu-mi35x-kimi-k26
           - nightly-8-gpu-mi35x-qwen3-235b-mxfp4
           - nightly-8-gpu-mi35x-qwen35
-          - nightly-8-gpu-mi35x-glm5
-          - nightly-8-gpu-mi35x-minimax-m25
+          - nightly-8-gpu-mi35x-glm51
+          - nightly-8-gpu-mi35x-glm5-mxfp4
       job_filter:
         description: 'Or type comma-separated job names (overrides dropdown if non-empty)'
         required: false
@@ -93,6 +93,8 @@ on:
 
 env:
   AITER_COMMIT_OVERRIDE: ${{ inputs.aiter_ref }}
+  DOCKERHUB_AMD_USERNAME: ${{ secrets.DOCKERHUB_AMD_USERNAME }}
+  DOCKERHUB_AMD_TOKEN: ${{ secrets.DOCKERHUB_AMD_TOKEN }}
 
 concurrency:
   # When called via workflow_call with ref set, use a unique group per caller run to avoid
@@ -106,9 +108,8 @@ jobs:
   # ============================================== MI30x Unit Tests ==============================================
   # 1-GPU Unit Tests - LoRA, debug utils, scheduler, etc. (MI30x only)
   nightly-test-1-gpu-unit:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-unit,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-unit,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-unit,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-1gpu-sglang
     steps:
@@ -116,6 +117,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -132,16 +136,15 @@ jobs:
         run: |
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-1-gpu --nightly --timeout-per-file 900 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-1-gpu --nightly --timeout-per-file 900 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # ============================================== MI30x Accuracy Tests ==============================================
   # 2-GPU Accuracy Tests - GSM8K eval (MI30x only)
   nightly-accuracy-2-gpu:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -149,6 +152,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -165,15 +171,14 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 2-GPU VLM Accuracy Tests - Vision-Language Models MMMU evaluation
   nightly-accuracy-2-gpu-vlm:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu-vlm,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu-vlm,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-2-gpu-vlm,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -181,6 +186,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -198,15 +206,14 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-2-gpu-vlm --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-2-gpu-vlm --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 2-GPU Text Models Performance Tests
   nightly-perf-2-gpu-text:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-text,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-text,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-text,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -214,6 +221,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -232,15 +242,14 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-perf-text-2-gpu --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-perf-text-2-gpu --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 2-GPU VLM Performance Tests
   nightly-perf-2-gpu-vlm:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-vlm,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-vlm,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-2-gpu-vlm,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-2gpu-sglang
     steps:
@@ -248,6 +257,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -266,16 +278,15 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-perf-vlm-2-gpu --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-perf-vlm-2-gpu --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # ============================================== MI30x 4-GPU Tests ==============================================
   # 4-GPU Nightly Tests - Dumper/Comparator E2E, VLM Encoder DP
   nightly-4-gpu:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-4-gpu,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-4-gpu,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-4-gpu,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-4gpu-sglang
     steps:
@@ -283,6 +294,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -300,15 +314,14 @@ jobs:
           > github_summary.md
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-4-gpu --nightly --continue-on-error --timeout-per-file 3600 || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-4-gpu --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU Accuracy Tests - GPT-OSS, Grok1-FP8 (accuracy only)
   nightly-accuracy-8-gpu:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -316,6 +329,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -332,7 +348,7 @@ jobs:
         run: |
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-gpt-oss --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-gpt-oss --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -342,16 +358,15 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e RCCL_MSCCL_ENABLE=0 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-grok1-fp8 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-grok1-fp8 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # ============================================== MI30x Combined Accuracy + Performance Tests ==============================================
   # 8-GPU Grok1-INT4 (Accuracy + Performance combined)
   nightly-8-gpu-grok1-int4:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok1-int4,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok1-int4,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok1-int4,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -359,6 +374,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -377,7 +395,7 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e RCCL_MSCCL_ENABLE=0 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-grok1-int4 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-grok1-int4 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -389,15 +407,14 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e RCCL_MSCCL_ENABLE=0 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-grok1-int4 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-grok1-int4 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU Grok2 (Accuracy + Performance combined)
   nightly-8-gpu-grok2:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok2,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok2,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-grok2,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -405,6 +422,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -423,7 +443,7 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e RCCL_MSCCL_ENABLE=0 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-grok2 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-grok2 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -435,15 +455,14 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e RCCL_MSCCL_ENABLE=0 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-grok2 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-grok2 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU DeepSeek-V3.1 (Accuracy + Performance combined)
   nightly-8-gpu-deepseek-v31:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v31,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v31,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v31,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -451,6 +470,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -469,7 +491,7 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-deepseek-v31 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-deepseek-v31 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -481,15 +503,14 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_ROCM700A=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-deepseek-v31 --nightly --timeout-per-file 18000 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-deepseek-v31 --nightly --timeout-per-file 18000 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU DeepSeek-V3.2 (Basic Accuracy + Perf)
   nightly-8-gpu-deepseek-v32:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -497,6 +518,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -514,7 +538,7 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-deepseek-v32 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-deepseek-v32 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -525,15 +549,14 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-deepseek-v32-basic --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-deepseek-v32-basic --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU DeepSeek-V3.2 MTP (MTP Accuracy + Perf)
   nightly-8-gpu-deepseek-v32-mtp:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32-mtp,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32-mtp,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v32-mtp,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -541,6 +564,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -558,7 +584,7 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-deepseek-v32-mtp --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-deepseek-v32-mtp --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -569,15 +595,14 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-deepseek-v32-mtp --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-deepseek-v32-mtp --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU DeepSeek-V3 KV FP8 (Basic + MTP with --kv-cache-dtype fp8_e4m3)
   nightly-8-gpu-deepseek-v3-kv-fp8:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v3-kv-fp8,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v3-kv-fp8,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-deepseek-v3-kv-fp8,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -585,6 +610,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -602,22 +630,22 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-deepseek-v3-kv-fp8 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-deepseek-v3-kv-fp8 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
-  # 8-GPU Kimi-K2.5 (Accuracy)
-  nightly-8-gpu-kimi-k25:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k25,'))
-    # --- END ENGRAM ---
+  # 8-GPU Kimi-K2.6 (Accuracy)
+  nightly-8-gpu-kimi-k26:
+    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k26,'))
     runs-on: linux-mi325-8gpu-sglang
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -629,20 +657,19 @@ jobs:
       - name: Install dependencies
         run: bash scripts/ci/amd/amd_ci_install_dependency.sh
 
-      - name: Accuracy Test (8-GPU Kimi-K2.5)
+      - name: Accuracy Test (8-GPU Kimi-K2.6)
         timeout-minutes: 120
         run: |
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-kimi-k25 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-kimi-k26 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   nightly-8-gpu-qwen3-235b:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen3-235b,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen3-235b,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen3-235b,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -650,6 +677,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -667,15 +697,14 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-8-gpu-qwen3-235b --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-8-gpu-qwen3-235b --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU Qwen 3.5 (Accuracy + Performance combined)
   nightly-8-gpu-qwen35:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen35,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen35,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-qwen35,')))
     # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
@@ -683,6 +712,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
 
       - name: Setup docker
         run: |
@@ -702,7 +734,7 @@ jobs:
           > github_summary.md  # Clear summary file
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-qwen35 --nightly --timeout-per-file 3600 || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-qwen35 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
 
@@ -714,9 +746,848 @@ jobs:
           bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
             -e SGLANG_USE_AITER=1 \
             -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-qwen35-fp8 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-qwen35-fp8 --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
           echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
           exit ${TEST_EXIT_CODE:-0}
+
+  # 8-GPU GLM-5.1 (Accuracy + Performance combined)
+  nightly-8-gpu-glm51:
+    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-glm51,'))
+    runs-on: linux-mi325-8gpu-sglang
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
+
+      - name: Accuracy Test (8-GPU GLM-5.1 NSA)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-glm51 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test (8-GPU GLM-5.1)
+        timeout-minutes: 120
+        continue-on-error: true
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-glm51 --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # 8-GPU MiniMax-M2.7 (Accuracy + Performance combined, replaces M2.5)
+  nightly-8-gpu-minimax-m27:
+    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-minimax-m27,'))
+    runs-on: linux-mi325-8gpu-sglang
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: bash scripts/ci/amd/amd_ci_install_dependency.sh
+
+      - name: Accuracy Test (8-GPU MiniMax-M2.7)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-minimax-m27 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test (8-GPU MiniMax-M2.7)
+        timeout-minutes: 120
+        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-minimax-m27 --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # ============================================== MI30x Diffusion Tests ==============================================
+  # 1-GPU Z-Image-Turbo (Diffusion T2I)
+  nightly-1-gpu-zimage-turbo:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-1-gpu-zimage-turbo,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-1-gpu-zimage-turbo,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi325-1gpu-sglang
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: bash scripts/ci/amd/amd_ci_install_dependency.sh
+
+      - name: Z-Image-Turbo Diffusion Test (1-GPU)
+        timeout-minutes: 45
+        run: |
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            -e SGLANG_DIFFUSION_ARTIFACT_DIR="/sglang-checkout/diffusion-artifacts" \
+            pytest test/registered/amd/test_zimage_turbo.py -v -s ${{ inputs.continue_on_error && '|| true' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Upload generated images
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zimage-turbo-outputs
+          path: diffusion-artifacts/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ============================================== MI35x Tests ==============================================
+  # MI35x 1-GPU tests - platform-agnostic tests that may work on CDNA4 (gfx950)
+  nightly-test-1-gpu-mi35x:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-mi35x,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-mi35x,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-1
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Nightly Test MI35x (1-GPU)
+        timeout-minutes: 90
+        run: |
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-1-gpu-mi35x --nightly --timeout-per-file 900 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU Accuracy Tests - GPT-OSS (accuracy only)
+  nightly-accuracy-8-gpu-mi35x:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU GPT-OSS)
+        timeout-minutes: 180
+        run: |
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU Grok1-INT4 (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-grok1-int4:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok1-int4,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok1-int4,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU Grok1-INT4)
+        timeout-minutes: 90
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e RCCL_MSCCL_ENABLE=0 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-grok1-int4 --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU Grok1-INT4)
+        timeout-minutes: 60
+        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e RCCL_MSCCL_ENABLE=0 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-grok1-int4 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU Grok2 (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-grok2:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok2,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok2,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU Grok2)
+        timeout-minutes: 60
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e RCCL_MSCCL_ENABLE=0 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-grok2 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU Grok2)
+        timeout-minutes: 60
+        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e RCCL_MSCCL_ENABLE=0 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-grok2 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU DeepSeek-R1-MXFP4 (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-deepseek-r1-mxfp4:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU DeepSeek-R1-MXFP4)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-r1-mxfp4 --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU DeepSeek-R1-MXFP4)
+        timeout-minutes: 300
+        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 registered/amd/perf/mi35x/test_deepseek_r1_mxfp4_perf_mi35x.py || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU DeepSeek-R1-MXFP4 KV FP8 (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU DeepSeek-R1-MXFP4 KV FP8)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8 --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU DeepSeek-R1-MXFP4 KV FP8)
+        timeout-minutes: 300
+        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 registered/amd/perf/mi35x/test_deepseek_r1_mxfp4_kv_fp8_perf_mi35x.py || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU DeepSeek-R1-MXFP4 AllReduce Fusion (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU DeepSeek-R1-MXFP4 AllReduce Fusion)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU DeepSeek-R1-MXFP4 AllReduce Fusion)
+        timeout-minutes: 300
+        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 registered/amd/perf/mi35x/test_deepseek_r1_mxfp4_ar_fusion_perf_mi35x.py || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU DeepSeek-V3.2 Accuracy Test
+  nightly-accuracy-8-gpu-mi35x-deepseek-v32:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU DeepSeek-V3.2)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-v32 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU DeepSeek-V3.2 TP+MTP Accuracy Test
+  nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU DeepSeek-V3.2 TP+MTP)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-deepseek-v32-mtp --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU DeepSeek-V3.2 Performance Test (Basic)
+  nightly-perf-8-gpu-mi35x-deepseek-v32-basic:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-basic,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-basic,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Performance Test MI35x (8-GPU DeepSeek-V3.2 Basic)
+        timeout-minutes: 150
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-deepseek-v32-basic --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU Kimi-K2.6 (Accuracy)
+  nightly-8-gpu-mi35x-kimi-k26:
+    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k26,'))
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU Kimi-K2.6)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-kimi-k26 --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU Qwen3-235B-MXFP4 (Accuracy + Performance)
+  nightly-8-gpu-mi35x-qwen3-235b-mxfp4:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen3-235b-mxfp4,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen3-235b-mxfp4,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test + Performance Test MI35x (8-GPU Qwen3-235B-MXFP4)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-8-gpu-mi35x-qwen3-235b-mxfp4 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU Qwen 3.5 (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-qwen35:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen35,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen35,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+          bash scripts/ci/amd/amd_ci_exec.sh pip install mistral-common "lm-eval[api]"
+
+      - name: Accuracy Test MI35x (8-GPU Qwen 3.5)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-qwen35 --nightly --timeout-per-file 3600 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU Qwen 3.5 FP8)
+        timeout-minutes: 120
+        continue-on-error: true
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-qwen35-fp8 --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU GLM-5.1 (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-glm51:
+    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm51,'))
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+          bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
+
+      - name: Accuracy Test MI35x (8-GPU GLM-5.1 NSA)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm51 --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU GLM-5.1)
+        timeout-minutes: 120
+        continue-on-error: true
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-glm51 --nightly --timeout-per-file 5400 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU GLM-5-MXFP4 (Accuracy + Performance combined)
+  nightly-8-gpu-mi35x-glm5-mxfp4:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm5-mxfp4,'))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+          bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
+
+      - name: Accuracy Test MI35x (8-GPU GLM-5-MXFP4)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm5-mxfp4 --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+      - name: Performance Test MI35x (8-GPU GLM-5-MXFP4)
+        timeout-minutes: 300
+        continue-on-error: true
+        run: |
+          > github_summary.md
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 registered/amd/perf/mi35x/test_glm5_mxfp4_perf_mi35x.py || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU DeepSeek-V3.2 Performance Test (MTP)
+  nightly-perf-8-gpu-mi35x-deepseek-v32-mtp:
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang' && ((github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-mtp,'))) && ((!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-mtp,')))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Ensure VRAM is clear
+        run: bash scripts/ci/amd/ensure_vram_clear.sh rocm
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Performance Test MI35x (8-GPU DeepSeek-V3.2 MTP)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-deepseek-v32-mtp --nightly --timeout-per-file 7200 ${{ (github.event_name == 'schedule' || inputs.continue_on_error) && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+
+  # --- BEGIN ENGRAM: fork-only jobs (preserved from HEAD) ---
 
   nightly-8-gpu-glm5:
     if: github.repository == 'sgl-project/sglang'
@@ -753,6 +1624,152 @@ jobs:
           exit ${TEST_EXIT_CODE:-0}
 
   # 8-GPU MiniMax-M2.5 (Accuracy + Performance combined)
+
+  nightly-8-gpu-kimi-k25:
+    if: github.repository == 'sgl-project/sglang'
+    # --- BEGIN ENGRAM: fork CI guard ---
+    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k25,'))
+    # --- END ENGRAM ---
+    runs-on: linux-mi325-8gpu-sglang
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: bash scripts/ci/amd/amd_ci_install_dependency.sh
+
+      - name: Accuracy Test (8-GPU Kimi-K2.5)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-kimi-k25 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+
+  nightly-8-gpu-mi35x-glm5:
+    if: github.repository == 'sgl-project/sglang'
+    # --- BEGIN ENGRAM: fork CI guard ---
+    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm5,'))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+          bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
+
+      - name: Accuracy Test MI35x (8-GPU GLM-5 NSA)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm5 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU MiniMax-M2.5 (Accuracy + Performance combined)
+
+  nightly-8-gpu-mi35x-kimi-k25:
+    if: github.repository == 'sgl-project/sglang'
+    # --- BEGIN ENGRAM: fork CI guard ---
+    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k25,'))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          # Install tabulate for run_suite.py (missing in MI35x container)
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU Kimi-K2.5)
+        timeout-minutes: 180
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-kimi-k25 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU Qwen3-235B-MXFP4 (Accuracy + Performance)
+
+  nightly-8-gpu-mi35x-minimax-m25:
+    if: github.repository == 'sgl-project/sglang'
+    # --- BEGIN ENGRAM: fork CI guard ---
+    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-minimax-m25,'))
+    # --- END ENGRAM ---
+    runs-on: linux-mi35x-gpu-8
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Setup docker
+        run: |
+          touch github_summary.md
+          bash scripts/ci/amd/amd_ci_start_container.sh
+        env:
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+
+      - name: Install dependencies
+        run: |
+          bash scripts/ci/amd/amd_ci_install_dependency.sh
+          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
+
+      - name: Accuracy Test MI35x (8-GPU MiniMax-M2.5)
+        timeout-minutes: 120
+        run: |
+          > github_summary.md  # Clear summary file
+          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
+            -e SGLANG_USE_AITER=1 \
+            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
+            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-minimax-m25 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
+          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
+          exit ${TEST_EXIT_CODE:-0}
+
+  # MI35x 8-GPU GLM-5-MXFP4 (Accuracy + Performance combined)
+
   nightly-8-gpu-minimax-m25:
     if: github.repository == 'sgl-project/sglang'
     # --- BEGIN ENGRAM: fork CI guard ---
@@ -800,720 +1817,10 @@ jobs:
 
   # ============================================== MI30x Diffusion Tests ==============================================
   # 1-GPU Z-Image-Turbo (Diffusion T2I)
-  nightly-1-gpu-zimage-turbo:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-1-gpu-zimage-turbo,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi325-1gpu-sglang
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: bash scripts/ci/amd/amd_ci_install_dependency.sh
-
-      - name: Z-Image-Turbo Diffusion Test (1-GPU)
-        timeout-minutes: 45
-        run: |
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            -e SGLANG_DIFFUSION_ARTIFACT_DIR="/sglang-checkout/diffusion-artifacts" \
-            pytest test/registered/amd/test_zimage_turbo.py -v -s ${{ inputs.continue_on_error && '|| true' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-      - name: Upload generated images
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zimage-turbo-outputs
-          path: diffusion-artifacts/
-          if-no-files-found: ignore
-          retention-days: 30
-
-  # ============================================== MI35x Tests ==============================================
-  # MI35x 1-GPU tests - platform-agnostic tests that may work on CDNA4 (gfx950)
-  nightly-test-1-gpu-mi35x:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-test-1-gpu-mi35x,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-1
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Nightly Test MI35x (1-GPU)
-        timeout-minutes: 90
-        run: |
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-1-gpu-mi35x --nightly --timeout-per-file 900 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU Accuracy Tests - GPT-OSS (accuracy only)
-  nightly-accuracy-8-gpu-mi35x:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU GPT-OSS)
-        timeout-minutes: 180
-        run: |
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU Grok1-INT4 (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-grok1-int4:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok1-int4,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU Grok1-INT4)
-        timeout-minutes: 90
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e RCCL_MSCCL_ENABLE=0 \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-grok1-int4 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-      - name: Performance Test MI35x (8-GPU Grok1-INT4)
-        timeout-minutes: 60
-        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e RCCL_MSCCL_ENABLE=0 \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-grok1-int4 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU Grok2 (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-grok2:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-grok2,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU Grok2)
-        timeout-minutes: 60
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e RCCL_MSCCL_ENABLE=0 \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-grok2 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-      - name: Performance Test MI35x (8-GPU Grok2)
-        timeout-minutes: 60
-        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e RCCL_MSCCL_ENABLE=0 \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-grok2 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU DeepSeek-R1-MXFP4 (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-deepseek-r1-mxfp4:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU DeepSeek-R1-MXFP4)
-        timeout-minutes: 180
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-r1-mxfp4 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-      - name: Performance Test MI35x (8-GPU DeepSeek-R1-MXFP4)
-        timeout-minutes: 300
-        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 registered/amd/perf/mi35x/test_deepseek_r1_mxfp4_perf_mi35x.py || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU DeepSeek-R1-MXFP4 KV FP8 (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU DeepSeek-R1-MXFP4 KV FP8)
-        timeout-minutes: 180
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-r1-mxfp4-kv-fp8 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-      - name: Performance Test MI35x (8-GPU DeepSeek-R1-MXFP4 KV FP8)
-        timeout-minutes: 300
-        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 registered/amd/perf/mi35x/test_deepseek_r1_mxfp4_kv_fp8_perf_mi35x.py || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU DeepSeek-R1-MXFP4 AllReduce Fusion (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU DeepSeek-R1-MXFP4 AllReduce Fusion)
-        timeout-minutes: 180
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-      - name: Performance Test MI35x (8-GPU DeepSeek-R1-MXFP4 AllReduce Fusion)
-        timeout-minutes: 300
-        continue-on-error: true  # Perf test failure doesn't fail the job if accuracy passed
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 registered/amd/perf/mi35x/test_deepseek_r1_mxfp4_ar_fusion_perf_mi35x.py || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU DeepSeek-V3.2 Accuracy Test
-  nightly-accuracy-8-gpu-mi35x-deepseek-v32:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU DeepSeek-V3.2)
-        timeout-minutes: 120
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-deepseek-v32 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU DeepSeek-V3.2 TP+MTP Accuracy Test
-  nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU DeepSeek-V3.2 TP+MTP)
-        timeout-minutes: 120
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-deepseek-v32-mtp --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU DeepSeek-V3.2 Performance Test (Basic)
-  nightly-perf-8-gpu-mi35x-deepseek-v32-basic:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-basic,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Performance Test MI35x (8-GPU DeepSeek-V3.2 Basic)
-        timeout-minutes: 150
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-deepseek-v32-basic --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU Kimi-K2.5 (Accuracy)
-  nightly-8-gpu-mi35x-kimi-k25:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k25,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU Kimi-K2.5)
-        timeout-minutes: 180
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-kimi-k25 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU Qwen3-235B-MXFP4 (Accuracy + Performance)
-  nightly-8-gpu-mi35x-qwen3-235b-mxfp4:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen3-235b-mxfp4,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test + Performance Test MI35x (8-GPU Qwen3-235B-MXFP4)
-        timeout-minutes: 120
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-8-gpu-mi35x-qwen3-235b-mxfp4 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU Qwen 3.5 (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-qwen35:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-qwen35,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-          bash scripts/ci/amd/amd_ci_exec.sh pip install mistral-common "lm-eval[api]"
-
-      - name: Accuracy Test MI35x (8-GPU Qwen 3.5)
-        timeout-minutes: 120
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-accuracy-8-gpu-mi35x-qwen35 --nightly --timeout-per-file 3600 || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-      - name: Performance Test MI35x (8-GPU Qwen 3.5 FP8)
-        timeout-minutes: 120
-        continue-on-error: true
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e SGLANG_USE_AITER=1 \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-qwen35-fp8 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  nightly-8-gpu-mi35x-glm5:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm5,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.ref }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-          bash scripts/ci/amd/amd_ci_exec.sh pip install git+https://github.com/huggingface/transformers.git@96f807a33b75
-
-      - name: Accuracy Test MI35x (8-GPU GLM-5 NSA)
-        timeout-minutes: 180
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-glm5 --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU MiniMax-M2.5 (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-minimax-m25:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-minimax-m25,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Accuracy Test MI35x (8-GPU MiniMax-M2.5)
-        timeout-minutes: 120
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e SGLANG_USE_AITER=1 \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-amd-8-gpu-mi35x-minimax-m25 --nightly --timeout-per-file 3600 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU GLM-5-MXFP4 (Accuracy + Performance combined)
-  nightly-8-gpu-mi35x-glm5-mxfp4:
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: github.repository == 'sgl-project/sglang'
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e SGLANG_USE_AITER=1 \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-minimax-m25 --nightly --timeout-per-file 5400 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
-
-  # MI35x 8-GPU DeepSeek-V3.2 Performance Test (MTP)
-  nightly-perf-8-gpu-mi35x-deepseek-v32-mtp:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-perf-8-gpu-mi35x-deepseek-v32-mtp,'))
-    # --- END ENGRAM ---
-    runs-on: linux-mi35x-gpu-8
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-
-      - name: Setup docker
-        run: |
-          touch github_summary.md
-          bash scripts/ci/amd/amd_ci_start_container.sh
-        env:
-          GITHUB_WORKSPACE: ${{ github.workspace }}
-
-      - name: Install dependencies
-        run: |
-          bash scripts/ci/amd/amd_ci_install_dependency.sh
-          # Install tabulate for run_suite.py (missing in MI35x container)
-          bash scripts/ci/amd/amd_ci_exec.sh pip install tabulate
-
-      - name: Performance Test MI35x (8-GPU DeepSeek-V3.2 MTP)
-        timeout-minutes: 180
-        run: |
-          > github_summary.md  # Clear summary file
-          bash scripts/ci/amd/amd_ci_exec.sh -w /sglang-checkout/test \
-            -e GITHUB_STEP_SUMMARY="/sglang-checkout/github_summary.md" \
-            python3 run_suite.py --hw amd --suite nightly-perf-8-gpu-mi35x-deepseek-v32-mtp --nightly --timeout-per-file 7200 ${{ inputs.continue_on_error && '--continue-on-error' || '' }} || TEST_EXIT_CODE=$?
-          echo "$(<github_summary.md )" >> $GITHUB_STEP_SUMMARY || true
-          exit ${TEST_EXIT_CODE:-0}
+  # --- END ENGRAM: fork-only jobs ---
 
   check-all-jobs:
-    if: github.repository == 'sgl-project/sglang'
-    # --- BEGIN ENGRAM: fork CI guard ---
-    if: always() && (github.repository == 'sgl-project/sglang')
-    # --- END ENGRAM ---
+    if: always() && (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
     needs:
       # MI30x Unit Tests
       - nightly-test-1-gpu-unit
@@ -1533,11 +1840,11 @@ jobs:
       - nightly-8-gpu-deepseek-v32
       - nightly-8-gpu-deepseek-v32-mtp
       - nightly-8-gpu-deepseek-v3-kv-fp8
-      - nightly-8-gpu-kimi-k25
+      - nightly-8-gpu-kimi-k26
       - nightly-8-gpu-qwen3-235b
       - nightly-8-gpu-qwen35
-      - nightly-8-gpu-glm5
-      - nightly-8-gpu-minimax-m25
+      - nightly-8-gpu-glm51
+      - nightly-8-gpu-minimax-m27
       # MI30x Diffusion Tests
       - nightly-1-gpu-zimage-turbo
       # MI35x jobs
@@ -1550,11 +1857,11 @@ jobs:
       - nightly-8-gpu-mi35x-deepseek-r1-mxfp4-ar-fusion
       - nightly-accuracy-8-gpu-mi35x-deepseek-v32
       - nightly-accuracy-8-gpu-mi35x-deepseek-v32-mtp
-      - nightly-8-gpu-mi35x-kimi-k25
+      - nightly-8-gpu-mi35x-kimi-k26
       - nightly-8-gpu-mi35x-qwen3-235b-mxfp4
       - nightly-8-gpu-mi35x-qwen35
-      - nightly-8-gpu-mi35x-glm5
-      - nightly-8-gpu-mi35x-minimax-m25
+      - nightly-8-gpu-mi35x-glm51
+      - nightly-8-gpu-mi35x-glm5-mxfp4
       # MI35x perf jobs excluded from check - perf failures don't block CI
       # - nightly-perf-8-gpu-mi35x-deepseek-v32-basic
       # - nightly-perf-8-gpu-mi35x-deepseek-v32-mtp

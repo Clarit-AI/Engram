@@ -313,3 +313,4 @@ vercel_sdk_provider/
 # --- END ENGRAM ---
 .gitnexus
 artifacts/
+.claude/scheduled_tasks.lock

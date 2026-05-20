@@ -90,7 +90,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install PyGithub
+          pip install PyGithub PyYAML
 
       - name: Handle Slash Command
         env:

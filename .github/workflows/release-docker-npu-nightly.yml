@@ -88,6 +88,6 @@ jobs:
           # --- END ENGRAM ---
           provenance: false
           build-args: |
-            SGLANG_KERNEL_NPU_TAG=2026.03.10.rc1
+            SGLANG_KERNEL_NPU_TAG=2026.05.01
             CANN_VERSION=${{ matrix.cann_version }}
             DEVICE_TYPE=${{ matrix.device_type }}
