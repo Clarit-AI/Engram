@@ -82,41 +82,58 @@ Cleanup approach: re-scope the L30 BEGIN to wrap only the `from collections impo
 
 ## 5. Porting order
 
-Order minimizes cross-commit churn and front-loads the lowest-uncertainty work.
+**Revised 2026-05-20: split into extraction PR (now) and re-homing PR (post-sync).** The port's component-class targets — `batch_result_processor.py`, `metrics_reporter.py`, `request_receiver.py`, etc. — do not exist in our fork at v0.5.0. They live in the 168-commit window past v0.5.0 (upstream commit `99ad2b089` and the surrounding PR cluster). Plumbing-confirmed: those paths are absent on `main`, present on `upstream/main`. Doing the entire port on a single branch off v0.5.0 is therefore impossible as originally specified.
 
-**Phase A — Mixin retirement (3 commits).** Clearest destinations; the file is being deleted upstream anyway, forcing the issue.
+The fix is to reorder: do the **fork-only extractions now** (Phases B + C + E + F — files that exist in our fork), let the 168-commit sync arrive the new component files in their upstream shape, then do the **component re-homing as a follow-up workstream** (Phase A + Phase D component parts) against the merged tree.
 
-1. Port M1 (diffusion LLM batch result processing) → `batch_result_processor.py`.
-2. Port M2 (snapshot finished-request state) → `batch_result_processor.py`.
-3. Port M3 (restore_snapshot output routing) → `batch_result_processor.py`, and delete `scheduler_output_processor_mixin.py` in the same commit (the file's last remaining block). (Deletion bundles with M3's port since M3 is the file's last block.) If execution reveals M3 belongs in `output_streamer.py` instead of BRP, port it there instead — the BRP-vs-output_streamer read happens here, in Phase A.
+### 5a. Extraction PR — now, off v0.5.0
+
+Phases B + C + E + F. Pure semantics-preserving extraction: move code into new fork-only files, leave thin references on `Scheduler`, no behavior change. DRAFT PR pending GPU smoke (same draft-then-validate pattern as PR #71).
 
 **Phase B — Module-level fork helpers (1 commit).** Pure extraction, no upstream conflict surface.
 
-5. Extract S4 (`PendingRestoreEntry` + capacity const) into new `scheduler_pending_restore.py`. Update scheduler.py imports.
+1. Extract S4 (`PendingRestoreEntry` + capacity const) into new `scheduler_pending_restore.py`. Update `scheduler.py` imports.
 
 **Phase C — Fork-only subsystems (3 commits).** Bulk extraction, mechanical; thin references left on Scheduler. Split between lifecycle and handler surfaces to keep each new file navigable (§7 Q3).
 
-6. Extract S7 + S7a (snapshot system lifecycle: `init_snapshot_system`, `restore_snapshots_on_startup`, supporting methods) into `scheduler_snapshot_system.py`. ~330 lines.
-6b. Extract S8 (snapshot RPC handlers: save/list/info/restore/eviction) into `scheduler_snapshot_handlers.py`. ~1100 lines.
-7. Extract S9 (agent tool framework) into `scheduler_agent_system.py`. ~70 lines.
+2. Extract S7 + S7a (snapshot system lifecycle: `init_snapshot_system`, `restore_snapshots_on_startup`, supporting methods) into `scheduler_snapshot_system.py`. ~330 lines.
+3. Extract S8 (snapshot RPC handlers: save/list/info/restore/eviction) into `scheduler_snapshot_handlers.py`. ~1100 lines.
+4. Extract S9 (agent tool framework) into `scheduler_agent_system.py`. ~70 lines.
 
-**Phase D — Component-class re-homing (4–7 commits, depending on open-question resolution).**
+**Phase E — Scheduler.__init__ wiring (1 commit).** Wire `self.snapshot_system`, `self.snapshot_handlers`, `self.agent_system`, `self.pending_restore_registry` into `__init__`. S6's call sites become thin delegations. Explicit-args construction per §7 R5.
 
-8. Port S13 (auto-snapshot trigger) → `batch_result_processor.py`.
-9. Port S14 (post-forward snapshot hook) → `batch_result_processor.py`.
-10. Port S5 (metrics config) → `metrics_reporter.py`.
-11. Resolve open questions for S10, S11, S12 by reading `request_receiver.py`. Port each to its determined home — likely all three to `request_receiver.py`, bundled into one commit since they're a tight call-site cluster; up to 3 commits if the read shows they split.
-12. (Contingent) If Phase A determined M3 belongs in `output_streamer.py` but couldn't fully relocate it without the Phase D request-path context, complete the relocation here. No-op if M3's Phase A home was correct.
-
-**Phase E — Scheduler.__init__ wiring (1 commit).** Update `Scheduler` to instantiate the new fork subsystems alongside upstream's component instantiations.
-
-13. Wire `self.snapshot_system`, `self.agent_system`, `self.pending_restore_registry` into `__init__`. S6's call sites become thin delegations.
+5. Update `Scheduler.__init__` for the new subsystem references.
 
 **Phase F — Marker hygiene (1 commit).** Final pass.
 
-14. Fix L29 orphan END + L30 unclosed BEGIN. Re-scope L30 to wrap only `OrderedDict`. Verify global block balance.
+6. Fix L29 orphan END + L30 unclosed BEGIN in `scheduler.py`. Re-scope L30 to wrap only `OrderedDict`. Verify global block balance after all extraction commits.
 
-**Total: 13–16 commits.** Each commit is independently AST-parseable and block-balanced. CI gates per commit: `python -m py_compile` on touched files + `scripts/policy/check_protected_paths.py` invocation + `engram-markers` block balance check (need to extract from existing tooling; if not standalone, run on the full repo).
+**Extraction PR total: 6 commits** (one per phase listed above). Each commit is independently AST-parseable and block-balanced. Per-commit CI gates per §6.
+
+**What stays in `scheduler.py` / mixin through the extraction (semantics-preserving):** S1/S2/S3 imports (re-pointed at new fork files), S5 metrics config, S6 init delegations (now thin), S10/S11/S12 request-path hooks, S13/S14 batch-result hooks. M1/M2/M3 stay in `scheduler_output_processor_mixin.py`. These are the small surgical hooks that the re-homing PR will move later, once their target component files exist in the fork.
+
+### 5b. 168-commit upstream sync — between extraction and re-homing
+
+Not part of this port. The sync runs as its own workstream after the extraction PR merges. The extraction's payoff is that `scheduler.py`'s 47-commit upstream refactor lands against a `scheduler.py` that is ~1500 lines slimmer (snapshot/agent/pending-restore content gone), shrinking the conflict surface dramatically. The sync arrives `scheduler_components/batch_result_processor.py`, `metrics_reporter.py`, `request_receiver.py`, `output_streamer.py`, and the rest.
+
+### 5c. Re-homing PR — follow-up, post-sync
+
+Phase A + Phase D component parts. Now-tractable because target files exist in the merged fork.
+
+7. Phase A: M1 → `scheduler_components/batch_result_processor.py`.
+8. Phase A: M2 → `scheduler_components/batch_result_processor.py`.
+9. Phase A: M3 → `batch_result_processor.py` first attempt; relocate to `output_streamer.py` if read shows per-token dispatch (§7 OQ1). Delete `scheduler_output_processor_mixin.py` in the same commit (file's last block).
+10. Phase D: S13 → `scheduler_components/batch_result_processor.py`.
+11. Phase D: S14 → `scheduler_components/batch_result_processor.py`.
+12. Phase D: S5 → `scheduler_components/metrics_reporter.py`.
+13. Phase D: S10/S11/S12 → `scheduler_components/request_receiver.py` (1 commit if bundled, up to 3 if the read shows they split per §7 OQ2).
+14. Phase D (contingent): M3 relocation to `output_streamer.py` if Phase A first attempt was wrong.
+
+**Re-homing PR total: 7–10 commits** depending on S10/S11/S12 bundling and M3 contingent relocation.
+
+### 5d. Combined totals
+
+Extraction (6) + re-homing (7–10) = **13–16 commits across two PRs**, same total as the original single-PR plan. Each commit independently AST-parseable and block-balanced. CI gates per commit: `python -m py_compile` on touched files + `scripts/policy/check_protected_paths.py` invocation + `engram-markers` block balance check (need to extract from existing tooling; if not standalone, run on the full repo).
 
 ## 6. Validation strategy
 
@@ -190,9 +207,14 @@ This protocol is not optional. The rtk caching issue is tracked separately as an
 
 ## 9. Sequencing
 
+**Revised 2026-05-20: sync sits BETWEEN extraction and re-homing.** Original sequencing placed the entire port before the next sync. Plumbing-confirmed reality: the port's component-class targets don't exist in our fork at v0.5.0 — they arrive with the 168-commit sync. The extraction-first split (§5) lets the load-bearing slim-down of `scheduler.py` land before the sync, then re-homing onto the merged component files becomes a clean follow-up.
+
 | Order | Workstream | Status |
 |---|---|---|
-| 1 | PR #71 (engram-v0.4.0, Phase 3b 509-commit window) | In review, H100 validation pending |
-| 2 | This planning doc (PR off `docs/scheduler-decomposition-port-plan`) | Draft — this file |
-| 3 | Execution of the port (PR off `port/scheduler-decomposition`, branched from `main` AFTER #1 merges) | Not started — blocked on review of this doc + #1 merge |
-| 4 | Next upstream sync (168 commits + accumulated drift) | Blocked on #3 |
+| 1 | PR #71 (engram-v0.5.0, Phase 3b 509-commit window) | MERGED 2026-05-20; tagged `engram-v0.5.0` at `65c1ecf6e` |
+| 2 | This planning doc (PR #74 + PR #75 §6 amendment) | MERGED 2026-05-20 |
+| 3 | **Extraction PR** (PR off `port/scheduler-decomposition`, branched from `main` at `03ff82942`). Phases B + C + E + F. DRAFT pending GPU smoke. ~6 commits. | **In progress — this is the current workstream** |
+| 4 | 168-commit upstream sync (+ accumulated drift since 2026-05-15). Lands against a slimmed `scheduler.py`; arrives `scheduler_components/` to the fork. | Blocked on #3 merge |
+| 5 | **Re-homing PR** (post-sync). Phase A (M1/M2/M3 + mixin delete) + Phase D component parts (S5, S13/S14, S10/S11/S12). ~7–10 commits. | Blocked on #4 merge |
+
+**Why this ordering pays off:** the extraction in #3 moves ~1500 lines of fork-only snapshot/agent/pending-restore content out of `scheduler.py` into files upstream doesn't touch. When the 47-commit upstream refactor of `scheduler.py` arrives in #4, it lands against a much slimmer file. The small surgical hooks that remain in `scheduler.py` (S5, S10/S11/S12, S13/S14) and the mixin (M1/M2/M3) wait for #5, when their target component files exist in the merged fork.
