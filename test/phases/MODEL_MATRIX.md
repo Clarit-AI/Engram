@@ -1,9 +1,11 @@
 <!-- ENGRAM_MODIFIED — Fork model compatibility matrix and validation results -->
 # Engram — Model Compatibility Matrix
 
+> **Status of record: Linear CS-126. If this file disagrees, CS-126 wins.**
+
 This document tracks all models validated against the Engram snapshot infrastructure. Each row represents a completed run of the [Model Compatibility Protocol](MODEL_COMPAT_PROTOCOL.md).
 
-**Last updated:** 2026-04-01 (stateful recall re-run post PR #20)
+**Last updated:** 2026-05-20 (Codestral reconciled to validated per CS-126)
 
 ---
 
@@ -16,7 +18,7 @@ This document tracks all models validated against the Engram snapshot infrastruc
 | Nemotron-Cascade-2-30B | NVIDIA | `NemotronHForCausalLM` | Mamba2 SSM | BF16 | 30B / 3B active | Phase 10 cross-model⁴ | 5/5 (100%) | PASS⁶ | COMPATIBLE | 2026-04-01 | — |
 | Nemotron-3-Super-120B-A12B | NVIDIA | `NemotronHForCausalLM` | Mamba2 SSM | FP8 | 120B / 12B active | Ad-hoc (partial)¹ | 54/56 (96.4%) | PASS (4/4)⁶ | COMPATIBLE | 2026-04-01 | KHA-203 |
 | Qwen3-Coder-Next | Alibaba | `Qwen3NextForCausalLM` | Gated Linear Attention | FP8 | ~75B / 3.9B active | Compat protocol (full) | 62/62 (100%) | PASS (4/4)⁶ | COMPATIBLE | 2026-04-01 | KHA-204 |
-| Codestral Mamba 7B | Mistral | `Mamba2ForCausalLM` | Mamba2 SSM (pure) | BF16 | 7B | Gate 1 only | 0/0 | — | BLOCKED³ | 2026-03-31 | KHA-185 |
+| Codestral Mamba 7B | Mistral | `Mamba2ForCausalLM` | Mamba2 SSM (pure) | BF16 | 7B | Model loads + snapshot validated (PR #27) | —⁷ | PASS | COMPATIBLE | 2026-05-20 | KHA-185 |
 
 ### Footnotes
 
@@ -26,7 +28,9 @@ This document tracks all models validated against the Engram snapshot infrastruc
 
 ⁶ **PASS (stateful recall, post PR #20):** Re-validated 2026-04-01 after PR #20 merged. `restore_snapshot` with `continuation_ids` + `create_new_request=true` now correctly runs stateful generation and returns `output_text`. All 4 previously-blocked models recalled a fact established in a prior turn using only the new continuation tokens. Results in `results/stateful-recall-rerun-20260401.md`.
 
-³ **BLOCKED (no model class):** SGLang has no native `Mamba2ForCausalLM` model class for pure Mamba2 architectures. Only HuggingFace Transformers fallback exists. Tracked in upstream sglang issues #7429 and #18458.
+³ **BLOCKED (no model class):** ~~SGLang has no native `Mamba2ForCausalLM` model class for pure Mamba2 architectures. Only HuggingFace Transformers fallback exists.~~ Resolved by PR #27 (merged Apr 2026), which adds the pure-Mamba2 model class. Codestral now loads and is validated — see footnote ⁷ and Linear CS-126. (Upstream sglang issues #7429 / #18458 remain open; Engram does not depend on them.)
+
+⁷ **Codestral validation (post PR #27):** Pure-Mamba2 model class merged via PR #27 (Apr 2026), unblocking load + snapshot/restore for `Mamba2ForCausalLM`. Validated per Linear CS-126 (Source of Record). No standalone phase-count result file lives in-repo (tracked under KHA-185); snapshot size is documented at ~260 MB (see README), not freshly re-measured — verify on the next Codestral run. SGLang upstream PR #22327 is a *separate, independent* community contribution still under review and does not gate Engram support.
 
 ⁴ **Phase 10 cross-model:** 5 structured compatibility tests per model covering: baseline inference, snapshot save/restore, memory leak detection, rapid-fire throughput, and snapshot sizing. Run on RunPod A100-SXM4-80GB. Result files recovered from `backup/phase-10-model-testing-20260330` branch.
 
@@ -42,7 +46,7 @@ This document tracks all models validated against the Engram snapshot infrastruc
 | MoE Mamba2 hybrid | Mamba2 SSM | Nemotron-Cascade-2-30B (Phase 10, 5/5) | Cross-model |
 | LatentMoE Mamba2 hybrid | Mamba2 SSM | Nemotron-3-Super-120B-A12B (FP8) | Compat protocol |
 | GLA + MoE hybrid | Gated Linear Attention (via Mamba cache) | Qwen3-Coder-Next (FP8) | Compat protocol |
-| Pure Mamba2 SSM | Mamba2 SSM (no attention) | Codestral Mamba 7B | Blocked — no SGLang model class |
+| Pure Mamba2 SSM | Mamba2 SSM (no attention) | Codestral Mamba 7B | Validated — pure-Mamba2 model class merged (PR #27) |
 
 ### Key Finding: Recurrent State Generalization
 
