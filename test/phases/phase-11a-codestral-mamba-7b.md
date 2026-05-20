@@ -182,18 +182,22 @@ print(resp.status_code, resp.json()['choices'][0]['text'][:100])
 
 ---
 
-## Results Template
+## Results
+
+> Status of record: **Linear CS-126**. Codestral Mamba 7B is validated on Engram. The pure-Mamba2 model class landed via **PR #27** (Apr 2026).
 
 | Gate | Description | Result | Notes |
 |------|-------------|--------|-------|
-| 1 | Server starts | | |
-| 2 | Single inference | | |
-| 3 | Snapshot save/load | | |
-| 4 | Multi-turn restoration | | |
-| 5 | Hybrid regression | | |
+| 1 | Server starts | PASS | Loads via `Mamba2ForCausalLM` (PR #27); requires `--disable-cuda-graph --disable-piecewise-cuda-graph` |
+| 2 | Single inference | PASS | Coherent output |
+| 3 | Snapshot save/load | PASS | Registry verified end-to-end via `/generate` path |
+| 4 | Multi-turn restoration | PASS | Validated per CS-126 |
+| 5 | Hybrid regression | PASS | Existing hybrid models unaffected |
 
-**Overall:** PENDING
+**Overall:** PASS — COMPATIBLE (per CS-126)
 
-**Tester:** ___
-**Date:** ___
-**GPU:** ___
+**Snapshot size:** ~260 MB documented (README) — not freshly re-measured; capture the measured value on the next Codestral run.
+
+**Tester:** —
+**Date:** 2026-05-20 (status reconciliation; see CS-126 / PR #27)
+**GPU:** —

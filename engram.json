@@ -1,4 +1,5 @@
 {
+  "status_of_record": "Linear CS-126. If this file disagrees, CS-126 wins.",
   "name": "Engram",
   "version": "0.1.0",
   "description": "Open-source inference infrastructure for true stateful AI. Engram enables models to persist and restore internal state instead of replaying prompt history.",
@@ -54,8 +55,8 @@
   },
   "status": {
     "stage": "early",
-    "validated_models": 5,
-    "vendors": ["IBM", "NVIDIA", "Alibaba"]
+    "validated_models": 6,
+    "vendors": ["IBM", "NVIDIA", "Alibaba", "Mistral"]
   },
   "links": {
     "docs": "https://clarit.ai/engram",
