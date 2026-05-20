@@ -1,0 +1,28 @@
+[1;33m[INFO][0m [baseline] model=/workspace/models/granite-4.0-h-tiny
+[baseline:/workspace/models/granite-4.0-h-tiny] response: The secret code you told me earlier was DELTA-7.
+[0;32m[PASS][0m Baseline recall succeeded for /workspace/models/granite-4.0-h-tiny
+
+Report written to: /tmp/kha-360-1rTSBa/report.md
+# KHA-360 Diagnostic Report — 2026-05-20T20:19:41Z
+
+Target model: /workspace/models/granite-4.0-h-tiny
+Control model: mistralai/Codestral-Mamba-7B-v0.1 (run=false)
+Run dir: /tmp/kha-360-1rTSBa
+
+## Verdict matrix
+
+| baseline | control kv | target kv | verdict |
+|----------|------------|-----------|---------|
+| FAIL     | n/a        | n/a       | Methodology redesign — model cannot recall in this surface form |
+| PASS     | PASS       | PASS      | SSM-only restore sufficient on hybrid — original failure was surface form |
+| PASS     | PASS       | FAIL      | **KV restoration gap CONFIRMED** — file attention-KV snapshot impl ticket |
+| PASS     | FAIL       | any       | Control regression — investigate snapshot path before hybrid conclusion |
+
+## Raw observations
+
+[baseline:/workspace/models/granite-4.0-h-tiny] response: The secret code you told me earlier was DELTA-7.
+
+## State
+
+BASELINE_PASS=
+BASELINE_PASS=1

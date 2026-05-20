@@ -1,0 +1,11 @@
+[2026-05-20 20:19:59] Conversation registered: kha-360-target-1779308398-390719, tier=warm
+[2026-05-20 20:20:00] Restored from WARM tier: kha-360-target-1779308398-390719, hit_rate=100.00%
+[2026-05-20 20:20:00] Snapshot saved: conversation=kha-360-target-1779308398-390719, turn=18, branch=None
+[2026-05-20 20:20:00] Restored from WARM tier: kha-360-target-1779308398-390719, hit_rate=100.00%
+[2026-05-20 20:20:00] Snapshot staged for pending restore: conversation=kha-360-target-1779308398-390719, rid=kha-360-target-1779308398-390719, token_count=45
+[2026-05-20 20:20:00] Injected state to pool idx 10: 1 conv tensors, temporal shape torch.Size([36, 48, 64, 128]) (moved to cuda)
+[2026-05-20 20:20:00] pending-restore registry hit: hydrated rid=kha-360-target-1779308398-390719 (canonical=kha-360-target-1779308398-390719, conv_id=kha-360-target-1779308398-390719, mamba_pool_idx=10)
+[2026-05-20 20:48:54] Snapshot saved: conversation=0b2a3edcfd9a419fa86871c1c8275de9, turn=2, branch=None
+[2026-05-20 20:49:55] Snapshot saved: conversation=080abb2d88024bb29d13e68007f7be6b, turn=1, branch=None
+[2026-05-20 20:49:56] Snapshot saved: conversation=0e5d189b1a5d4ef699feed6ec3a45d59, turn=1, branch=None
+[2026-05-20 20:50:57] Snapshot saved: conversation=kha-360-target-1779308398-390719, turn=25, branch=None

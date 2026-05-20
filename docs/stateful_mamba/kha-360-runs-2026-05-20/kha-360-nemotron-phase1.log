@@ -1,0 +1,28 @@
+[1;33m[INFO][0m [baseline] model=/workspace/models/nemotron-3-nano-omni-30b
+[baseline:/workspace/models/nemotron-3-nano-omni-30b] response: The user asks: "Earlier I told you: the secret code is DELTA-7. What was the secret code I told you earlier?" This is a straightforward question. The answer: DEL
+[0;32m[PASS][0m Baseline recall succeeded for /workspace/models/nemotron-3-nano-omni-30b
+
+Report written to: /tmp/kha-360-19iCiB/report.md
+# KHA-360 Diagnostic Report — 2026-05-20T21:06:19Z
+
+Target model: /workspace/models/nemotron-3-nano-omni-30b
+Control model: mistralai/Codestral-Mamba-7B-v0.1 (run=false)
+Run dir: /tmp/kha-360-19iCiB
+
+## Verdict matrix
+
+| baseline | control kv | target kv | verdict |
+|----------|------------|-----------|---------|
+| FAIL     | n/a        | n/a       | Methodology redesign — model cannot recall in this surface form |
+| PASS     | PASS       | PASS      | SSM-only restore sufficient on hybrid — original failure was surface form |
+| PASS     | PASS       | FAIL      | **KV restoration gap CONFIRMED** — file attention-KV snapshot impl ticket |
+| PASS     | FAIL       | any       | Control regression — investigate snapshot path before hybrid conclusion |
+
+## Raw observations
+
+[baseline:/workspace/models/nemotron-3-nano-omni-30b] response: The user asks: "Earlier I told you: the secret code is DELTA-7. What was the secret code I told you earlier?" This is a straightforward question. The answer: DEL
+
+## State
+
+BASELINE_PASS=
+BASELINE_PASS=1

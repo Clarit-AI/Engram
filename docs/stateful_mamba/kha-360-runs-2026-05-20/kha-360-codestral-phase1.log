@@ -1,0 +1,28 @@
+[1;33m[INFO][0m [baseline] model=/workspace/models/mamba-codestral-7b
+[baseline:/workspace/models/mamba-codestral-7b] response: 
+[0;31m[FAIL][0m Baseline recall FAILED for /workspace/models/mamba-codestral-7b — surface-form confound dominates; KV probe inconclusive
+
+Report written to: /tmp/kha-360-eY3PYI/report.md
+# KHA-360 Diagnostic Report — 2026-05-20T21:01:25Z
+
+Target model: /workspace/models/mamba-codestral-7b
+Control model: mistralai/Codestral-Mamba-7B-v0.1 (run=false)
+Run dir: /tmp/kha-360-eY3PYI
+
+## Verdict matrix
+
+| baseline | control kv | target kv | verdict |
+|----------|------------|-----------|---------|
+| FAIL     | n/a        | n/a       | Methodology redesign — model cannot recall in this surface form |
+| PASS     | PASS       | PASS      | SSM-only restore sufficient on hybrid — original failure was surface form |
+| PASS     | PASS       | FAIL      | **KV restoration gap CONFIRMED** — file attention-KV snapshot impl ticket |
+| PASS     | FAIL       | any       | Control regression — investigate snapshot path before hybrid conclusion |
+
+## Raw observations
+
+[baseline:/workspace/models/mamba-codestral-7b] response: 
+
+## State
+
+BASELINE_PASS=
+BASELINE_PASS=0

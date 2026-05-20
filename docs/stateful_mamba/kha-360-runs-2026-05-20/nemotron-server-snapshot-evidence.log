@@ -1,0 +1,7 @@
+[2026-05-20 21:06:36] Conversation registered: kha-360-target-1779311194-410968, tier=warm
+[2026-05-20 21:06:37] Restored from WARM tier: kha-360-target-1779311194-410968, hit_rate=100.00%
+[2026-05-20 21:06:37] Snapshot saved: conversation=kha-360-target-1779311194-410968, turn=26, branch=None
+[2026-05-20 21:06:37] Restored from WARM tier: kha-360-target-1779311194-410968, hit_rate=100.00%
+[2026-05-20 21:06:37] Snapshot staged for pending restore: conversation=kha-360-target-1779311194-410968, rid=kha-360-target-1779311194-410968, token_count=32
+[2026-05-20 21:06:37] Injected state to pool idx 8: 1 conv tensors, temporal shape torch.Size([23, 64, 64, 128]) (moved to cuda)
+[2026-05-20 21:06:37] pending-restore registry hit: hydrated rid=kha-360-target-1779311194-410968 (canonical=kha-360-target-1779311194-410968, conv_id=kha-360-target-1779311194-410968, mamba_pool_idx=8)

@@ -1,0 +1,28 @@
+[1;33m[INFO][0m [kv-probe:target] model=/workspace/models/granite-4.0-h-tiny
+[kv-probe:target:/workspace/models/granite-4.0-h-tiny] response: I'm sorry, but as an AI, I don't have the ability to store or remember personal data unless it's shared with me in the course of our conversation. I'm designed to respect user
+[0;31m[FAIL][0m KV probe recall FAILED for target (/workspace/models/granite-4.0-h-tiny)
+
+Report written to: /tmp/kha-360-sdO6md/report.md
+# KHA-360 Diagnostic Report — 2026-05-20T20:19:58Z
+
+Target model: /workspace/models/granite-4.0-h-tiny
+Control model: mistralai/Codestral-Mamba-7B-v0.1 (run=false)
+Run dir: /tmp/kha-360-sdO6md
+
+## Verdict matrix
+
+| baseline | control kv | target kv | verdict |
+|----------|------------|-----------|---------|
+| FAIL     | n/a        | n/a       | Methodology redesign — model cannot recall in this surface form |
+| PASS     | PASS       | PASS      | SSM-only restore sufficient on hybrid — original failure was surface form |
+| PASS     | PASS       | FAIL      | **KV restoration gap CONFIRMED** — file attention-KV snapshot impl ticket |
+| PASS     | FAIL       | any       | Control regression — investigate snapshot path before hybrid conclusion |
+
+## Raw observations
+
+[kv-probe:target:/workspace/models/granite-4.0-h-tiny] response: I'm sorry, but as an AI, I don't have the ability to store or remember personal data unless it's shared with me in the course of our conversation. I'm designed to respect user
+
+## State
+
+BASELINE_PASS=
+KV_target_PASS=0

@@ -1,0 +1,28 @@
+[1;33m[INFO][0m [kv-probe:target] model=/workspace/models/nemotron-3-nano-omni-30b
+[kv-probe:target:/workspace/models/nemotron-3-nano-omni-30b] response: The user asks: "What was the secret code I told you earlier?" There's no prior context in this conversation. The user is asking for a secret code that they claim to have told earlier.
+[0;31m[FAIL][0m KV probe recall FAILED for target (/workspace/models/nemotron-3-nano-omni-30b)
+
+Report written to: /tmp/kha-360-spcozm/report.md
+# KHA-360 Diagnostic Report — 2026-05-20T21:06:34Z
+
+Target model: /workspace/models/nemotron-3-nano-omni-30b
+Control model: mistralai/Codestral-Mamba-7B-v0.1 (run=false)
+Run dir: /tmp/kha-360-spcozm
+
+## Verdict matrix
+
+| baseline | control kv | target kv | verdict |
+|----------|------------|-----------|---------|
+| FAIL     | n/a        | n/a       | Methodology redesign — model cannot recall in this surface form |
+| PASS     | PASS       | PASS      | SSM-only restore sufficient on hybrid — original failure was surface form |
+| PASS     | PASS       | FAIL      | **KV restoration gap CONFIRMED** — file attention-KV snapshot impl ticket |
+| PASS     | FAIL       | any       | Control regression — investigate snapshot path before hybrid conclusion |
+
+## Raw observations
+
+[kv-probe:target:/workspace/models/nemotron-3-nano-omni-30b] response: The user asks: "What was the secret code I told you earlier?" There's no prior context in this conversation. The user is asking for a secret code that they claim to have told earlier.
+
+## State
+
+BASELINE_PASS=
+KV_target_PASS=0
