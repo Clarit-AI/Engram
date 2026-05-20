@@ -186,6 +186,40 @@ This protocol is not optional. The rtk caching issue is tracked separately as an
 
 ## 7. Resolved decisions and remaining open questions
 
+### Phase applicability audit (added 2026-05-20 mid-extraction)
+
+After the §5 re-architecture split the port into extraction PR + re-homing PR, every resolved decision and open question was audited and tagged for scope. Tagging prevents a later phase from hitting an inapplicable instruction. Tags:
+
+- **[EXTRACTION]** — applies to this PR. Files involved exist on v0.5.0; the work is achievable now.
+- **[RE-HOMING/SYNC]** — deferred. Involves upstream component files or sync-introduced changes that don't exist in our fork yet.
+
+| Item | Tag | Notes |
+|---|---|---|
+| **Q3 — S8 file split** (Resolved) | [EXTRACTION] | `scheduler_snapshot_handlers.py` is created in Phase C.2. Split decision is load-bearing for this PR. |
+| **Q4 — Marker policy on fully fork-authored files** (Resolved) | [EXTRACTION] | All four new fork files (`scheduler_pending_restore.py`, `scheduler_snapshot_system.py`, `scheduler_snapshot_handlers.py`, `scheduler_agent_system.py`) created in this PR follow the header-only pattern. Already applied to files committed so far (Phase B + Phase C.1). |
+| **R5 — Extraction style** (Resolved + re-scoped 2026-05-20) | [EXTRACTION] *(module-level relocation part)* + [RE-HOMING/SYNC] *(explicit-args attribute migration part)* | Extraction PR uses module-level function relocation (already applied in Phase C.1). The original "explicit-args, no back-ref" intent applies to the re-homing PR alongside component integration. R5 is the only decision that legitimately spans both scopes. |
+| **OQ1 — M3 target ambiguity (BRP vs output_streamer)** | [RE-HOMING/SYNC] | Both `batch_result_processor.py` and `output_streamer.py` live in upstream's `scheduler_components/` subdirectory — neither exists in our fork at v0.5.0. M3 itself stays in the mixin through this PR. |
+| **OQ2 — S10/S11/S12 target ambiguity (request_receiver)** | [RE-HOMING/SYNC] | `request_receiver.py` is an upstream component that doesn't exist in our fork yet. The three blocks stay on `Scheduler` through this PR. |
+| **Risk 3 — KV-cache builder relocation** | [RE-HOMING/SYNC] | `init_cache_with_memory_pool → build_kv_cache` is an upstream PR #25601–#25608 change in the 168-commit window past v0.5.0. Not in our fork yet. Audit happens post-sync. |
+| **Risk 4 — EmbeddingBatchResult relocation** | [RE-HOMING/SYNC] | Upstream PR #25638 moved this dataclass out of `scheduler.py`. The destination doesn't exist in our fork yet. Our `PendingRestoreEntry` (Phase B) is already in its own fork file regardless of what upstream does with `EmbeddingBatchResult`. |
+
+**§5 audit:**
+
+- **§5a (extraction PR)** — [EXTRACTION], the entire active workstream.
+- **§5b (168-commit sync)** — [RE-HOMING/SYNC] context; runs as its own workstream between #3 and #5 in §9.
+- **§5c (re-homing PR)** — [RE-HOMING/SYNC] entirely; out of scope for this PR.
+- **§5d (combined totals)** — bookkeeping; both scopes.
+
+**§6 audit:**
+
+- Per-commit / end-of-port / PR review gate / post-merge GPU smoke / rollback / progress checkpoints — all [EXTRACTION]-applicable as written. The rtk-safe verification protocol is mandatory for this PR.
+- The "post-merge (H200)" line references KHA-360 harness readiness — that gating is for the **eventual port completion (re-homing PR)**, not the extraction PR. Extraction PR's smoke is its own thing (semantics-preservation check, not a full snapshot save/restore cycle). Flagging this as a soft mismatch worth noting: §6 originally framed the H200 gate as one event; with the split, the extraction PR's smoke and the re-homing PR's KHA-360 diagnostic are two distinct events. No doc edit needed beyond this audit row — the §9 sequencing already implies the split.
+
+**Items that did not bucket cleanly:**
+
+- **R5** spans both scopes (noted above) — flagged in the table, intentional. Today's re-scoping is what made R5 split.
+- **§6 post-merge gate** spans both scopes (noted above) — flagged in the audit, no edit needed.
+
 ### Resolved decisions
 
 - **Q3 — S8 file split (resolved: split).** S7+S7a+S8 combined is ~1430 lines, past the navigability threshold for a single file. Split at the lifecycle/handler seam: `scheduler_snapshot_system.py` (lifecycle, ~330 lines) and `scheduler_snapshot_handlers.py` (RPC handlers, ~1100 lines). Reflected in §3b targets and §5 Phase C (now 3 commits).
