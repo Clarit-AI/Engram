@@ -1,5 +1,7 @@
 # Pure Mamba2 Model Support in SGLang
 
+> **Status: SHIPPED & VALIDATED.** The pure-Mamba2 model class (`Mamba2ForCausalLM`) was merged via **PR #27** (Apr 2026). Codestral Mamba 7B loads, runs inference, and snapshots/restores on Engram today. Source of record: **Linear CS-126**. The sections below were written during implementation; the "Pending (GPU)" gates have since passed (see Testing).
+
 ## Problem Statement
 
 SGLang has comprehensive Mamba2 infrastructure — `MambaMixer2` SSM layers, `Mamba2AttnBackend`, `MambaPool` for state management, `MambaRadixCache` for prefix caching — but all of it was wired exclusively for **hybrid** models that combine Mamba layers with attention layers. Pure Mamba2 models like `mistralai/Mamba-Codestral-7B-v0.1` (`Mamba2ForCausalLM`) could not load at all.
@@ -23,7 +25,7 @@ Four distinct blockers prevented pure Mamba2 models from loading:
 | Dense hybrid | Granite 4.0-H-tiny | ~75% | ~25% | Working |
 | MoE hybrid | Nemotron-Cascade-2-30B | Mixed | Mixed | Working |
 | Non-Mamba recurrent (GLA) | Qwen3-Coder-Next | DeltaNet | Full | Working |
-| **Pure SSM** | **Codestral Mamba 7B** | **100%** | **0%** | **This PR** |
+| **Pure SSM** | **Codestral Mamba 7B** | **100%** | **0%** | **Merged (PR #27)** |
 
 ## What Already Existed
 
@@ -114,11 +116,13 @@ Items 4 and 5 are bug fixes that benefit all users, not just Mamba2.
 
 | Gate | Test | Status |
 |---|---|---|
-| 1 | Server starts with Codestral Mamba 7B | Pending (GPU) |
-| 2 | Single inference produces coherent output | Pending (GPU) |
-| 3 | Snapshot save/load round-trip | Pending (GPU) |
-| 4 | Multi-turn state restoration | Pending (GPU) |
-| 5 | Existing hybrid models still work (regression) | Pending (GPU) |
+| 1 | Server starts with Codestral Mamba 7B | PASS |
+| 2 | Single inference produces coherent output | PASS |
+| 3 | Snapshot save/load round-trip | PASS |
+| 4 | Multi-turn state restoration | PASS |
+| 5 | Existing hybrid models still work (regression) | PASS |
+
+Validated post-merge (PR #27) per Linear CS-126 (Source of Record). Snapshot size is documented at ~260 MB (see README) — documented, not freshly re-measured; verify on the next Codestral run.
 
 ### Compatibility Matrix
 
