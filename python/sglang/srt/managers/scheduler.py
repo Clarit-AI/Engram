@@ -188,6 +188,12 @@ from sglang.srt.managers.scheduler_input_blocker import SchedulerInputBlocker
 from sglang.srt.managers.scheduler_output_processor_mixin import (
     SchedulerOutputProcessorMixin,
 )
+# --- BEGIN ENGRAM: pending restore registry types ---
+from sglang.srt.managers.scheduler_pending_restore import (
+    PENDING_RESTORE_REGISTRY_MAX,
+    PendingRestoreEntry,
+)
+# --- END ENGRAM ---
 from sglang.srt.managers.scheduler_pp_mixin import SchedulerPPMixin
 from sglang.srt.managers.scheduler_profiler_mixin import SchedulerProfilerMixin
 from sglang.srt.managers.scheduler_recv_skipper import SchedulerRecvSkipper
@@ -315,31 +321,6 @@ class EmbeddingBatchResult:
                 )
 
         self.copy_done.record()
-
-
-# --- BEGIN ENGRAM: pending restore registry entry + capacity ---
-PENDING_RESTORE_REGISTRY_MAX = 256
-
-
-@dataclass
-class PendingRestoreEntry:
-    """Loaded snapshot state staged for a future incoming request.
-
-    Populated by handle_restore_snapshot when the originating Req has already
-    completed, and consumed by _maybe_hydrate_from_pending_restore on the next
-    incoming Req with a matching rid (or conversation_id alias). The Mamba
-    state is held in CPU host tensors here and moved into a freshly allocated
-    pool slot at consumption time via inject_state_to_pool.
-    """
-
-    conv_states: List[torch.Tensor]
-    temporal_states: torch.Tensor
-    fill_ids: Optional[List[int]]
-    conversation_id: str
-    timestamp: float
-
-
-# --- END ENGRAM ---
 
 
 def validate_dflash_request(req: Req) -> Optional[str]:
