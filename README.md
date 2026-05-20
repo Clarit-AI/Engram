@@ -82,7 +82,7 @@ All sizes are constant regardless of conversation length — a 1M-token conversa
 
 ### Tested Models
 
-7 models validated across 4 vendors. Pure Mamba2 support is an Engram-only capability — upstream SGLang cannot run these models.
+6 models validated across 4 vendors (IBM, NVIDIA, Alibaba, Mistral) — the canonical set per Source of Record. Qwen3-Next-80B-A3B (listed below) is an additional internal validation, not part of the canonical six. Pure Mamba2 support is an Engram-only capability — upstream SGLang cannot run these models.
 
 | Model | Vendor | Architecture | Token Reduction | Snapshot Size | Status |
 |-------|--------|-------------|-----------------|---------------|--------|
@@ -91,7 +91,7 @@ All sizes are constant regardless of conversation length — a 1M-token conversa
 | Codestral Mamba 7B | Mistral | **Pure Mamba2** | 67.1% | 260MB | **PASS (NEW)** |
 | Qwen3-Next-80B-A3B | Alibaba | Mamba2+Attn+MoE | 82.0% | 19MB (TP4) | **PASS (NEW)** |
 | Nemotron-Cascade-2-30B | NVIDIA | MoE Mamba2 hybrid | — | — | PASS |
-| Nemotron-3-Super-120B FP8 | NVIDIA | LatentMoE Mamba2 hybrid | — | — | BLOCKED (SM89+) |
+| Nemotron-3-Super-120B FP8 | NVIDIA | LatentMoE Mamba2 hybrid | 73.7% | ~5.3GB | PASS |
 | Qwen3-Coder-Next FP8 | Alibaba | Gated Linear Attention + MoE | — | — | PASS |
 
 ## Quick Start
