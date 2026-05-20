@@ -41,7 +41,7 @@ These are the files where upstream changes will most likely conflict with Engram
 | `python/sglang/srt/managers/io_struct.py` | 3 | +138 | Snapshot and agent request/response data structures |
 | `python/sglang/srt/managers/scheduler_output_processor_mixin.py` | 3 | +113 | Snapshot output processing hooks |
 | `python/sglang/srt/managers/schedule_batch.py` | 2 | +8 | Snapshot batch field |
-| `python/sglang/srt/configs/model_config.py` | 2 | +37 | Mamba config adaptations (safe architecture access, multimodal guards). Has 1 deferred `ENGRAM_CONFLICT_REVIEW` marker at line 402 (null-guard question, low-risk Phase 4 follow-up) |
+| `python/sglang/srt/configs/model_config.py` | 2 | +37 | Mamba config adaptations (safe architecture access, multimodal guards). Has 1 deferred `ENGRAM_CONFLICT_REVIEW` marker at line 402 (null-guard question, low-risk Phase 4 follow-up). ENGRAM_CHANGED inline-marker count: 4 (was 5 pre-PR-#71; `is_deepseek_nsa` empty-arch guard retired in favor of upstream `_hf_arch()` returning None on empty archs — equivalence verified, retirement marker at line 103) |
 
 **Removed from this table by PR #56:**
 - `python/sglang/srt/model_executor/model_runner_kv_cache_mixin.py` — file reverted to upstream verbatim. The pure-SSM token-pool sizing logic ported to `python/sglang/srt/model_executor/pool_configurator.py` (see "Other Modified" table) as a `PureSSMMemoryPoolConfigurator` subclass + factory dispatch branch.

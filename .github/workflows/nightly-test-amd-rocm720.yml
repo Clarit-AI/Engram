@@ -633,7 +633,9 @@ jobs:
 
   # 8-GPU Kimi-K2.6 (Accuracy) ROCm 7.2
   nightly-8-gpu-kimi-k26-rocm720:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k26-rocm720,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
       - name: Checkout code
@@ -1327,7 +1329,9 @@ jobs:
 
   # MI35x 8-GPU Kimi-K2.6 (Accuracy) ROCm 7.2
   nightly-8-gpu-mi35x-kimi-k26-rocm720:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k26-rocm720,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
       - name: Checkout code
@@ -1600,7 +1604,9 @@ jobs:
   # poison Python imports because the image's site-packages .pth points at
   # /sgl-workspace/sglang/python (a different path).
   nightly-8-gpu-mi35x-deepseek-v4-flash-rocm720:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-v4-flash-rocm720,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
       - name: Checkout code
@@ -1672,7 +1678,9 @@ jobs:
   # Same image / branch / install strategy as the Flash job above — see the comment
   # block on `nightly-8-gpu-mi35x-deepseek-v4-flash-rocm720` for the rationale.
   nightly-8-gpu-mi35x-deepseek-v4-pro-rocm720:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-deepseek-v4-pro-rocm720,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
       - name: Checkout code

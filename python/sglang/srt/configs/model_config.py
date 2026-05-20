@@ -100,6 +100,7 @@ def _hf_attr(config, name):
     return getattr(config, name, None)
 
 
+# ENGRAM_CHANGED: fork is_deepseek_nsa empty-arch guard retired — upstream _hf_arch() now returns None on empty archs (PR #71 sync)
 def is_deepseek_nsa(config) -> bool:
     return (
         _hf_arch(config)

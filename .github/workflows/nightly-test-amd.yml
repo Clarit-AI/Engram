@@ -636,7 +636,9 @@ jobs:
 
   # 8-GPU Kimi-K2.6 (Accuracy)
   nightly-8-gpu-kimi-k26:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k26,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
       - name: Checkout code
@@ -752,7 +754,9 @@ jobs:
 
   # 8-GPU GLM-5.1 (Accuracy + Performance combined)
   nightly-8-gpu-glm51:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-glm51,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
       - name: Checkout code
@@ -799,7 +803,9 @@ jobs:
 
   # 8-GPU MiniMax-M2.7 (Accuracy + Performance combined, replaces M2.5)
   nightly-8-gpu-minimax-m27:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-minimax-m27,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi325-8gpu-sglang
     steps:
       - name: Checkout code
@@ -1328,7 +1334,9 @@ jobs:
 
   # MI35x 8-GPU Kimi-K2.6 (Accuracy)
   nightly-8-gpu-mi35x-kimi-k26:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k26,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
       - name: Checkout code
@@ -1452,7 +1460,9 @@ jobs:
 
   # MI35x 8-GPU GLM-5.1 (Accuracy + Performance combined)
   nightly-8-gpu-mi35x-glm51:
-    if: (github.repository == 'sgl-project/sglang' || github.event_name == 'pull_request') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm51,'))
+    # --- BEGIN ENGRAM: fork guard ---
+    if: github.repository == 'sgl-project/sglang'
+    # --- END ENGRAM ---
     runs-on: linux-mi35x-gpu-8
     steps:
       - name: Checkout code
@@ -1590,7 +1600,6 @@ jobs:
   # --- BEGIN ENGRAM: fork-only jobs (preserved from HEAD) ---
 
   nightly-8-gpu-glm5:
-    if: github.repository == 'sgl-project/sglang'
     # --- BEGIN ENGRAM: fork CI guard ---
     if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-glm5,'))
     # --- END ENGRAM ---
@@ -1626,7 +1635,6 @@ jobs:
   # 8-GPU MiniMax-M2.5 (Accuracy + Performance combined)
 
   nightly-8-gpu-kimi-k25:
-    if: github.repository == 'sgl-project/sglang'
     # --- BEGIN ENGRAM: fork CI guard ---
     if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-kimi-k25,'))
     # --- END ENGRAM ---
@@ -1659,7 +1667,6 @@ jobs:
 
 
   nightly-8-gpu-mi35x-glm5:
-    if: github.repository == 'sgl-project/sglang'
     # --- BEGIN ENGRAM: fork CI guard ---
     if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-glm5,'))
     # --- END ENGRAM ---
@@ -1697,7 +1704,6 @@ jobs:
   # MI35x 8-GPU MiniMax-M2.5 (Accuracy + Performance combined)
 
   nightly-8-gpu-mi35x-kimi-k25:
-    if: github.repository == 'sgl-project/sglang'
     # --- BEGIN ENGRAM: fork CI guard ---
     if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-kimi-k25,'))
     # --- END ENGRAM ---
@@ -1734,7 +1740,6 @@ jobs:
   # MI35x 8-GPU Qwen3-235B-MXFP4 (Accuracy + Performance)
 
   nightly-8-gpu-mi35x-minimax-m25:
-    if: github.repository == 'sgl-project/sglang'
     # --- BEGIN ENGRAM: fork CI guard ---
     if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-mi35x-minimax-m25,'))
     # --- END ENGRAM ---
@@ -1771,7 +1776,6 @@ jobs:
   # MI35x 8-GPU GLM-5-MXFP4 (Accuracy + Performance combined)
 
   nightly-8-gpu-minimax-m25:
-    if: github.repository == 'sgl-project/sglang'
     # --- BEGIN ENGRAM: fork CI guard ---
     if: (github.repository == 'sgl-project/sglang') && (!(inputs.job_filter || inputs.job_select) || (inputs.job_filter || inputs.job_select) == 'all' || contains(format(',{0},', inputs.job_filter || inputs.job_select), ',nightly-8-gpu-minimax-m25,'))
     # --- END ENGRAM ---

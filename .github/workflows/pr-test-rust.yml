@@ -374,10 +374,13 @@ jobs:
     # K8s service discovery / reconciliation path. No GPU required (workers
     # are python:3.12-slim mocks); the h100 matrix runners are unsuitable
     # because they're containers without a Docker daemon.
+    # --- BEGIN ENGRAM: fork guard ---
     if: |
-      github.event_name != 'pull_request' ||
+      (github.repository == 'sgl-project/sglang') &&
+      (github.event_name != 'pull_request' ||
       (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'run-ci')) ||
-      (github.event.action == 'labeled' && github.event.label.name == 'run-ci')
+      (github.event.action == 'labeled' && github.event.label.name == 'run-ci'))
+    # --- END ENGRAM ---
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
