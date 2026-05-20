@@ -135,7 +135,7 @@ The per-commit structure of Phases A–F enables clean rollback if a later phase
 
 After each Phase (A, B, C, D, E, F) lands, post a status comment on the port PR with:
 
-- Commits landed in the phase (SHA + one-line subject each, captured via `git rev-parse` per the verification protocol below)
+- Commits landed in the phase (SHA via `git rev-parse HEAD` + one-line subject via `git show -s --format=%s <sha>`; per the verification protocol below)
 - Any deviations from this plan
 - Open questions resolved during execution + how
 - Block balance after the phase
