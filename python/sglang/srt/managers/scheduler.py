@@ -709,6 +709,9 @@ class Scheduler(
             disaggregation_mode=self.disaggregation_mode,
             enable_hicache_storage=lambda: self.enable_hicache_storage,
             load_inquirer_get_loads=lambda req: self.load_inquirer.get_loads(req),
+            # --- BEGIN ENGRAM: send_to_tokenizer wiring for M3 stateful-generate output routing ---
+            send_to_tokenizer=self.ipc_channels.send_to_tokenizer,
+            # --- END ENGRAM ---
         )
 
         self.batch_result_processor = SchedulerBatchResultProcessor(

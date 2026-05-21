@@ -45,6 +45,9 @@ class SchedulerOutputStreamer:
     disaggregation_mode: DisaggregationMode
     enable_hicache_storage: Callable[[], bool]
     load_inquirer_get_loads: Callable[..., Any]
+    # --- BEGIN ENGRAM: send_to_tokenizer socket for stateful-generate output routing (M3) ---
+    send_to_tokenizer: zmq.Socket
+    # --- END ENGRAM ---
     _test_stream_output_count: int = 0
 
     def _get_storage_backend_type(self) -> str:
@@ -134,6 +137,46 @@ class SchedulerOutputStreamer:
         for req in reqs:
             if req is skip_req:
                 continue
+
+            # --- BEGIN ENGRAM: restore_snapshot stateful-generate output routing ---
+            # Stateful-generate requests (created by restore_snapshot with continuation_ids)
+            # have no pending HTTP connection; route their final output via the snapshot
+            # result channel and skip all normal BatchTokenIDOut output.
+            if getattr(req, "_stateful_generate", False):
+                if req.finished() and not getattr(req, "finished_output", False):
+                    req.finished_output = True
+                    from sglang.srt.managers.io_struct import RestoreSnapshotReqOutput
+
+                    # Derive success from the actual finish reason, not always True.
+                    # A request that finished due to error/abort should report success=False.
+                    finish_reason = getattr(req, "finished_reason", None)
+                    success = True
+                    if finish_reason is not None:
+                        # Check if finish_reason indicates failure (abort, error, etc.)
+                        # BaseFinishReason has a 'type' field: 'abort', 'length', 'matched_token', 'matched_str', 'matched_regex'
+                        from sglang.srt.managers.schedule_batch import BaseFinishReason
+
+                        if isinstance(finish_reason, BaseFinishReason):
+                            if (
+                                hasattr(finish_reason, "type")
+                                and finish_reason.type == "abort"
+                            ):
+                                success = False
+
+                    # Use output_ids_through_stop to match the normal /generate path behavior
+                    # (stop tokens are trimmed from the output).
+                    output_ids = list(req.output_ids_through_stop)
+
+                    self.send_to_tokenizer.send_output(
+                        RestoreSnapshotReqOutput(
+                            success=success,
+                            rid=req.rid,
+                            output_ids=output_ids,
+                        )
+                    )
+                continue
+            # --- END ENGRAM ---
+
             if req.finished() and req.finished_output:
                 # With the overlap schedule, a request will try to output twice and hit this line twice
                 # because of the one additional delayed token. This "continue" prevented the dummy output.
