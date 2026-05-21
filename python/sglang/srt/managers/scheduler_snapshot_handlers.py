@@ -803,7 +803,9 @@ def handle_restore_snapshot(scheduler, recv_req):
 
                 if stateful_generate:
                     # Output will be sent after generation completes via the
-                    # _stateful_generate hook in scheduler_output_processor_mixin.
+                    # _stateful_generate hook in
+                    # scheduler_components/output_streamer.py
+                    # (_stream_output_generation), ported in the re-homing PR.
                     return None
 
                 return RestoreSnapshotReqOutput(
