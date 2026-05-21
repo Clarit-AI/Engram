@@ -1,4 +1,11 @@
 # ENGRAM_MODIFIED — Snapshot output processing hooks
+#
+# ENGRAM NOTE: This mixin is not in the Scheduler MRO. Blocks 1
+# (snapshot-before-free) and 3 (DLLM override) are orphaned and will not
+# execute until the re-homing PR ports them to their permanent locations in
+# BatchResultProcessor and output_streamer. Block 2 has already been
+# forward-ported to output_streamer.py (commit 75b1b4719). This file will
+# be deleted in the re-homing PR.
 
 from __future__ import annotations
 

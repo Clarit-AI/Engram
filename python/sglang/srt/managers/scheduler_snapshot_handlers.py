@@ -739,7 +739,10 @@ def handle_restore_snapshot(scheduler, recv_req):
             # Stateful generation: append new tokens after the restored context.
             # When continuation_ids are provided, generation happens async and the
             # result is routed back via RestoreSnapshotReqOutput (not BatchTokenIDOut).
-            stateful_generate = bool(recv_req.continuation_ids)
+            # Empty list [] is a valid continuation signal — use `is not None`
+            # instead of bool() so that an empty continuation_ids list still
+            # routes through the stateful-generate path.
+            stateful_generate = recv_req.continuation_ids is not None
             if stateful_generate:
                 origin_input_ids = list(origin_input_ids) + list(
                     recv_req.continuation_ids

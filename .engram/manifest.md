@@ -1,11 +1,11 @@
 <!-- ENGRAM_MODIFIED — Fork file manifest: canonical registry of all Engram changes -->
 # Engram Fork Manifest
 
-> **Engram:** v0.5.0 (PR #71 merged 2026-05-20, 509-commit upstream sync) — extraction PR pending against `port/scheduler-decomposition`
-> **Last updated:** 2026-05-20 (extraction PR: 4 scheduler decomposition files added; scheduler.py slimmed; totals re-derived from fresh repo-wide grep)
+> **Engram:** v0.5.0 (PR #71 merged 2026-05-20) + extraction PR #77 + hotfix PR #80, plus 272-commit upstream sync 2026-05-21 (pending merge)
+> **Last updated:** 2026-05-21 (272-commit upstream sync: scheduler.py shape changed substantially post-merge; `scheduler_components/` subdirectory arrived from upstream; totals re-derived from fresh repo-wide grep)
 >
 > Auto-generated from `git diff upstream/main...HEAD` and ENGRAM_MODIFIED markers.
-> Reference commits: `65c1ecf6e` (PR #71 / v0.5.0 merge) + extraction phase boundaries `968a76b3f` (Phase B), `f0820dfc4` (Phase C.1), `460a889d3` (Phase C.2), `6898efa06` (Phase C.3), `e9e4297ae` (Phase F).
+> Reference commits: `65c1ecf6e` (PR #71 / v0.5.0), `53da5ea1c` (PR #77 extraction merge), `1b42fc934` (PR #80 hotfix merge), `d057c0dbb` (272-commit sync merge 2026-05-21).
 
 ## How to use this file
 
@@ -22,10 +22,43 @@
 | Added files (A) | 181 |
 | Deleted files (D) | 7 |
 | Renamed files (R) | 4 |
-| Total ENGRAM_MODIFIED headers | 93 |
-| Total BEGIN/END ENGRAM blocks | 328 |
+| Total ENGRAM_MODIFIED headers | 91 |
+| Total BEGIN/END ENGRAM blocks | 327 |
 
-**Block-count delta from prior baseline (322 → 319 → 331 → 328, net +9 since 2026-05-01):** Re-derived from a fresh repo-wide grep after the CodeRabbit triage on PR #77 (2026-05-20, late pm). The extraction PR's earlier manifest update reported 331; the CodeRabbit hygiene pass (isort marker-block consolidation in scheduler.py + removal of orphan END left behind by isort + removal of dead `import uuid` + its BEGIN/END wrapper) reduced scheduler.py from 16 blocks to **13 blocks**, dropping the repo-wide total by 3 (331 → 328). 4 new fork files remain header-only (0 blocks each). Other delta (+12 from interim PRs since 2026-05-01: PRs #65 / #70 / #71 / others not yet retroactively manifest-updated) was reconciled in the prior 331 ground-truth and is now part of the 328 baseline. This recount is the post-CodeRabbit ground-truth value via fresh `grep -rE "BEGIN ENGRAM" .` per §6 plumbing protocol.
+**Block-count delta from prior baseline (322 → 319 → 331 → 328 → 327, net +8 since 2026-05-01):** Re-derived from a fresh repo-wide grep after the 272-commit upstream sync merge (2026-05-21). The PR #80 hotfix baseline was 328 blocks / 93 headers. Sync delta: 328 → **327** blocks (net −1); 93 → **91** headers (net −2). Direct contributors visible from this sync:
+- scheduler.py: 13 blocks both pre- and post-sync — unchanged in count, but file shape substantially different (init_cache_with_memory_pool method body deleted upstream; `_get_draft_kv_pool` + `_maybe_register_hicache_draft` methods deleted upstream — call sites auto-merged to `kv_cache_builder.*` functions; 3 fork-only delegator blocks restored at the deletion site after Hunk 3 sweep regression caught locally). +646 / −876 net diff per `git diff --numstat`.
+- `.claude/skills/ci-workflow-guide/SKILL.md` and `.claude/skills/write-sglang-test/SKILL.md`: deleted (fork-wins on modify/delete conflicts; both had ENGRAM_MODIFIED headers, hence −2 headers).
+- Other deltas (~−1 block net) come from minor auto-merged ENGRAM block adjustments in the conflict-touched files.
+
+This recount is the post-272-commit-sync ground-truth value via fresh `grep -rE "BEGIN ENGRAM" .` per §6 plumbing protocol. Python files repo-wide are 64/64 BALANCED. Per-file imbalance audit clean except `.engram/SYNC_PLAYBOOK.md` (benign documentation prose mentioning the marker convention).
+
+### Upstream subdirectory arrived: `python/sglang/srt/managers/scheduler_components/`
+
+The 272-commit sync brought upstream's scheduler-decomposition subdirectory into the fork tree:
+
+```
+scheduler_components/
+├── __init__.py
+├── batch_result_processor.py   (33K — was scheduler_output_processor_mixin)
+├── dp_attn.py
+├── flush_wrapper.py
+├── idle_sleeper.py
+├── invariant_checker.py        (was scheduler_runtime_checker_mixin)
+├── ipc_channels.py
+├── kv_events_publisher.py
+├── load_inquirer.py
+├── logprob_result_processor.py
+├── metrics_reporter.py         (was scheduler_metrics_mixin)
+├── new_token_ratio_tracker.py
+├── output_sender.py
+├── output_streamer.py
+├── pool_stats_observer.py
+├── profiler_manager.py         (was scheduler_profiler_mixin)
+├── request_receiver.py
+└── weight_updater.py           (was scheduler_update_weights_mixin)
+```
+
+These are upstream-only files (no fork modifications yet) — not in the "Added Files — Engram-Only" or "Modified Upstream Files" tables. The **re-homing PR** (scheduled post-sync per `docs/upstream-sync/scheduler-decomposition-port.md` §5c) will modify several of these (S5 → `metrics_reporter.py`, S13/S14 → `batch_result_processor.py`, S10/S11/S12 → `request_receiver.py`, M1/M2/M3 → `batch_result_processor.py` + `scheduler_output_processor_mixin.py` deletion). Files touched by the re-homing PR will get manifest rows in the "High Conflict Risk — Modified Upstream Files" or "Other Modified Files" tables at that time.
 
 ## High Conflict Risk — Modified Upstream Files ⚠️
 
@@ -33,7 +66,7 @@ These are the files where upstream changes will most likely conflict with Engram
 
 | File | Blocks | +/- | Description |
 |------|--------|-----|-------------|
-| `python/sglang/srt/managers/scheduler.py` | 13 | (slimmed in extraction PR 2026-05-20: ~1500 lines moved to 4 fork-only `scheduler_*` files; the file now hosts thin delegators for the extracted subsystems. Post-CodeRabbit hygiene: marker consolidation + orphan END removal + dead `uuid` import removal brought block count from 16 to **13**, net −2 from prior 15) | Mamba state management, snapshot save/restore, conversation tracking, agent system. Block count 13 reflects the post-extraction post-CodeRabbit-hygiene state |
+| `python/sglang/srt/managers/scheduler.py` | 14 | (slimmed in extraction PR 2026-05-20: ~1500 lines moved to 4 fork-only `scheduler_*` files; the file now hosts thin delegators for the extracted subsystems. Post-CodeRabbit hygiene: marker consolidation + orphan END removal + dead `uuid` import removal brought block count from 16 to 13. M3 cherry-pick (commit 75b1b4719, sync branch) added 1 new send_to_tokenizer wiring block → current count **14**. One of the 14 pairs is a degenerate zero-length pair at L93, collapsed onto a single import line.) | Mamba state management, snapshot save/restore, conversation tracking, agent system. Block count 14 reflects the post-extraction + post-CodeRabbit-hygiene + post-M3-cherry-pick state |
 | `python/sglang/srt/managers/tokenizer_manager.py` | 9 | +98 | Snapshot and agent token management |
 | `python/sglang/srt/server_args.py` | 2 | +261 | Snapshot/Mamba CLI args, memory tiers, agent tools, IPv6 URL (SSL block removed — upstream adopted identical implementation, now deduplicated) |
 | `python/sglang/srt/entrypoints/http_server.py` | 3 | +208 | Snapshot HTTP endpoints, agent API routes, socket pre-binding |
