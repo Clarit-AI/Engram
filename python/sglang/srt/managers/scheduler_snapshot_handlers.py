@@ -48,7 +48,7 @@ logger = logging.getLogger("sglang.srt.managers.scheduler")
 
 
 def _find_request_by_rid(scheduler, rid: str):
-    """Find a request by its rid in running batch or waiting queue.
+    """Find a request by its rid across scheduler-owned request queues.
 
     Args:
         rid: Request ID to find
@@ -56,11 +56,30 @@ def _find_request_by_rid(scheduler, rid: str):
     Returns:
         The request object if found, None otherwise
     """
-    # Search running_batch
-    if scheduler.running_batch is not None and not scheduler.running_batch.is_empty():
-        for req in scheduler.running_batch.reqs:
+    seen_batches = set()
+
+    def search_batch(batch):
+        if batch is None or id(batch) in seen_batches:
+            return None
+        seen_batches.add(id(batch))
+        if batch.is_empty():
+            return None
+        for req in batch.reqs:
             if req.rid == rid:
                 return req
+        return None
+
+    # Snapshot RPCs are processed before get_next_batch_to_run() merges the
+    # previous iteration's extend batch into running_batch. During that window,
+    # a live request can be present only in cur_batch/last_batch.
+    for batch in (
+        scheduler.running_batch,
+        getattr(scheduler, "cur_batch", None),
+        getattr(scheduler, "last_batch", None),
+    ):
+        req = search_batch(batch)
+        if req is not None:
+            return req
 
     # Search waiting_queue
     for req in scheduler.waiting_queue:
