@@ -161,20 +161,22 @@ Enables overseer review without re-reading the full diff at each checkpoint.
 
 ### Verification protocol (rtk-safe)
 
-`rtk` (the token-optimized CLI proxy active in this environment) caches porcelain `git log` output and can serve a STALE SHA for HEAD. Plumbing commands pass through raw (diagnostic-confirmed 2026-05-20). Therefore:
+`rtk` (the token-optimized CLI proxy active in this environment) caches verbose porcelain summaries and can serve stale or falsified values. Plumbing / machine-readable forms pass through raw (diagnostic-confirmed 2026-05-20; widened 2026-05-20-pm after a −2169 vs −1524 mismatch surfaced from `git diff --stat`). The cache surface is **broader than `git log` alone** — any verbose porcelain summary is suspect (`git log`, `git diff --stat`, `git show --stat`, and likely `git status` long-form). Therefore:
 
-**HARD RULE: `git log` is BANNED for any verification or decision-gating check during the port.** "Prefer plumbing" relies on remembering every time — across 13–16 commits and six phases, that's a slip waiting to happen. State inspection uses plumbing ONLY:
+**HARD RULE: porcelain summary forms are BANNED for any verification or decision-gating check during the port.** "Prefer plumbing" relies on remembering every time — across 13–16 commits and six phases, that's a slip waiting to happen. State inspection uses plumbing / machine-readable forms ONLY:
 
-| Need | Use |
-|---|---|
-| Current HEAD | `git rev-parse HEAD` |
-| Confirm a commit's contents | `git cat-file -p HEAD` (or `-p <sha>`) |
-| Current branch ref | `git symbolic-ref HEAD` |
-| Tag / ref resolution | `git show-ref --tags` ; `git rev-parse <ref>` |
-| Commit count in a range | `git rev-list --count <range>` |
-| File contents at a ref | `git show <ref>:<path>` |
+| Need | Use (safe) | Banned (rtk-suspect) |
+|---|---|---|
+| Current HEAD | `git rev-parse HEAD` | `git log -1 --format=…` |
+| Confirm a commit's contents | `git cat-file -p HEAD` (or `-p <sha>`) | `git show <sha>` (porcelain summary) |
+| Current branch ref | `git symbolic-ref HEAD` | — |
+| Tag / ref resolution | `git show-ref --tags` ; `git rev-parse <ref>` | — |
+| Commit count in a range | `git rev-list --count <range>` | `git log --oneline … \| wc -l` |
+| File contents at a ref | `git show <ref>:<path>` | — |
+| Diff magnitudes (additions/deletions per file) | `git diff --numstat <range>` | `git diff --stat <range>` / `git show --stat <sha>` |
+| Files changed in a range | `git diff --name-only <range>` | `git diff --stat <range>` |
 
-For human-readable history ONLY (never to gate a decision): `rtk proxy git log ...` bypasses the cache.
+For human-readable history or summaries ONLY (never to gate a decision or propagate as a figure): `rtk proxy git log …` / `rtk proxy git diff --stat …` bypass the cache. Any number quoted in a PR description, SESSION_STATE entry, commit message, or status report must come from a `--numstat` / `--name-only` / `--format` / plumbing source — never from the visual `--stat` summary line.
 
 **Per-phase backstop (memory-independent):**
 
