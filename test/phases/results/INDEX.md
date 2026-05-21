@@ -28,6 +28,7 @@ All results for the Engram snapshot persistence testing program. Each phase buil
 | compat | Nemotron-3-Super-120B-A12B FP8 | **PASS** (54/56, 96.4%) | NemotronHForCausalLM | 2026-04-01 |
 | compat | Qwen3-Coder-Next FP8 (ad-hoc) | **PASS** (56/59) | Qwen3NextForCausalLM | 2026-04-01 |
 | compat | Qwen3-Coder-Next FP8 (protocol) | **PASS** (62/62, 100%) | Qwen3NextForCausalLM | 2026-04-01 |
+| KHA-394 | TTFT + compute amortization | **PASS** (7.43x restore-vs-cold TTFT, 97.94% token-work reduction) | granite-4.0-h-tiny | 2026-05-21 |
 
 ---
 
@@ -180,6 +181,11 @@ New models validated using the [Model Compatibility Protocol](../MODEL_COMPAT_PR
 
 48-layer GLA + MoE hybrid, FP8 via HF-native block quantization. Key finding: GLA recurrent state routes through Mamba cache — snapshot infrastructure captures it with zero code changes. Requires `SGLANG_ENABLE_JIT_DEEPGEMM=0`. Zero model-specific failures under the protocol. Stateful recall BLOCKED (pre-existing restore API gap, all models).
 
+### KHA-394 - TTFT and Compute Amortization
+**Result**: PASS | **File**: `kha-394-h100-20260521.md`
+
+Measured a 50,000-word / 64,187-token Granite tiny prompt on a Google Cloud H100. Cold streaming TTFT was 3,027ms. Snapshot save succeeded from WARM tier in 259ms. Restore-and-generate with a short continuation and `max_new_tokens=1` completed in 408ms, a 7.43x improvement over cold TTFT. Across a modeled 50-turn script, Engram avoids 3,145,163 prefill tokens, reducing token work by 97.94%. With a 4.0B active-parameter assumption, this maps to an estimated 2.52e16 inference FLOPs avoided.
+
 ---
 
 ## Supporting Files
@@ -192,6 +198,7 @@ New models validated using the [Model Compatibility Protocol](../MODEL_COMPAT_PR
 | `../scripts/phase-10-h-small-test.py` | Granite-specific test script |
 | `../scripts/phase-10-resilience.py` | Resilience/adversarial test script |
 | `../scripts/phase-10-context-scaling.py` | 2K-128K context window scaling script |
+| `../../../scripts/kha-394-ttft-amortization.py` | KHA-394 TTFT and compute-amortization probe |
 | `../scripts/download-model.sh` | Model download helper |
 | `../config.sh` | Single source of truth for model paths, ports, dirs |
 | `../MODEL_COMPAT_PROTOCOL.md` | Standardized agent prompt for new model validation |
