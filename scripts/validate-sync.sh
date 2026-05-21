@@ -21,12 +21,39 @@ set -euo pipefail
 
 # --- Configuration ---
 DEFAULT_MODEL="ibm-granite/granite-4.0-h-tiny"
-MODEL="${1:-$DEFAULT_MODEL}"
+MODEL="$DEFAULT_MODEL"
 SKIP_SNAPSHOT="${SKIP_SNAPSHOT:-false}"
-PORT=30000
+PORT="${PORT:-30000}"
+export SGLANG_ENABLE_SPEC_V2="${SGLANG_ENABLE_SPEC_V2:-false}"
 SNAPSHOT_DIR=$(mktemp -d /tmp/engram-sync-validate-XXXXXX)
 LOG_DIR=$(mktemp -d /tmp/engram-sync-logs-XXXXXX)
 SERVER_PID=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --model)
+            if [ $# -lt 2 ]; then
+                echo "Missing value for --model" >&2
+                exit 2
+            fi
+            MODEL="$2"
+            shift 2
+            ;;
+        --skip-snapshot)
+            SKIP_SNAPSHOT="true"
+            shift
+            ;;
+        --help|-h)
+            sed -n '1,8p' "$0"
+            exit 0
+            ;;
+        *)
+            # Preserve the old shorthand: scripts/validate-sync.sh MODEL_NAME
+            MODEL="$1"
+            shift
+            ;;
+    esac
+done
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -37,6 +64,48 @@ NC='\033[0m'
 log_pass() { echo -e "${GREEN}[PASS]${NC} $1"; }
 log_fail() { echo -e "${RED}[FAIL]${NC} $1"; }
 log_info() { echo -e "${YELLOW}[INFO]${NC} $1"; }
+
+json_success() {
+    python -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('success') is True else 1)"
+}
+
+json_chat_content() {
+    python -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+}
+
+write_stateful_restore_payload() {
+    QUESTION="$1" RID="$2" MODEL="$MODEL" python - "$LOG_DIR/stateful_restore_payload.json" <<'PY'
+import json
+import os
+import sys
+
+from transformers import AutoTokenizer
+
+question = os.environ["QUESTION"]
+conversation_id = os.environ["RID"]
+model = os.environ["MODEL"]
+output_path = sys.argv[1]
+
+tok = AutoTokenizer.from_pretrained(model)
+formatted = tok.apply_chat_template(
+    [{"role": "user", "content": question}],
+    tokenize=False,
+    add_generation_prompt=True,
+)
+continuation_ids = tok.encode(formatted, add_special_tokens=False)
+
+with open(output_path, "w", encoding="utf-8") as f:
+    json.dump(
+        {
+            "conversation_id": conversation_id,
+            "create_new_request": True,
+            "continuation_ids": continuation_ids,
+            "max_new_tokens": 40,
+        },
+        f,
+    )
+PY
+}
 
 cleanup() {
     if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -52,6 +121,8 @@ trap cleanup EXIT
 # --- Preflight ---
 log_info "=== Engram Post-Sync Validation ==="
 log_info "Model: $MODEL"
+log_info "Port: $PORT"
+log_info "SGLANG_ENABLE_SPEC_V2: $SGLANG_ENABLE_SPEC_V2"
 log_info "Snapshot dir: $SNAPSHOT_DIR"
 log_info "Logs: $LOG_DIR"
 
@@ -86,6 +157,11 @@ SERVER_PID=$!
 WAITED=0
 MAX_WAIT=300
 while [ $WAITED -lt $MAX_WAIT ]; do
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        log_fail "Server process exited before becoming healthy"
+        cat "$LOG_DIR/server.log" | tail -50
+        exit 1
+    fi
     if [ "$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$PORT/health")" = "200" ]; then
         break
     fi
@@ -127,7 +203,7 @@ if [ "$SKIP_SNAPSHOT" = "true" ]; then
 else
     log_info "Test 3: Snapshot save/restore roundtrip..."
 
-    # Establish context with a fact
+    # Establish context with a fact. The rid is also the durable conversation_id.
     RID="validate-sync-$(date +%s)-$$"
     curl -s "http://localhost:$PORT/v1/chat/completions" \
         -H "Content-Type: application/json" \
@@ -139,11 +215,30 @@ else
             "rid": "'"$RID"'"
         }' > "$LOG_DIR/establish.json" 2>&1
 
-    # Save snapshot
-    SAVE_HTTP_CODE=$(curl -s -o "$LOG_DIR/save_response.json" -w "%{http_code}" \
-        "http://localhost:$PORT/save_snapshot" \
-        -H "Content-Type: application/json" \
-        -d '{"rid": "'"$RID"'"}')
+    if ! json_chat_content < "$LOG_DIR/establish.json" >/dev/null 2>&1; then
+        log_fail "Context-establishing inference returned invalid response"
+        cat "$LOG_DIR/establish.json" | python -m json.tool 2>/dev/null || cat "$LOG_DIR/establish.json"
+        exit 1
+    fi
+
+    # Save snapshot. every_turn snapshots complete asynchronously after generation,
+    # so poll briefly until WARM state is visible and can be persisted to COLD.
+    SAVE_HTTP_CODE=""
+    SAVE_RESPONSE=""
+    SAVE_WAITED=0
+    SAVE_MAX_WAIT=10
+    while [ "$SAVE_WAITED" -lt "$SAVE_MAX_WAIT" ]; do
+        SAVE_HTTP_CODE=$(curl -s -o "$LOG_DIR/save_response.json" -w "%{http_code}" \
+            "http://localhost:$PORT/save_snapshot" \
+            -H "Content-Type: application/json" \
+            -d '{"conversation_id": "'"$RID"'"}')
+        SAVE_RESPONSE=$(cat "$LOG_DIR/save_response.json")
+        if [ "$SAVE_HTTP_CODE" = "200" ] && echo "$SAVE_RESPONSE" | json_success 2>/dev/null; then
+            break
+        fi
+        sleep 1
+        SAVE_WAITED=$((SAVE_WAITED + 1))
+    done
     SAVE_RESPONSE=$(cat "$LOG_DIR/save_response.json")
 
     if [ "$SAVE_HTTP_CODE" != "200" ]; then
@@ -151,7 +246,7 @@ else
         cat "$LOG_DIR/server.log" | tail -50
         exit 1
     fi
-    if ! echo "$SAVE_RESPONSE" | python -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('success') is True else 1)" 2>/dev/null; then
+    if ! echo "$SAVE_RESPONSE" | json_success 2>/dev/null; then
         log_fail "Snapshot save body missing success:true: $SAVE_RESPONSE"
         cat "$LOG_DIR/server.log" | tail -50
         exit 1
@@ -170,7 +265,7 @@ else
     RESTORE_HTTP_CODE=$(curl -s -o "$LOG_DIR/restore_response.json" -w "%{http_code}" \
         "http://localhost:$PORT/restore_snapshot" \
         -H "Content-Type: application/json" \
-        -d '{"rid": "'"$RID"'"}')
+        -d '{"conversation_id": "'"$RID"'"}')
     RESTORE_RESPONSE=$(cat "$LOG_DIR/restore_response.json")
 
     if [ "$RESTORE_HTTP_CODE" != "200" ]; then
@@ -178,7 +273,7 @@ else
         cat "$LOG_DIR/server.log" | tail -50
         exit 1
     fi
-    if ! echo "$RESTORE_RESPONSE" | python -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('success') is True else 1)" 2>/dev/null; then
+    if ! echo "$RESTORE_RESPONSE" | json_success 2>/dev/null; then
         log_fail "Snapshot restore body missing success:true: $RESTORE_RESPONSE"
         cat "$LOG_DIR/server.log" | tail -50
         exit 1
@@ -188,22 +283,35 @@ else
     # --- Test 4: Post-restore stateful recall ---
     log_info "Test 4: Stateful recall after restore..."
 
-    RECALL_RESPONSE=$(curl -s "http://localhost:$PORT/v1/chat/completions" \
-        -H "Content-Type: application/json" \
-        -d '{
-            "model": "'"$MODEL"'",
-            "messages": [{"role": "user", "content": "What was the secret code I told you?"}],
-            "max_tokens": 30,
-            "temperature": 0,
-            "rid": "'"$RID"'"
-        }')
+    RECALL_QUESTION="What was the secret code I told you?"
+    if ! write_stateful_restore_payload "$RECALL_QUESTION" "$RID"; then
+        log_fail "Failed to tokenize continuation_ids for stateful restore"
+        exit 1
+    fi
 
-    RECALL_TEXT=$(echo "$RECALL_RESPONSE" | python -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])" 2>/dev/null || echo "PARSE_ERROR")
+    RECALL_HTTP_CODE=$(curl -s -o "$LOG_DIR/recall_response.json" -w "%{http_code}" \
+        "http://localhost:$PORT/restore_snapshot" \
+        -H "Content-Type: application/json" \
+        -d @"$LOG_DIR/stateful_restore_payload.json")
+    RECALL_RESPONSE=$(cat "$LOG_DIR/recall_response.json")
+
+    if [ "$RECALL_HTTP_CODE" != "200" ]; then
+        log_fail "Stateful restore returned HTTP $RECALL_HTTP_CODE: $RECALL_RESPONSE"
+        cat "$LOG_DIR/server.log" | tail -50
+        exit 1
+    fi
+    if ! echo "$RECALL_RESPONSE" | json_success 2>/dev/null; then
+        log_fail "Stateful restore body missing success:true: $RECALL_RESPONSE"
+        cat "$LOG_DIR/server.log" | tail -50
+        exit 1
+    fi
+
+    RECALL_TEXT=$(echo "$RECALL_RESPONSE" | python -c "import sys,json; print(json.load(sys.stdin).get('output_text') or '')" 2>/dev/null || echo "PARSE_ERROR")
 
     if echo "$RECALL_TEXT" | grep -qi "DELTA-7"; then
         log_pass "Stateful recall works: '$RECALL_TEXT'"
     else
-        log_fail "Stateful recall failed — model did not recall 'DELTA-7'"
+        log_fail "Stateful recall failed - restore-and-generate did not recall 'DELTA-7'"
         log_info "Response was: $RECALL_TEXT"
         exit 1
     fi
