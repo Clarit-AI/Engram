@@ -1,0 +1,47 @@
+{
+  "created_at": "2026-05-21T08:25:30.842238+00:00",
+  "model": "ibm-granite/granite-4.0-h-tiny",
+  "server_url": "http://localhost:30003",
+  "target_words": 50000,
+  "conversation_id": "kha-394-4de0d9dedb",
+  "methodology": {
+    "cold_ttft": "streaming /v1/chat/completions with the full long context",
+    "restore_latency": "/restore_snapshot create_new_request=true with max_new_tokens=1; reported separately because restore_snapshot is not streaming",
+    "flops_estimate": "2 * active_params * skipped_prefill_tokens when --active-params is supplied"
+  },
+  "token_work": {
+    "context_tokens": 64187,
+    "continuation_tokens_per_turn": 41,
+    "turns": 50,
+    "stateless_prefill_tokens": 3211359,
+    "engram_prefill_tokens": 66196,
+    "skipped_prefill_tokens": 3145163,
+    "token_reduction_pct": 97.93869199924393,
+    "assumed_active_params": 4000000000.0,
+    "estimated_flops_saved": 2.5161304e+16
+  },
+  "cold_long_context": {
+    "ttft_ms": 3027.3135409952374,
+    "total_latency_ms": 3696.050591999665,
+    "output_text": "The reference text was processed."
+  },
+  "save_snapshot": {
+    "success": true,
+    "snapshot_id": "kha-394-4de0d9dedb-t0",
+    "message": "Snapshot saved successfully (from WARM tier)",
+    "client_latency_ms": 258.8723160006339
+  },
+  "restore_generate": {
+    "success": true,
+    "rid": "restored-b12ac02d",
+    "mamba_pool_idx": null,
+    "message": null,
+    "token_count": null,
+    "output_ids": [
+      474
+    ],
+    "output_text": "ack",
+    "restore_plus_one_token_ms": 407.6769920065999
+  },
+  "speedup_vs_cold_ttft": 7.425765006003155
+}
