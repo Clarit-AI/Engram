@@ -1,0 +1,25 @@
+[2026-05-21 01:17:23] Restored from WARM tier: kha387-no_restore-775c78f4, hit_rate=100.00%
+[2026-05-21 01:17:41] Restored from WARM tier: kha387-real_warm-2f67f8f6, hit_rate=100.00%
+[2026-05-21 01:17:42] Restored from WARM tier: kha387-real_warm-2f67f8f6, hit_rate=100.00%
+[2026-05-21 01:17:42] Snapshot staged for pending restore: conversation=kha387-real_warm-2f67f8f6, rid=kha387-real_warm-2f67f8f6-tail, token_count=86
+[2026-05-21 01:17:42] Injected state to pool idx 7: 1 conv tensors, temporal shape torch.Size([64, 128, 64, 128]) (moved to cuda)
+[2026-05-21 01:17:42] pending-restore registry hit: hydrated rid=kha387-real_warm-2f67f8f6-tail (canonical=kha387-real_warm-2f67f8f6-tail, conv_id=kha387-real_warm-2f67f8f6, mamba_pool_idx=7)
+[2026-05-21 01:17:59] Restored from WARM tier: kha387-real_disk-4ccdb2e5, hit_rate=100.00%
+[2026-05-21 01:18:01] Snapshot loaded: conversation=kha387-real_disk-4ccdb2e5, turn=1, branch=None, layers=1
+[2026-05-21 01:18:01] Snapshot staged for pending restore: conversation=kha387-real_disk-4ccdb2e5, rid=kha387-real_disk-4ccdb2e5-tail, token_count=86
+[2026-05-21 01:18:01] Injected state to pool idx 9: 1 conv tensors, temporal shape torch.Size([64, 128, 64, 128]) (moved to cuda)
+[2026-05-21 01:18:01] pending-restore registry hit: hydrated rid=kha387-real_disk-4ccdb2e5-tail (canonical=kha387-real_disk-4ccdb2e5-tail, conv_id=kha387-real_disk-4ccdb2e5, mamba_pool_idx=9)
+[2026-05-21 01:18:19] Restored from WARM tier: kha387-zero_disk-02fdea49, hit_rate=100.00%
+[2026-05-21 01:18:21] State validation warning (load): [kha387-zero_disk-02fdea49] conv_state[0]: all-zero tensor (possibly uninitialized)
+[2026-05-21 01:18:21] State validation warning (load): [kha387-zero_disk-02fdea49] temporal_states: all-zero tensor (possibly uninitialized)
+[2026-05-21 01:18:21] Snapshot loaded: conversation=kha387-zero_disk-02fdea49, turn=1, branch=None, layers=1
+[2026-05-21 01:18:21] Snapshot staged for pending restore: conversation=kha387-zero_disk-02fdea49, rid=kha387-zero_disk-02fdea49-tail, token_count=86
+[2026-05-21 01:18:21] State validation warning (inject): [unknown] conv_state[0]: all-zero tensor (possibly uninitialized)
+[2026-05-21 01:18:21] State validation warning (inject): [unknown] temporal_states: all-zero tensor (possibly uninitialized)
+[2026-05-21 01:18:21] Injected state to pool idx 11: 1 conv tensors, temporal shape torch.Size([64, 128, 64, 128]) (moved to cuda)
+[2026-05-21 01:18:21] pending-restore registry hit: hydrated rid=kha387-zero_disk-02fdea49-tail (canonical=kha387-zero_disk-02fdea49-tail, conv_id=kha387-zero_disk-02fdea49, mamba_pool_idx=11)
+[2026-05-21 01:18:38] Restored from WARM tier: kha387-random_disk-11fdbff0, hit_rate=100.00%
+[2026-05-21 01:18:41] Snapshot loaded: conversation=kha387-random_disk-11fdbff0, turn=1, branch=None, layers=1
+[2026-05-21 01:18:41] Snapshot staged for pending restore: conversation=kha387-random_disk-11fdbff0, rid=kha387-random_disk-11fdbff0-tail, token_count=86
+[2026-05-21 01:18:41] Injected state to pool idx 13: 1 conv tensors, temporal shape torch.Size([64, 128, 64, 128]) (moved to cuda)
+[2026-05-21 01:18:41] pending-restore registry hit: hydrated rid=kha387-random_disk-11fdbff0-tail (canonical=kha387-random_disk-11fdbff0-tail, conv_id=kha387-random_disk-11fdbff0, mamba_pool_idx=13)
