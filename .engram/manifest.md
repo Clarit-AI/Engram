@@ -1,11 +1,11 @@
 <!-- ENGRAM_MODIFIED — Fork file manifest: canonical registry of all Engram changes -->
 # Engram Fork Manifest
 
-> **Engram:** v0.2.0 → v0.3.0 (PR #56 pending merge to main)
-> **Last updated:** 2026-05-01 (post-PR-56 marker reconciliation: kv_cache_mixin reverted to upstream; hf_transformers_utils → hf_transformers/common.py; new pool_configurator.py port)
+> **Engram:** v0.5.0 (PR #71 merged 2026-05-20, 509-commit upstream sync) — extraction PR pending against `port/scheduler-decomposition`
+> **Last updated:** 2026-05-20 (extraction PR: 4 scheduler decomposition files added; scheduler.py slimmed; totals re-derived from fresh repo-wide grep)
 >
 > Auto-generated from `git diff upstream/main...HEAD` and ENGRAM_MODIFIED markers.
-> Reference commit: `aa492865d` (the PR #56 merge commit) + `f231ad763` (server_args ENGRAM_CONFLICT_REVIEW cleanup) + `9770ab640` (nightly-test-amd.yml trigger-guard removal)
+> Reference commits: `65c1ecf6e` (PR #71 / v0.5.0 merge) + extraction phase boundaries `968a76b3f` (Phase B), `f0820dfc4` (Phase C.1), `460a889d3` (Phase C.2), `6898efa06` (Phase C.3), `e9e4297ae` (Phase F).
 
 ## How to use this file
 
@@ -19,13 +19,13 @@
 | Category | Count |
 |----------|-------|
 | Modified files (M) | 78 |
-| Added files (A) | 177 |
+| Added files (A) | 181 |
 | Deleted files (D) | 7 |
 | Renamed files (R) | 4 |
-| Total ENGRAM_MODIFIED headers | 86 |
-| Total BEGIN/END ENGRAM blocks | 319 |
+| Total ENGRAM_MODIFIED headers | 93 |
+| Total BEGIN/END ENGRAM blocks | 331 |
 
-**Block-count delta from prior baseline (322 → 319, net −3):** 2 upstream job removals in CI workflows (no longer present in upstream `pr-test-amd.yml` etc.) + 1 SSL-validation feature adoption by upstream (fork's `_handle_ssl_validation` block in `server_args.py` deduplicated against upstream's now-identical implementation). Structural moves (kv_cache_mixin → pool_configurator, hf_transformers_utils → hf_transformers/common.py) net to zero.
+**Block-count delta from prior baseline (322 → 319 → 331, net +12 since 2026-05-01):** Re-derived from a fresh repo-wide grep at extraction PR open (2026-05-20). Direct contributors visible from this PR: scheduler.py +1 block (delegator wrappers added net of S7/S7a/S8/S9 block deletions); 4 new fork files added under "Scheduler Decomposition" (header-only per Q4 marker policy, contribute 0 BEGIN/END blocks but +4 headers). Other delta (~+11 blocks, +3 headers) comes from interim PRs since the prior baseline (PRs #65 / #70 / #71 / others not yet retroactively manifest-updated). Per the port plan's per-PR manifest hygiene rule, those PRs' own deltas should be reconciled in their respective follow-ups; this recount is the fresh ground-truth value.
 
 ## High Conflict Risk — Modified Upstream Files ⚠️
 
@@ -33,7 +33,7 @@ These are the files where upstream changes will most likely conflict with Engram
 
 | File | Blocks | +/- | Description |
 |------|--------|-----|-------------|
-| `python/sglang/srt/managers/scheduler.py` | 15 | +1223 | Mamba state management, snapshot save/restore, conversation tracking |
+| `python/sglang/srt/managers/scheduler.py` | 16 | (slimmed in extraction PR 2026-05-20: ~1500 lines moved to 4 fork-only `scheduler_*` files; the file now hosts thin delegators for the extracted subsystems) | Mamba state management, snapshot save/restore, conversation tracking, agent system. Block count 16 includes the new delegator/import wrapper blocks added during extraction; net block count +1 from prior 15 |
 | `python/sglang/srt/managers/tokenizer_manager.py` | 9 | +98 | Snapshot and agent token management |
 | `python/sglang/srt/server_args.py` | 2 | +261 | Snapshot/Mamba CLI args, memory tiers, agent tools, IPv6 URL (SSL block removed — upstream adopted identical implementation, now deduplicated) |
 | `python/sglang/srt/entrypoints/http_server.py` | 3 | +208 | Snapshot HTTP endpoints, agent API routes, socket pre-binding |
@@ -168,6 +168,17 @@ This disables upstream CI on the Engram fork. New/changed workflows added by Eng
 |------|---------|
 | `python/sglang/srt/models/mamba2.py` | Mamba2 model implementation |
 | `python/sglang/srt/configs/mamba2.py` | Mamba2 configuration registry |
+
+### Scheduler Decomposition (4 files, all header-only fork files)
+
+Extracted from monolithic `scheduler.py` in the extraction PR (2026-05-20) ahead of the next upstream sync. Module-level helper functions taking a `scheduler` argument; the `Scheduler` class keeps the corresponding method names as thin delegators, so call sites elsewhere in `scheduler.py` and external test surfaces are unchanged. Marker policy is header-only per the resolved `Q4` decision in `docs/upstream-sync/scheduler-decomposition-port.md`.
+
+| File | Purpose |
+|------|---------|
+| `python/sglang/srt/managers/scheduler_pending_restore.py` | `PendingRestoreEntry` dataclass + `PENDING_RESTORE_REGISTRY_MAX` capacity constant for the pending-restore registry. Extracted from `scheduler.py` (S4) |
+| `python/sglang/srt/managers/scheduler_snapshot_system.py` | Snapshot system lifecycle: `init_snapshot_system` (~330 lines including the `post_forward_snapshot_callback` closure) and `restore_snapshots_on_startup`. Extracted from `scheduler.py` (S7 + S7a) |
+| `python/sglang/srt/managers/scheduler_snapshot_handlers.py` | Snapshot RPC handlers + pending-restore registry helpers — `_find_request_by_rid`, `_load_snapshot_for_pending_restore`, `_stage_pending_restore`, `_clear_pending_restore`, `_maybe_hydrate_from_pending_restore`, and the 6 `handle_*` methods. Extracted from `scheduler.py` (S8, ~1100 lines) |
+| `python/sglang/srt/managers/scheduler_agent_system.py` | Agent tool framework lifecycle: `init_agent_system`. Extracted from `scheduler.py` (S9) |
 
 ### Test Suite — Snapshot & Agent Tests (16 files)
 
