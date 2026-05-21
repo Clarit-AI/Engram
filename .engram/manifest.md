@@ -23,9 +23,9 @@
 | Deleted files (D) | 7 |
 | Renamed files (R) | 4 |
 | Total ENGRAM_MODIFIED headers | 93 |
-| Total BEGIN/END ENGRAM blocks | 331 |
+| Total BEGIN/END ENGRAM blocks | 328 |
 
-**Block-count delta from prior baseline (322 → 319 → 331, net +12 since 2026-05-01):** Re-derived from a fresh repo-wide grep at extraction PR open (2026-05-20). Direct contributors visible from this PR: scheduler.py +1 block (delegator wrappers added net of S7/S7a/S8/S9 block deletions); 4 new fork files added under "Scheduler Decomposition" (header-only per Q4 marker policy, contribute 0 BEGIN/END blocks but +4 headers). Other delta (~+11 blocks, +3 headers) comes from interim PRs since the prior baseline (PRs #65 / #70 / #71 / others not yet retroactively manifest-updated). Per the port plan's per-PR manifest hygiene rule, those PRs' own deltas should be reconciled in their respective follow-ups; this recount is the fresh ground-truth value.
+**Block-count delta from prior baseline (322 → 319 → 331 → 328, net +9 since 2026-05-01):** Re-derived from a fresh repo-wide grep after the CodeRabbit triage on PR #77 (2026-05-20, late pm). The extraction PR's earlier manifest update reported 331; the CodeRabbit hygiene pass (isort marker-block consolidation in scheduler.py + removal of orphan END left behind by isort + removal of dead `import uuid` + its BEGIN/END wrapper) reduced scheduler.py from 16 blocks to **13 blocks**, dropping the repo-wide total by 3 (331 → 328). 4 new fork files remain header-only (0 blocks each). Other delta (+12 from interim PRs since 2026-05-01: PRs #65 / #70 / #71 / others not yet retroactively manifest-updated) was reconciled in the prior 331 ground-truth and is now part of the 328 baseline. This recount is the post-CodeRabbit ground-truth value via fresh `grep -rE "BEGIN ENGRAM" .` per §6 plumbing protocol.
 
 ## High Conflict Risk — Modified Upstream Files ⚠️
 
@@ -33,7 +33,7 @@ These are the files where upstream changes will most likely conflict with Engram
 
 | File | Blocks | +/- | Description |
 |------|--------|-----|-------------|
-| `python/sglang/srt/managers/scheduler.py` | 16 | (slimmed in extraction PR 2026-05-20: ~1500 lines moved to 4 fork-only `scheduler_*` files; the file now hosts thin delegators for the extracted subsystems) | Mamba state management, snapshot save/restore, conversation tracking, agent system. Block count 16 includes the new delegator/import wrapper blocks added during extraction; net block count +1 from prior 15 |
+| `python/sglang/srt/managers/scheduler.py` | 13 | (slimmed in extraction PR 2026-05-20: ~1500 lines moved to 4 fork-only `scheduler_*` files; the file now hosts thin delegators for the extracted subsystems. Post-CodeRabbit hygiene: marker consolidation + orphan END removal + dead `uuid` import removal brought block count from 16 to **13**, net −2 from prior 15) | Mamba state management, snapshot save/restore, conversation tracking, agent system. Block count 13 reflects the post-extraction post-CodeRabbit-hygiene state |
 | `python/sglang/srt/managers/tokenizer_manager.py` | 9 | +98 | Snapshot and agent token management |
 | `python/sglang/srt/server_args.py` | 2 | +261 | Snapshot/Mamba CLI args, memory tiers, agent tools, IPv6 URL (SSL block removed — upstream adopted identical implementation, now deduplicated) |
 | `python/sglang/srt/entrypoints/http_server.py` | 3 | +208 | Snapshot HTTP endpoints, agent API routes, socket pre-binding |

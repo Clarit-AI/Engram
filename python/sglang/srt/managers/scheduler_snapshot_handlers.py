@@ -707,7 +707,7 @@ def handle_restore_snapshot(scheduler, recv_req):
             if metadata.fill_ids is None:
                 # Snapshot lacks fill_ids — incompatible; fabricating tokens would
                 # silently desync the token stream from the injected Mamba state.
-                mamba_pool.free(new_pool_idx)
+                mamba_pool.free(new_pool_idx_scalar)
                 return RestoreSnapshotReqOutput(
                     success=False,
                     message=(
@@ -727,7 +727,7 @@ def handle_restore_snapshot(scheduler, recv_req):
                 )
                 # Guard against context overflow before allocating
                 if len(origin_input_ids) >= scheduler.max_req_input_len:
-                    mamba_pool.free(new_pool_idx)
+                    mamba_pool.free(new_pool_idx_scalar)
                     return RestoreSnapshotReqOutput(
                         success=False,
                         message=(
