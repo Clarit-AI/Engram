@@ -189,8 +189,14 @@ def stream_chat_ttft(
             if data == "[DONE]":
                 break
             chunk = json.loads(data)
-            delta = chunk["choices"][0].get("delta", {})
-            text = delta.get("content") or ""
+            # Check for error or non-token events
+            if "error" in chunk:
+                continue
+            choices = chunk.get("choices")
+            if not choices or not isinstance(choices, list) or len(choices) == 0:
+                continue
+            delta = choices[0].get("delta", {})
+            text = delta.get("content", "")
             if text:
                 if first_token_at is None:
                     first_token_at = time.perf_counter()
@@ -213,18 +219,26 @@ def save_snapshot(
     last_body: dict[str, Any] | None = None
     for _ in range(30):
         start = time.perf_counter()
-        response = requests.post(
-            f"{server_url}/save_snapshot",
-            json={"conversation_id": conversation_id},
-            timeout=timeout,
-        )
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        response.raise_for_status()
-        body = response.json()
-        body["client_latency_ms"] = elapsed_ms
-        if body.get("success") is True:
-            return body
-        last_body = body
+        try:
+            response = requests.post(
+                f"{server_url}/save_snapshot",
+                json={"conversation_id": conversation_id},
+                timeout=timeout,
+            )
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            response.raise_for_status()
+            body = response.json()
+            body["client_latency_ms"] = elapsed_ms
+            if body.get("success") is True:
+                return body
+            last_body = body
+        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            last_body = {
+                "success": False,
+                "error": str(e),
+                "client_latency_ms": elapsed_ms,
+            }
         time.sleep(1)
     raise RuntimeError(f"snapshot save did not succeed: {last_body}")
 
