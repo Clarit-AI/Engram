@@ -1,0 +1,31 @@
+
+==== CASE no_restore (conv_id=kha387-no_restore-775c78f4) ====
+seed /generate HTTP 200; text_head='    # "1, 2"\n    return (1, 2)\n\nclass TestKHA387(unittest.TestCase):\n    def tes'
+/save_snapshot HTTP 200 body={"success": true, "snapshot_id": "kha387-no_restore-775c78f4-t1", "message": "Snapshot saved successfully (from WARM tier)"}
+tail /generate HTTP 200 text='0;\n}\n\n\n+++++ 1000-1999/1001/1001.cpp\n#include <iostream>\n\nusing namespace std;\n\nint main()\n{\n    int a, b;\n    cin >> a >> b;\n    cout << a + b << endl;\n    ret' first_ids=[29502, 29513, 781, 29520, 781, 781, 781, 18269, 29574, 29473, 29508, 29502, 29502, 29502, 29501, 29508, 29542, 29542, 29542, 29516, 29508, 29502, 29502, 29508]
+
+==== CASE real_warm (conv_id=kha387-real_warm-2f67f8f6) ====
+seed /generate HTTP 200; text_head='    # "1, 2"\n    return (1, 2)\n\nclass TestKHA387(unittest.TestCase):\n    def tes'
+/save_snapshot HTTP 200 body={"success": true, "snapshot_id": "kha387-real_warm-2f67f8f6-t1", "message": "Snapshot saved successfully (from WARM tier)"}
+/restore_snapshot HTTP 200 body={"success": true, "rid": "kha387-real_warm-2f67f8f6-tail", "mamba_pool_idx": null, "message": "Snapshot staged for next request (rid=kha387-real_warm-2f67f8f6-tail, conversation_id=kha387-real_warm-2f67f8f6)", "token_count": 86, "output_ids": null, "output_text": null}
+tail /generate HTTP 200 text='0;\n}\n\n\n+++++ 1000-1999/1001/1001.cpp\n#include <iostream>\n\nusing namespace std;\n\nint main()\n{\n    int a, b;\n    cin >> a >> b;\n    cout << a + b << endl;\n    ret' first_ids=[29502, 29513, 781, 29520, 781, 781, 781, 18269, 29574, 29473, 29508, 29502, 29502, 29502, 29501, 29508, 29542, 29542, 29542, 29516, 29508, 29502, 29502, 29508]
+
+==== CASE real_disk (conv_id=kha387-real_disk-4ccdb2e5) ====
+seed /generate HTTP 200; text_head='    # "1, 2"\n    return (1, 2)\n\nclass TestKHA387(unittest.TestCase):\n    def tes'
+/save_snapshot HTTP 200 body={"success": true, "snapshot_id": "kha387-real_disk-4ccdb2e5-t1", "message": "Snapshot saved successfully (from WARM tier)"}
+/restore_snapshot HTTP 200 body={"success": true, "rid": "kha387-real_disk-4ccdb2e5-tail", "mamba_pool_idx": null, "message": "Snapshot staged for next request (rid=kha387-real_disk-4ccdb2e5-tail, conversation_id=kha387-real_disk-4ccdb2e5)", "token_count": 86, "output_ids": null, "output_text": null}
+tail /generate HTTP 200 text='0;\n}\n\n\n+++++ 1000-1999/1001/1001.cpp\n#include <iostream>\n\nusing namespace std;\n\nint main()\n{\n    int a, b;\n    cin >> a >> b;\n    cout << a + b << endl;\n    ret' first_ids=[29502, 29513, 781, 29520, 781, 781, 781, 18269, 29574, 29473, 29508, 29502, 29502, 29502, 29501, 29508, 29542, 29542, 29542, 29516, 29508, 29502, 29502, 29508]
+
+==== CASE zero_disk (conv_id=kha387-zero_disk-02fdea49) ====
+seed /generate HTTP 200; text_head='    # "1, 2"\n    return (1, 2)\n\nclass TestKHA387(unittest.TestCase):\n    def tes'
+/save_snapshot HTTP 200 body={"success": true, "snapshot_id": "kha387-zero_disk-02fdea49-t1", "message": "Snapshot saved successfully (from WARM tier)"}
+tampered /workspace/runs/kha-387-ssm-ablation-20260521T011632Z/snapshots/conversation_kha387-zero_disk-02fdea49/turn_1_state.safetensors: pre conv_abs_sum=6.781e+05 temporal_abs_sum=3.733e+05 → post conv_abs_sum=0.000e+00 temporal_abs_sum=0.000e+00
+/restore_snapshot HTTP 200 body={"success": true, "rid": "kha387-zero_disk-02fdea49-tail", "mamba_pool_idx": null, "message": "Snapshot staged for next request (rid=kha387-zero_disk-02fdea49-tail, conversation_id=kha387-zero_disk-02fdea49)", "token_count": 86, "output_ids": null, "output_text": null}
+tail /generate HTTP 200 text='0;\n}\n\n\n+++++ 1000-1999/1001/1001.cpp\n#include <iostream>\n\nusing namespace std;\n\nint main()\n{\n    int a, b;\n    cin >> a >> b;\n    cout << a + b << endl;\n    ret' first_ids=[29502, 29513, 781, 29520, 781, 781, 781, 18269, 29574, 29473, 29508, 29502, 29502, 29502, 29501, 29508, 29542, 29542, 29542, 29516, 29508, 29502, 29502, 29508]
+
+==== CASE random_disk (conv_id=kha387-random_disk-11fdbff0) ====
+seed /generate HTTP 200; text_head='    # "1, 2"\n    return (1, 2)\n\nclass TestKHA387(unittest.TestCase):\n    def tes'
+/save_snapshot HTTP 200 body={"success": true, "snapshot_id": "kha387-random_disk-11fdbff0-t1", "message": "Snapshot saved successfully (from WARM tier)"}
+tampered /workspace/runs/kha-387-ssm-ablation-20260521T011632Z/snapshots/conversation_kha387-random_disk-11fdbff0/turn_1_state.safetensors: pre conv_abs_sum=6.781e+05 temporal_abs_sum=3.733e+05 → post conv_abs_sum=7.715e+05 temporal_abs_sum=1.500e+07
+/restore_snapshot HTTP 200 body={"success": true, "rid": "kha387-random_disk-11fdbff0-tail", "mamba_pool_idx": null, "message": "Snapshot staged for next request (rid=kha387-random_disk-11fdbff0-tail, conversation_id=kha387-random_disk-11fdbff0)", "token_count": 86, "output_ids": null, "output_text": null}
+tail /generate HTTP 200 text='0;\n}\n\n\n+++++ 1000-1999/1001/1001.cpp\n#include <iostream>\n\nusing namespace std;\n\nint main()\n{\n    int a, b;\n    cin >> a >> b;\n    cout << a + b << endl;\n    ret' first_ids=[29502, 29513, 781, 29520, 781, 781, 781, 18269, 29574, 29473, 29508, 29502, 29502, 29502, 29501, 29508, 29542, 29542, 29542, 29516, 29508, 29502, 29502, 29508]
