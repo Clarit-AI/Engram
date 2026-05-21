@@ -26,9 +26,7 @@ import time
 import uuid
 
 # --- END ENGRAM ---
-# --- END ENGRAM ---
-# --- BEGIN ENGRAM: pending restore registry ---
-from collections import OrderedDict, deque
+from collections import deque
 from contextlib import nullcontext
 from dataclasses import dataclass
 from http import HTTPStatus
