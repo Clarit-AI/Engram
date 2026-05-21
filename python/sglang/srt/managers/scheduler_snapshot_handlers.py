@@ -34,7 +34,7 @@ post-extraction (semantics-preserving).
 
 import logging
 import time
-from collections import OrderedDict
+import uuid
 from typing import List, Optional
 
 import torch
@@ -69,6 +69,7 @@ def _find_request_by_rid(scheduler, rid: str):
 
     return None
 
+
 def _load_snapshot_for_pending_restore(
     scheduler,
     conversation_id: str,
@@ -100,6 +101,7 @@ def _load_snapshot_for_pending_restore(
         )
     except (FileNotFoundError, ValueError):
         return None
+
 
 def _stage_pending_restore(
     scheduler,
@@ -188,11 +190,11 @@ def _stage_pending_restore(
             if target == evicted_canonical:
                 del scheduler.pending_restore_aliases[alias_key]
         logger.debug(
-            "pending-restore registry: evicted oldest canonical=%s "
-            "(capacity=%d)",
+            "pending-restore registry: evicted oldest canonical=%s " "(capacity=%d)",
             evicted_canonical,
             PENDING_RESTORE_REGISTRY_MAX,
         )
+
 
 def _clear_pending_restore(scheduler, rid: str, conversation_id: Optional[str]) -> None:
     """Remove any pending-restore entry for (rid, conversation_id).
@@ -218,6 +220,7 @@ def _clear_pending_restore(scheduler, rid: str, conversation_id: Optional[str]) 
         for alias_key, target in list(aliases.items()):
             if target == canonical:
                 del aliases[alias_key]
+
 
 def _maybe_hydrate_from_pending_restore(scheduler, req) -> Optional[bool]:
     """Attach restored Mamba state to ``req`` if its rid (or conversation_id)
@@ -348,6 +351,7 @@ def _maybe_hydrate_from_pending_restore(scheduler, req) -> Optional[bool]:
     )
     return True
 
+
 def handle_save_snapshot(scheduler, recv_req):
     """Handle a manual snapshot save request from the Lang API.
 
@@ -370,8 +374,7 @@ def handle_save_snapshot(scheduler, recv_req):
     try:
         effective_conv_id = recv_req.conversation_id or recv_req.rid
         effective_snapshot_id = (
-            recv_req.snapshot_id
-            or f"{effective_conv_id}-t{recv_req.turn_number or 0}"
+            recv_req.snapshot_id or f"{effective_conv_id}-t{recv_req.turn_number or 0}"
         )
 
         # Find the request by rid
@@ -494,6 +497,7 @@ def handle_save_snapshot(scheduler, recv_req):
             message=f"Error saving snapshot: {str(e)}",
         )
 
+
 def handle_list_snapshots(scheduler, recv_req):
     """Handle a request to list snapshots for a conversation.
 
@@ -546,6 +550,7 @@ def handle_list_snapshots(scheduler, recv_req):
             message=f"Error listing snapshots: {str(e)}",
         )
 
+
 def handle_get_snapshot_info(scheduler, recv_req):
     """Handle a request to get metadata for a specific snapshot.
 
@@ -587,6 +592,7 @@ def handle_get_snapshot_info(scheduler, recv_req):
             metadata=None,
             message=f"Error getting snapshot info: {str(e)}",
         )
+
 
 def handle_restore_snapshot(scheduler, recv_req):
     """Handle a request to restore Mamba state from a snapshot.
@@ -701,7 +707,7 @@ def handle_restore_snapshot(scheduler, recv_req):
             if metadata.fill_ids is None:
                 # Snapshot lacks fill_ids — incompatible; fabricating tokens would
                 # silently desync the token stream from the injected Mamba state.
-                mamba_pool.free(new_pool_idx_scalar)
+                mamba_pool.free(new_pool_idx)
                 return RestoreSnapshotReqOutput(
                     success=False,
                     message=(
@@ -721,7 +727,7 @@ def handle_restore_snapshot(scheduler, recv_req):
                 )
                 # Guard against context overflow before allocating
                 if len(origin_input_ids) >= scheduler.max_req_input_len:
-                    mamba_pool.free(new_pool_idx_scalar)
+                    mamba_pool.free(new_pool_idx)
                     return RestoreSnapshotReqOutput(
                         success=False,
                         message=(
@@ -1013,6 +1019,7 @@ def handle_restore_snapshot(scheduler, recv_req):
             success=False, message=f"Error restoring snapshot: {str(e)}"
         )
 
+
 def handle_delete_snapshot(scheduler, recv_req):
     """Handle a request to delete a snapshot.
 
@@ -1056,6 +1063,7 @@ def handle_delete_snapshot(scheduler, recv_req):
         return DeleteSnapshotReqOutput(
             success=False, message=f"Error deleting snapshot: {str(e)}"
         )
+
 
 def handle_mamba_state_eviction(
     scheduler,

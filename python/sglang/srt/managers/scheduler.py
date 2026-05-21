@@ -21,11 +21,6 @@ import os
 import signal
 import sys
 import time
-
-# --- BEGIN ENGRAM: snapshot restore request IDs ---
-import uuid
-
-# --- END ENGRAM ---
 from collections import deque
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -88,6 +83,13 @@ from sglang.srt.layers.quantization.fp4_utils import initialize_fp4_gemm_config
 from sglang.srt.layers.quantization.fp8_utils import initialize_fp8_gemm_config
 from sglang.srt.lora.lora_drainer import LoRADrainer
 from sglang.srt.lora.lora_overlap_loader import LoRAOverlapLoader
+
+# --- BEGIN ENGRAM: scheduler subsystem helper modules (snapshot + agent, extracted from scheduler.py) ---
+from sglang.srt.managers import scheduler_agent_system as _agent_system
+from sglang.srt.managers import scheduler_snapshot_handlers as _snapshot_handlers
+from sglang.srt.managers import scheduler_snapshot_system as _snapshot_system
+
+# --- END ENGRAM ---
 from sglang.srt.managers.hisparse_coordinator import HiSparseCoordinator
 from sglang.srt.managers.io_struct import (  # --- BEGIN ENGRAM: snapshot request routing ---; --- END ENGRAM ---
     AbortReq,
@@ -186,11 +188,13 @@ from sglang.srt.managers.scheduler_input_blocker import SchedulerInputBlocker
 from sglang.srt.managers.scheduler_output_processor_mixin import (
     SchedulerOutputProcessorMixin,
 )
-# --- BEGIN ENGRAM: pending restore registry types ---
-from sglang.srt.managers.scheduler_pending_restore import (
+
+# --- BEGIN ENGRAM: pending restore registry types (re-exported for test_pending_restore_registry.py) ---
+from sglang.srt.managers.scheduler_pending_restore import (  # noqa: F401
     PENDING_RESTORE_REGISTRY_MAX,
     PendingRestoreEntry,
 )
+
 # --- END ENGRAM ---
 from sglang.srt.managers.scheduler_pp_mixin import SchedulerPPMixin
 from sglang.srt.managers.scheduler_profiler_mixin import SchedulerProfilerMixin
@@ -199,15 +203,6 @@ from sglang.srt.managers.scheduler_runtime_checker_mixin import (
     SchedulerRuntimeCheckerMixin,
     create_scheduler_watchdog,
 )
-# --- BEGIN ENGRAM: snapshot system lifecycle helpers ---
-from sglang.srt.managers import scheduler_snapshot_system as _snapshot_system
-# --- END ENGRAM ---
-# --- BEGIN ENGRAM: snapshot RPC handler module ---
-from sglang.srt.managers import scheduler_snapshot_handlers as _snapshot_handlers
-# --- END ENGRAM ---
-# --- BEGIN ENGRAM: agent tool framework module ---
-from sglang.srt.managers import scheduler_agent_system as _agent_system
-# --- END ENGRAM ---
 from sglang.srt.managers.scheduler_update_weights_mixin import (
     SchedulerUpdateWeightsMixin,
 )
@@ -1054,15 +1049,19 @@ class Scheduler(
         Delegates to ``scheduler_snapshot_system.restore_snapshots_on_startup``.
         """
         _snapshot_system.restore_snapshots_on_startup(self)
-    # --- END ENGRAM ---
 
+    # --- END ENGRAM ---
 
     # --- BEGIN ENGRAM: snapshot RPC handler delegators ---
     _find_request_by_rid = _snapshot_handlers._find_request_by_rid
-    _load_snapshot_for_pending_restore = _snapshot_handlers._load_snapshot_for_pending_restore
+    _load_snapshot_for_pending_restore = (
+        _snapshot_handlers._load_snapshot_for_pending_restore
+    )
     _stage_pending_restore = _snapshot_handlers._stage_pending_restore
     _clear_pending_restore = _snapshot_handlers._clear_pending_restore
-    _maybe_hydrate_from_pending_restore = _snapshot_handlers._maybe_hydrate_from_pending_restore
+    _maybe_hydrate_from_pending_restore = (
+        _snapshot_handlers._maybe_hydrate_from_pending_restore
+    )
     handle_save_snapshot = _snapshot_handlers.handle_save_snapshot
     handle_list_snapshots = _snapshot_handlers.handle_list_snapshots
     handle_get_snapshot_info = _snapshot_handlers.handle_get_snapshot_info
@@ -1080,6 +1079,7 @@ class Scheduler(
         and ``tool_executor`` attributes set by the helper.
         """
         _agent_system.init_agent_system(self)
+
     # --- END ENGRAM ---
     def _get_draft_kv_pool(self):
         """Return (draft_token_to_kv_pool, draft_model_config) for the current

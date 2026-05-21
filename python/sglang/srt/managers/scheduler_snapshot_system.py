@@ -79,10 +79,8 @@ def init_snapshot_system(scheduler):
     # PENDING_RESTORE_REGISTRY_MAX on logical (canonical) entries with LRU
     # eviction. conversation_id aliases are tracked separately in
     # pending_restore_aliases so replacement and eviction remain atomic.
-    scheduler.pending_restore_registry: "OrderedDict[str, PendingRestoreEntry]" = (
-        OrderedDict()
-    )
-    scheduler.pending_restore_aliases: "Dict[str, str]" = {}  # alias → canonical rid
+    scheduler.pending_restore_registry = OrderedDict()
+    scheduler.pending_restore_aliases = {}  # alias (conv_id) → canonical rid
 
     # Only initialize if snapshot persistence is enabled
     if not server_args.enable_snapshot_persistence:
@@ -202,9 +200,7 @@ def init_snapshot_system(scheduler):
             )
 
         except Exception as e:
-            logger.error(
-                f"Failed to initialize tier management: {e}", exc_info=True
-            )
+            logger.error(f"Failed to initialize tier management: {e}", exc_info=True)
             logger.warning(
                 "Tier management disabled, falling back to disk-only snapshots"
             )
