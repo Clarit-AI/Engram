@@ -52,7 +52,7 @@ python -m sglang.launch_server \
   --disable-radix-cache \
   --enable-snapshot-persistence \
   --snapshot-dir /tmp/mamba_snapshots \
-  --no-buffer
+  --mamba-scheduler-strategy no_buffer
 ```
 
 ## Test File
@@ -119,4 +119,4 @@ python -m sglang.launch_server \
 ## Depends On
 
 - Phase 7 complete (snapshot E2E passing)
-- Server flags: `--disable-radix-cache --enable-snapshot-persistence --no-buffer`
+- Server flags: `--disable-radix-cache --enable-snapshot-persistence --mamba-scheduler-strategy no_buffer`

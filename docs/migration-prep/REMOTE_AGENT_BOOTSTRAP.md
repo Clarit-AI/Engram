@@ -23,7 +23,7 @@ We just finished implementing **True Stateful Inference** (Phase 8):
      --disable-radix-cache \
      --enable-snapshot-persistence \
      --snapshot-dir /tmp/mamba_snapshots \
-     --no-buffer
+     --mamba-scheduler-strategy no_buffer
    ```
    *(Note: Adjust model path to match reality on this new VM).*
 3. **Run the Reconstructed Test Suite**:
