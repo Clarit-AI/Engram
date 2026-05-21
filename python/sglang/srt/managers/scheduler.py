@@ -735,6 +735,9 @@ class Scheduler(
             ),
             output_streamer=self.output_streamer,
             abort_request=self.abort_request,
+            # --- BEGIN ENGRAM: snapshot_hook_manager wiring for M2 hook ---
+            snapshot_hook_manager=self.snapshot_hook_manager,
+            # --- END ENGRAM ---
         )
 
         self.is_initializing = False

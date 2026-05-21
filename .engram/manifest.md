@@ -1,11 +1,11 @@
 <!-- ENGRAM_MODIFIED — Fork file manifest: canonical registry of all Engram changes -->
 # Engram Fork Manifest
 
-> **Engram:** v0.5.0 (PR #71 merged 2026-05-20) + extraction PR #77 + hotfix PR #80, plus 272-commit upstream sync 2026-05-21 (pending merge)
-> **Last updated:** 2026-05-21 (272-commit upstream sync: scheduler.py shape changed substantially post-merge; `scheduler_components/` subdirectory arrived from upstream; totals re-derived from fresh repo-wide grep)
+> **Engram:** v0.5.0 (PR #71 merged 2026-05-20) + extraction PR #77 + hotfix PR #80, plus 272-commit upstream sync 2026-05-21 (PR #86 pending merge) + re-homing PR Phase A 2026-05-21 (M2 → BRP, M3 → OutputStreamer, mixin deleted)
+> **Last updated:** 2026-05-21 (re-homing PR Phase A complete: M2/M3 ported to upstream component classes; M1 dropped as obsolete dead code; `scheduler_output_processor_mixin.py` deleted; totals re-derived from fresh repo-wide grep)
 >
 > Auto-generated from `git diff upstream/main...HEAD` and ENGRAM_MODIFIED markers.
-> Reference commits: `65c1ecf6e` (PR #71 / v0.5.0), `53da5ea1c` (PR #77 extraction merge), `1b42fc934` (PR #80 hotfix merge), `d057c0dbb` (272-commit sync merge 2026-05-21).
+> Reference commits: `65c1ecf6e` (PR #71 / v0.5.0), `53da5ea1c` (PR #77 extraction merge), `1b42fc934` (PR #80 hotfix merge), `d057c0dbb` (272-commit sync merge 2026-05-21), `371341bb8` (M2 port to BRP), `f71a8e50f` (M3 port to OutputStreamer).
 
 ## How to use this file
 
@@ -18,14 +18,14 @@
 
 | Category | Count |
 |----------|-------|
-| Modified files (M) | 78 |
+| Modified files (M) | 77 |
 | Added files (A) | 181 |
-| Deleted files (D) | 7 |
+| Deleted files (D) | 8 |
 | Renamed files (R) | 4 |
-| Total ENGRAM_MODIFIED headers | 91 |
-| Total BEGIN/END ENGRAM blocks | 327 |
+| Total ENGRAM_MODIFIED headers | 90 |
+| Total BEGIN/END ENGRAM blocks | 331 |
 
-**Block-count delta from prior baseline (322 → 319 → 331 → 328 → 327, net +8 since 2026-05-01):** Re-derived from a fresh repo-wide grep after the 272-commit upstream sync merge (2026-05-21). The PR #80 hotfix baseline was 328 blocks / 93 headers. Sync delta: 328 → **327** blocks (net −1); 93 → **91** headers (net −2). Direct contributors visible from this sync:
+**Block-count delta from prior baseline (322 → 319 → 331 → 328 → 327 → 331, net +9 since 2026-05-01):** Re-derived from a fresh repo-wide grep after the re-homing PR Phase A on top of the 272-commit upstream sync (2026-05-21). Phase A delta: 327 → **331** blocks (net +4 from the M2/M3 ports + scheduler.py wiring blocks, net of the −3 from mixin deletion); 91 → **90** headers (net −1 from `scheduler_output_processor_mixin.py` deletion which had an ENGRAM_MODIFIED header). The PR #80 hotfix baseline was 328 blocks / 93 headers. Sync delta: 328 → 327 blocks (net −1); 93 → 91 headers (net −2). Direct contributors visible from this sync:
 - scheduler.py: 13 blocks both pre- and post-sync — unchanged in count, but file shape substantially different (init_cache_with_memory_pool method body deleted upstream; `_get_draft_kv_pool` + `_maybe_register_hicache_draft` methods deleted upstream — call sites auto-merged to `kv_cache_builder.*` functions; 3 fork-only delegator blocks restored at the deletion site after Hunk 3 sweep regression caught locally). +646 / −876 net diff per `git diff --numstat`.
 - `.claude/skills/ci-workflow-guide/SKILL.md` and `.claude/skills/write-sglang-test/SKILL.md`: deleted (fork-wins on modify/delete conflicts; both had ENGRAM_MODIFIED headers, hence −2 headers).
 - Other deltas (~−1 block net) come from minor auto-merged ENGRAM block adjustments in the conflict-touched files.
@@ -72,12 +72,14 @@ These are the files where upstream changes will most likely conflict with Engram
 | `python/sglang/srt/entrypoints/http_server.py` | 3 | +208 | Snapshot HTTP endpoints, agent API routes, socket pre-binding |
 | `python/sglang/srt/mem_cache/mamba_radix_cache.py` | 3 | +22 | Mamba radix cache extensions |
 | `python/sglang/srt/managers/io_struct.py` | 3 | +138 | Snapshot and agent request/response data structures |
-| `python/sglang/srt/managers/scheduler_output_processor_mixin.py` | 3 | +113 | Snapshot output processing hooks |
 | `python/sglang/srt/managers/schedule_batch.py` | 2 | +8 | Snapshot batch field |
 | `python/sglang/srt/configs/model_config.py` | 2 | +37 | Mamba config adaptations (safe architecture access, multimodal guards). Has 1 deferred `ENGRAM_CONFLICT_REVIEW` marker at line 402 (null-guard question, low-risk Phase 4 follow-up) |
 
 **Removed from this table by PR #56:**
 - `python/sglang/srt/model_executor/model_runner_kv_cache_mixin.py` — file reverted to upstream verbatim. The pure-SSM token-pool sizing logic ported to `python/sglang/srt/model_executor/pool_configurator.py` (see "Other Modified" table) as a `PureSSMMemoryPoolConfigurator` subclass + factory dispatch branch.
+
+**Removed from this table by re-homing PR Phase A (2026-05-21):**
+- `python/sglang/srt/managers/scheduler_output_processor_mixin.py` — file deleted. Upstream retired the entire mixin in the 168-commit window (PR #25637 moved batch-result processing to `scheduler_components/batch_result_processor.py`); Scheduler's MRO no longer inherits from `SchedulerOutputProcessorMixin` post-sync. The 3 fork ENGRAM blocks were re-homed: **M1** (`process_batch_result_dllm`) deleted as obsolete dead code — upstream's `SchedulerDllmMixin.process_batch_result_dllm` at `dllm/mixin/scheduler.py` is now the canonical implementation, modernized to use `metrics_reporter` + `output_streamer`; the fork's M1 version was the pre-decomposition lagging copy. **M2** (snapshot finished-req hook) ported to `scheduler_components/batch_result_processor.py::_handle_finished_req`. **M3** (stateful-generate output routing) ported to `scheduler_components/output_streamer.py::_stream_output_generation`.
 
 ### Core Engine — Other Modified Files (subtotal: 26 blocks)
 

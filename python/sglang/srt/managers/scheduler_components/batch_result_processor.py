@@ -55,6 +55,11 @@ if TYPE_CHECKING:
     from sglang.srt.observability.metrics_collector import SchedulerMetricsCollector
     from sglang.srt.server_args import ServerArgs
 
+    # --- BEGIN ENGRAM: snapshot hook manager type for finished-req hook (M2) ---
+    from sglang.srt.snapshot.snapshot_hooks import SnapshotHookManager
+
+    # --- END ENGRAM ---
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,6 +83,9 @@ class SchedulerBatchResultProcessor:
     logprob_result_processor: "SchedulerLogprobResultProcessor"
     output_streamer: "SchedulerOutputStreamer"
     abort_request: Callable
+    # --- BEGIN ENGRAM: snapshot hook manager field (M2 — snapshot finished-req state before cache release) ---
+    snapshot_hook_manager: Optional["SnapshotHookManager"]
+    # --- END ENGRAM ---
 
     def process_batch_result_prebuilt(self, batch: ScheduleBatch):
         assert self.disaggregation_mode == DisaggregationMode.DECODE
@@ -774,6 +782,33 @@ class SchedulerBatchResultProcessor:
                 req.multimodal_inputs.release_features()
             self._maybe_collect_routed_experts(req)
             self._maybe_collect_indexer_topk(req)
+
+            # --- BEGIN ENGRAM: snapshot finished-request state before cache release ---
+            # Snapshot Mamba state BEFORE freeing the pool slot.
+            # _trigger_snapshot_hooks (called later) fires after free_mamba_cache
+            # has already set mamba_pool_idx = None, so it misses finished reqs.
+            # We snapshot here while the state is still live in the pool.
+            if (
+                self.snapshot_hook_manager is not None
+                and hasattr(req, "mamba_pool_idx")
+                and req.mamba_pool_idx is not None
+            ):
+                _mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+                if _mamba_pool is not None:
+                    _fill_ids = getattr(req, "fill_ids", None)
+                    _turn_number = (
+                        len(_fill_ids)
+                        if _fill_ids is not None and hasattr(_fill_ids, "__len__")
+                        else len(req.output_ids)
+                    )
+                    self.snapshot_hook_manager.trigger_post_forward(
+                        req=req,
+                        mamba_pool=_mamba_pool,
+                        req_pool=self.req_to_token_pool,
+                        turn_number=_turn_number,
+                        additional_context=None,
+                    )
+            # --- END ENGRAM ---
 
             if self.server_args.disaggregation_decode_enable_offload_kvcache:
                 # Asynchronously offload KV cache; release_kv_cache will be called after Device->Host transfer completes
