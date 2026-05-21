@@ -1208,6 +1208,24 @@ class ServerArgs:
             #       [overlap, non-overlap]
             self.mamba_scheduler_strategy = "no_buffer"
 
+        # --- BEGIN ENGRAM: auto-disable Spec-V2 under no_buffer mamba scheduler (#63) ---
+        # Spec-V2 is incompatible with the no_buffer mamba scheduler strategy
+        # (memory pool / draft-pool wiring assumes extra_buffer's slot layout).
+        # Auto-set SGLANG_ENABLE_SPEC_V2=false if the user has not explicitly
+        # overridden the env var. Explicit override is detected by presence in
+        # os.environ (the env-var dict), distinct from the EnvBool default.
+        if (
+            self.mamba_scheduler_strategy == "no_buffer"
+            and "SGLANG_ENABLE_SPEC_V2" not in os.environ
+        ):
+            envs.SGLANG_ENABLE_SPEC_V2.set(False)
+            logger.info(
+                "Spec-V2 disabled: incompatible with no_buffer mamba scheduler "
+                "strategy. Set SGLANG_ENABLE_SPEC_V2=1 to override (and use "
+                "--mamba-scheduler-strategy extra_buffer for compatibility)."
+            )
+        # --- END ENGRAM ---
+
         # In speculative scenario:
         # - If `speculative_draft_model_quantization` is specified, the draft model uses this quantization method.
         # - Otherwise, the draft model defaults to the same quantization as the target model.
