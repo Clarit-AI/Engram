@@ -1214,6 +1214,10 @@ class ServerArgs:
         # Auto-set SGLANG_ENABLE_SPEC_V2=false if the user has not explicitly
         # overridden the env var. Explicit override is detected by presence in
         # os.environ (the env-var dict), distinct from the EnvBool default.
+        # NOTE: Late-fallback disaggregation may set strategy to no_buffer after
+        # this check. If that code path is reachable with snapshot-persistence
+        # enabled, a second disable call at the disaggregation fallback site
+        # may be needed.
         if (
             self.mamba_scheduler_strategy == "no_buffer"
             and "SGLANG_ENABLE_SPEC_V2" not in os.environ
