@@ -325,6 +325,9 @@ def _maybe_hydrate_from_pending_restore(scheduler, req) -> Optional[bool]:
         return False
 
     req.mamba_pool_idx = new_pool_idx_0d
+    # --- BEGIN ENGRAM KHA-390: mark slot as restored so prepare_mixed uses it as initial_state ---
+    req.mamba_has_restored_state = True
+    # --- END ENGRAM KHA-390 ---
     # Assign or reconcile conversation_id from the hydrated entry.
     # When the entry was matched via rid (not alias) and the request
     # already carries a different conversation_id, the entry's is
