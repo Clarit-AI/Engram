@@ -296,7 +296,160 @@ Qwen3 once weights are present.
 | Granite 4.0-H (NoPE) | CORRECT | CORRECT | **no** |
 | Qwen3-Coder-Next (RoPE) | not tested (weights absent) | not tested (weights absent) | unknown |
 
+## Addendum 2 — cold-restore cost measurement
+
+### Question
+
+Correctness is settled: both warm and cold restore produce the M-instructed
+answer. This addendum answers a different question — **does cold restore
+actually deliver Engram's token-reduction / fast-restore benefit, or does it
+silently re-prefill the full history?** The KHA-397 Part A audit predicted
+that on a cold radix tree the restore handler will re-prefill the entire
+saved `fill_ids` history on top of the already-restored SSM state, losing
+the speedup exactly in the canonical persistence scenario (save, restart,
+restore later).
+
+### Method
+
+Same Granite 4.0-H Tiny, same `/restore_snapshot` API, but the server is
+launched WITHOUT `--disable-radix-cache` so the warm restore can benefit
+from radix-tree cache hits — that is precisely what the audit's hypothesis
+is about.
+
+Three conditions × two history lengths × five iterations, median reported:
+
+| Condition | Mechanism |
+| --- | --- |
+| **BASELINE (cold-start)** | Fresh server, no snapshot. Single `/v1/chat/completions` with `[system, user: P+M]`, `max_tokens=1`. This is the "no Engram" cost. |
+| **WARM RC** | Warm server: chat to produce R, save snapshot, restore with `continuation_ids=M`. The radix cache has just been populated by the chat that produced the prefix. |
+| **COLD RC** | Server restarted between snapshot save and restore. Restore is the first request to the fresh server; radix tree is empty. |
+
+Each WARM RC iteration uses a uniquely-salted P so the radix cache holds
+only the prefix of the just-prefilled chat (no cross-iteration contamination
+from the system prompt). Each COLD RC iteration is a fresh server lifetime
+(kill + relaunch), guaranteeing an empty radix tree at the moment of
+restore.
+
+**Measurement sources** (per request):
+- *Extend tokens*: scraped from the SGLang scheduler log line
+  `Prefill batch, #new-token: N, #cached-token: K` emitted by
+  `metrics_reporter.py:491`. This is the authoritative count of tokens the
+  scheduler actually pushed through prefill.
+- *TTFT proxy*: total wall-clock latency of the HTTP request with
+  `max_new_tokens=1`. Decode of one token is negligible vs prefill of
+  hundreds–thousands.
+- *Restore wall-time*: the COLD RC TTFT for that request includes restore
+  overhead (snapshot load + state injection) plus the full re-prefill.
+- *Snapshot size*: `du -sb /workspace/snapshots/conversation_<id>/`.
+
+Harness: `scripts/validation/kha397_prefill_cost.py` (modes `warm-suite`,
+`cold-one`, `summarize`) driven by
+`scripts/validation/kha397_run_cost_suite.sh` (server lifecycle, restarts
+between cold iterations, log redirection per phase).
+
+### Results — Granite 4.0-H
+
+| Length | Condition | Extend tokens (med) | Cached tokens (med) | TTFT (med) | Snapshot size |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **L=512** (actual median history = 590 tokens) | BASELINE | 600 | – | 201.2 ms | – |
+|  | WARM RC | **40** | **590** | 286.8 ms | – |
+|  | COLD RC | **630** | **0** | 381.4 ms | 57.35 MB |
+| **L=4096** (actual median history = 4048 tokens) | BASELINE | 4058 | – | 114.4 ms | – |
+|  | WARM RC | **40** | **4048** | 279.5 ms | – |
+|  | COLD RC | **4088** | **0** | 373.8 ms | 57.39 MB |
+
+Per-condition spread was tight: WARM RC extend was exactly 40 in 10/10 iters
+across both lengths; COLD RC extend was 630/631 in 10/10 iters at L=512 and
+4088/4089 in 10/10 iters at L=4096.
+
+### Warm-vs-cold delta — per history length
+
+| | L=512 (history=590) | L=4096 (history=4048) | Scales with history? |
+| --- | ---: | ---: | --- |
+| Extend tokens (cold − warm) | **+590** | **+4048** | **yes — linearly = full history** |
+| Extend tokens (cold ÷ warm) | 15.75× | 102.2× | yes |
+| TTFT (cold − warm) | +94.6 ms | +94.3 ms | **no — flat at ~95 ms** |
+| Cached tokens (warm − cold) | 590 | 4048 | yes — full history hit on warm |
+
+### Verdict — cold restore re-prefills the full history
+
+**Yes, definitively.** Cold RC extend tokens equal history + continuation
+(630 ≈ 590 + 40 at L=512; 4088 ≈ 4048 + 40 at L=4096), with cached_tokens=0
+on every cold iteration. The penalty in *tokens prefilled* scales linearly
+with history length — at L=4096 the cold path does 102× more prefill work
+than the warm path. **The token-reduction benefit Engram is supposed to
+provide is NOT realised when the radix tree is cold.** This is the audit's
+prediction confirmed empirically.
+
+### Verdict — does the TTFT penalty scale with history length?
+
+**Surprisingly, no — the wall-clock cost is mostly fixed at ~95 ms.**
+Despite cold prefilling 4048 extra tokens at L=4096 vs 590 extra tokens at
+L=512 (a 6.9× difference), the cold-vs-warm TTFT gap is essentially flat
+(~94 ms). H100 prefill throughput is very high — tens of thousands of
+tokens per second on this model — so even 4k extra tokens take only ~95 ms
+of additional wall-clock. The token *budget* penalty is the load-bearing
+metric here, not TTFT.
+
+For a slower model, larger history, or shared-GPU workloads where prefill
+contention is real, the TTFT penalty would scale visibly. On this H100 +
+Granite 4.0-H-Tiny configuration, TTFT alone hides the cost; the
+extend-token count is what makes the bug operationally visible (and
+expensive at scale via Engram's "tokens saved" accounting).
+
+### Side finding — warm Engram is *slower* than baseline on this config
+
+A look at TTFT in absolute terms:
+
+| Length | Baseline TTFT | Warm RC TTFT | Cold RC TTFT |
+| ---: | ---: | ---: | ---: |
+| L=512 | 201 ms | 287 ms (1.43× baseline) | 381 ms (1.90× baseline) |
+| L=4096 | 114 ms | 280 ms (2.45× baseline) | 374 ms (3.27× baseline) |
+
+Even WARM Engram restore is *slower* than just doing the full baseline chat
+on this model/hardware. Granite 4.0-H-Tiny on H100 has cheap-enough
+prefill that the snapshot restore's fixed ~280 ms overhead (Mamba state
+injection from disk + new-request setup) exceeds the prefill savings the
+radix cache delivers. Cold Engram is unambiguously worse: pays restore
+overhead AND re-prefills history.
+
+This is a model/hardware-specific finding — for larger models where prefill
+of a 4k history would take seconds rather than ~110 ms, the warm restore
+overhead would amortise favourably. But "warm restore beats baseline" is
+not a universal property and should not be assumed.
+
+### Snapshot size is dominated by Mamba state, not history
+
+Snapshots are ~57 MB at both history lengths (57.35 MB at L=512, 57.39 MB
+at L=4096). The history `fill_ids` is text-tokens that the loader can
+re-tokenize; what's actually large on disk is the captured Mamba SSM state
+(36 layers × per-layer hidden+conv state for the granitemoehybrid
+architecture). This means snapshot storage cost is bounded by the model
+configuration, not by conversation length — useful for budgeting but
+irrelevant to the warm/cold prefill question.
+
+### Qwen3-Coder-Next — still not run
+
+Weights were re-checked at the start of this addendum
+(`find /workspace /root /home -iname '*qwen*'` → only docs/cookbook
+folders, no model weights). The cost arm and the correctness arm both
+remain pending for Qwen3. Both harnesses (`kha397_prefill_validation.py`
+mode warm/cold and `kha397_prefill_cost.py` warm-suite/cold-one) are
+model-path-parameterised and will run unchanged once Qwen3 weights land.
+
+### Plain summary
+
+| Question | Granite 4.0-H | Qwen3-Coder-Next |
+| --- | --- | --- |
+| Does cold restore re-prefill the full history? | **yes** | unknown (not run) |
+| Does the prefill-token penalty scale with history? | **yes, linearly = history length** | unknown |
+| Does the TTFT penalty scale with history? | no — fixed ~95 ms on this hardware | unknown |
+| Is Engram's token-reduction benefit realised on cold restore? | **no — completely lost** | unknown |
+| Is Engram's TTFT benefit realised even on warm restore? | no — Mamba-state restore overhead exceeds prefill savings on this fast model | unknown |
+
 ## Reproduction
+
+### Correctness arm (base brief + cold-radix addendum)
 
 ```bash
 # Warm phase
@@ -314,8 +467,21 @@ python scripts/validation/kha397_prefill_validation.py --mode warm
 
 # Restart for cold phase
 kill $SERVER_PID && wait $SERVER_PID
-# also kill any scheduler worker holding GPU memory
 SGLANG_ENABLE_SPEC_V2=false python -m sglang.launch_server ... &
 # wait for /health 200
 python scripts/validation/kha397_prefill_validation.py --mode cold
 ```
+
+### Cost arm (Addendum 2 — radix cache ENABLED)
+
+```bash
+# One-command suite — handles all server lifetimes and restarts
+bash scripts/validation/kha397_run_cost_suite.sh
+# outputs land in /tmp/kha397-cost/{warm,cold,summary}-{512,4096}.json
+```
+
+Note the cost-suite launcher omits `--disable-radix-cache` deliberately —
+the warm-vs-cold radix-state hypothesis collapses if the radix tree is
+disabled (with `--disable-radix-cache`, both warm and cold re-prefill the
+full history; the prior correctness-arm `--disable-radix-cache` run
+showed this directly in `/tmp/kha397/server-warm.log` line 105).
