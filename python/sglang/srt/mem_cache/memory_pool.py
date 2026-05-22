@@ -29,6 +29,7 @@ KVCache actually holds the physical kv cache.
 import abc
 import dataclasses
 import logging
+import os
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple, Union
@@ -74,6 +75,9 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__name__)
+
+# KHA390PROBE: diagnostic gate — set KHA390_PROBE=1 to enable instrumentation.
+_KHA390_PROBE = os.environ.get("KHA390_PROBE") == "1"
 
 GB = 1024 * 1024 * 1024
 _is_cuda = is_cuda()
@@ -586,6 +590,25 @@ class HybridReqToTokenPool(ReqToTokenPool):
         mamba_indices: list[torch.Tensor] = []
         mamba_ping_pong_track_buffers: list[torch.Tensor] = []
         for req in reqs:
+            if _KHA390_PROBE:
+                try:
+                    _probe_idx = req.mamba_pool_idx
+                    _probe_idx_val = (
+                        int(_probe_idx.item()) if _probe_idx is not None else None
+                    )
+                    logger.warning(
+                        "KHA390PROBE alloc_loop_enter rid=%s id_req=%s "
+                        "mamba_pool_idx=%s mamba_needs_clear=%s branch=%s",
+                        getattr(req, "rid", None),
+                        id(req),
+                        _probe_idx_val,
+                        getattr(req, "mamba_needs_clear", None),
+                        "entered_pass" if _probe_idx is not None else "entered_alloc",
+                    )
+                except Exception as _probe_err:
+                    logger.warning(
+                        "KHA390PROBE alloc_loop_enter log failed: %s", _probe_err
+                    )
             if req.mamba_pool_idx is not None:  # for radix cache / continuing chunked
                 pass
             else:
@@ -615,6 +638,20 @@ class HybridReqToTokenPool(ReqToTokenPool):
             ), f"Not enough space for mamba ping pong idx, try to increase --mamba-full-memory-ratio."
         mamba_index_tensor = torch.stack(mamba_indices).to(dtype=torch.int32)
         self.req_index_to_mamba_index_mapping[select_index] = mamba_index_tensor
+        if _KHA390_PROBE:
+            try:
+                _sel = (
+                    select_index.tolist()
+                    if hasattr(select_index, "tolist")
+                    else list(select_index)
+                )
+                logger.warning(
+                    "KHA390PROBE mapping_write select_index=%s mamba_indices=%s",
+                    _sel,
+                    mamba_index_tensor.tolist(),
+                )
+            except Exception as _probe_err:
+                logger.warning("KHA390PROBE mapping_write log failed: %s", _probe_err)
         if self.enable_mamba_extra_buffer:
             ping_pong_tensor = torch.stack(mamba_ping_pong_track_buffers)
             self.req_index_to_mamba_ping_pong_track_buffer_mapping[select_index] = (

@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Optional, Union
 
 import torch
@@ -31,6 +32,9 @@ if not is_cpu():
     )
 
 logger = logging.getLogger(__name__)
+
+# KHA390PROBE: diagnostic gate — set KHA390_PROBE=1 to enable instrumentation.
+_KHA390_PROBE = os.environ.get("KHA390_PROBE") == "1"
 
 
 # Kernel to track mamba states if needed based on track mask
@@ -190,6 +194,17 @@ class MambaAttnBackendBase(AttentionBackend):
         mamba_cache_indices = self.req_to_token_pool.get_mamba_indices(
             forward_batch.req_pool_indices
         )
+        if _KHA390_PROBE:
+            try:
+                logger.warning(
+                    "KHA390PROBE forward_read req_pool_indices=%s "
+                    "mamba_cache_indices=%s forward_mode=%s",
+                    forward_batch.req_pool_indices.tolist(),
+                    mamba_cache_indices.tolist(),
+                    str(getattr(forward_batch, "forward_mode", None)),
+                )
+            except Exception as _probe_err:
+                logger.warning("KHA390PROBE forward_read log failed: %s", _probe_err)
 
         if forward_batch.forward_mode.is_decode_or_idle():
             query_start_loc = torch.arange(
@@ -730,6 +745,29 @@ class Mamba2AttnBackend(MambaAttnBackendBase):
     ):
         assert isinstance(self.forward_metadata, Mamba2Metadata)
         layer_cache = self.req_to_token_pool.mamba2_layer_cache(layer_id)
+        if _KHA390_PROBE and layer_id == 0:
+            try:
+                _mci = self.forward_metadata.mamba_cache_indices
+                _temporal = layer_cache.temporal  # [..., num_slots, ...]
+                # Use first req's slot. temporal shape is typically [n_heads, num_slots, head_dim, state_dim]
+                # or similar — index dim=1 (the slot axis).
+                _slot = int(_mci[0].item())
+                _probe_slice = _temporal.index_select(
+                    1, _mci[:1]
+                ).flatten()[:8]
+                _sum = float(_temporal.index_select(1, _mci[:1]).abs().sum().item())
+                logger.warning(
+                    "KHA390PROBE layer0_ssm_read mamba_idx=%s "
+                    "mamba_cache_indices=%s temporal_slot_abs_sum=%.6e "
+                    "first8=%s temporal_shape=%s",
+                    _slot,
+                    _mci.tolist(),
+                    _sum,
+                    _probe_slice.detach().to(torch.float32).cpu().tolist(),
+                    list(_temporal.shape),
+                )
+            except Exception as _probe_err:
+                logger.warning("KHA390PROBE layer0_ssm_read log failed: %s", _probe_err)
         return mixer.forward(
             hidden_states=hidden_states,
             output=output,

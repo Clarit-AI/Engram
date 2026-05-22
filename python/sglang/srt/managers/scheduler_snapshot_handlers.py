@@ -33,11 +33,15 @@ post-extraction (semantics-preserving).
 """
 
 import logging
+import os
 import time
 import uuid
 from typing import List, Optional
 
 import torch
+
+# KHA390PROBE: diagnostic gate — set KHA390_PROBE=1 to enable instrumentation.
+_KHA390_PROBE = os.environ.get("KHA390_PROBE") == "1"
 
 from sglang.srt.managers.scheduler_pending_restore import (
     PENDING_RESTORE_REGISTRY_MAX,
@@ -325,6 +329,19 @@ def _maybe_hydrate_from_pending_restore(scheduler, req) -> Optional[bool]:
         return False
 
     req.mamba_pool_idx = new_pool_idx_0d
+    if _KHA390_PROBE:
+        try:
+            logger.warning(
+                "KHA390PROBE hydrate_write rid=%s id_req=%s "
+                "mamba_pool_idx=%s mamba_needs_clear=%s req_pool_idx=%s",
+                rid,
+                id(req),
+                int(req.mamba_pool_idx.item()),
+                getattr(req, "mamba_needs_clear", None),
+                getattr(req, "req_pool_idx", None),
+            )
+        except Exception as _probe_err:
+            logger.warning("KHA390PROBE hydrate_write log failed: %s", _probe_err)
     # Assign or reconcile conversation_id from the hydrated entry.
     # When the entry was matched via rid (not alias) and the request
     # already carries a different conversation_id, the entry's is
