@@ -64,6 +64,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model-path", default="/workspace/models/granite-4.0-h-tiny")
     p.add_argument("--out", default="/tmp/kha397/granite-results.json")
     p.add_argument("--request-timeout", type=float, default=120.0)
+    p.add_argument(
+        "--mode",
+        choices=["warm", "cold"],
+        default="warm",
+        help="warm: full setup + BASELINE + CONTROL + RC (3a) + save state. "
+             "cold: read state.json, run CONTROL_COLD and RC_COLD (3b) only.",
+    )
+    p.add_argument(
+        "--state",
+        default="/tmp/kha397/state.json",
+        help="State file shared between warm and cold runs.",
+    )
     return p.parse_args()
 
 
@@ -176,18 +188,7 @@ def encode_user_turn_with_assistant_prompt(
     return tok.encode(formatted, add_special_tokens=False)
 
 
-def main() -> int:
-    args = parse_args()
-    url = f"http://{args.host}:{args.port}"
-
-    print(f"[setup] loading tokenizer from {args.model_path}")
-    tok = AutoTokenizer.from_pretrained(args.model_path)
-
-    # Use the model's loaded path as the served-model-name (default behavior
-    # when --served-model-name is not passed).
-    model_info = requests.get(f"{url}/get_model_info", timeout=10).json()
-    model_name = model_info["model_path"]
-    print(f"[setup] server reports model_path={model_name}")
+def run_warm(args, tok, model_name, url) -> int:
 
     # ------------------------------------------------------------------
     # STEP 1 — Establish R by running [system, user:P] once. R is the
@@ -388,7 +389,205 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2, default=str))
     print(f"\n[OUT] {out_path}")
+
+    state_path = Path(args.state)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps({
+        "ts_warm": result["ts_utc"],
+        "model_name": model_name,
+        "setup_conv_id": setup_conv_id,
+        "R": R_text,
+        "continuation_ids": continuation_ids,
+        "warm": {
+            "baseline_text": baseline_resp["text"],
+            "baseline_first_token_logprob": first_tok_lp,
+            "baseline_full_logprobs": (
+                baseline_resp["logprobs"].get("content")
+                if baseline_resp["logprobs"] else None
+            ),
+            "control_output_ids": control_ids,
+            "control_output_text": control_text,
+            "control_latency_ms": control_resp["client_latency_ms"],
+            "rc_output_ids": rc_ids,
+            "rc_output_text": rc_text,
+            "rc_latency_ms": rc_resp["client_latency_ms"],
+            "verdict": verdict,
+            "verdict_reason": verdict_reason,
+        },
+    }, indent=2, default=str))
+    print(f"[STATE] {state_path}  (for cold-phase run)")
     return 0 if verdict != "AMBIGUOUS" else 2
+
+
+def run_cold(args, tok, model_name, url) -> int:
+    """Cold-radix arm (3b): same snapshot, fresh server process.
+
+    Assumes:
+      - run_warm has already executed and wrote state.json
+      - the server has been restarted between runs (this script does not
+        manage the server lifecycle)
+      - the on-disk snapshot at /workspace/snapshots/<conv_id>/ persists
+    """
+    state_path = Path(args.state)
+    if not state_path.exists():
+        print(f"[FAIL] state file not found: {state_path}. "
+              "Run --mode warm first.")
+        return 1
+    state = json.loads(state_path.read_text())
+    setup_conv_id = state["setup_conv_id"]
+    R_text = state["R"]
+    warm = state["warm"]
+    continuation_ids = state["continuation_ids"]
+
+    if state["model_name"] != model_name:
+        print(f"[FAIL] model mismatch — warm used {state['model_name']}, "
+              f"cold server reports {model_name}")
+        return 1
+    print(f"[cold] reusing snapshot conv_id={setup_conv_id} R={R_text!r}")
+
+    # Verify snapshot still on disk via /list_snapshots on the fresh server.
+    snap_info = get_snapshot_info(url, setup_conv_id, args.request_timeout)
+    print(f"[cold] snapshot lookup on fresh server: {snap_info}")
+    if not snap_info.get("present"):
+        print("[FAIL] snapshot not visible on fresh server — check "
+              "--snapshot-dir flag and on-disk persistence.")
+        return 1
+
+    # ------------------------------------------------------------------
+    # STEP 3'  CONTROL_COLD — restore with continuation_ids=[] on fresh
+    # server. Should produce the same output as warm CONTROL if SSM state
+    # restoration is independent of radix state.
+    # ------------------------------------------------------------------
+    print(f"\n[COLD CONTROL] /restore_snapshot conv={setup_conv_id} "
+          f"continuation_ids=[] max_new_tokens={MAX_NEW_TOKENS}")
+    control_cold = restore_and_generate(
+        url, setup_conv_id, [], MAX_NEW_TOKENS, args.request_timeout,
+    )
+    if not control_cold.get("success"):
+        print(f"  [FAIL] COLD CONTROL: {control_cold}")
+        return 1
+    cc_ids = control_cold.get("output_ids") or []
+    cc_text = control_cold.get("output_text") or ""
+    print(f"  COLD CONTROL output_text: {cc_text!r}  output_ids[:8]={cc_ids[:8]}")
+
+    # ------------------------------------------------------------------
+    # STEP 4'  RC_COLD (3b) — restore with continuation_ids=M-encoded on
+    # fresh server. The decisive cold-arm measurement.
+    # ------------------------------------------------------------------
+    print(f"\n[COLD RC (3b)] /restore_snapshot conv={setup_conv_id} "
+          f"continuation_ids (len={len(continuation_ids)}) "
+          f"max_new_tokens={MAX_NEW_TOKENS}")
+    rc_cold = restore_and_generate(
+        url, setup_conv_id, continuation_ids,
+        MAX_NEW_TOKENS, args.request_timeout,
+    )
+    if not rc_cold.get("success"):
+        print(f"  [FAIL] COLD RC: {rc_cold}")
+        return 1
+    rcc_ids = rc_cold.get("output_ids") or []
+    rcc_text = rc_cold.get("output_text") or ""
+    print(f"  COLD RC output_text: {rcc_text!r}  output_ids[:8]={rcc_ids[:8]}")
+
+    # ------------------------------------------------------------------
+    # Verdict — compare COLD RC to WARM RC, WARM CONTROL, COLD CONTROL,
+    # and BASELINE.
+    # ------------------------------------------------------------------
+    warm_rc_ids = warm["rc_output_ids"]
+    warm_control_ids = warm["control_output_ids"]
+    baseline_text = warm["baseline_text"]
+    cold_eq_warm = (rcc_ids[:MAX_NEW_TOKENS] == warm_rc_ids[:MAX_NEW_TOKENS])
+    cold_eq_warm_control = (rcc_ids[:MAX_NEW_TOKENS]
+                            == warm_control_ids[:MAX_NEW_TOKENS])
+    cold_eq_cold_control = (rcc_ids[:MAX_NEW_TOKENS] == cc_ids[:MAX_NEW_TOKENS])
+    cold_says_banana = "BANANA" in rcc_text.upper()
+    baseline_says_banana = "BANANA" in baseline_text.upper()
+
+    if cold_eq_warm and cold_says_banana:
+        cold_verdict = "CORRECT"
+        cold_reason = (
+            "COLD RC produced identical output to WARM RC and contains the "
+            "M-instructed answer. Cold-radix path is correct."
+        )
+    elif cold_eq_cold_control or cold_eq_warm_control:
+        cold_verdict = "DEFECT_SKIPPED"
+        cold_reason = (
+            "COLD RC output identical to CONTROL — continuation_ids were "
+            "skipped on the cold path."
+        )
+    elif not cold_eq_warm and cold_says_banana and baseline_says_banana:
+        cold_verdict = "CORRECT_DIVERGENT"
+        cold_reason = (
+            "COLD RC differs from WARM RC at token level but still contains "
+            "the M-instructed answer. Cold path is functionally correct but "
+            "warm and cold are not bit-exact."
+        )
+    elif not cold_eq_warm and not cold_says_banana:
+        cold_verdict = "DEFECT_CORRUPTED"
+        cold_reason = (
+            "COLD RC differs from WARM RC AND does NOT contain the M-instructed "
+            "answer. Continuation appears corrupted on cold path — consistent "
+            "with the history-double-prefill hypothesis from KHA-397 Part A."
+        )
+    else:
+        cold_verdict = "AMBIGUOUS"
+        cold_reason = (
+            "COLD RC behavior does not cleanly match any of the reference "
+            "patterns. Manual inspection required."
+        )
+
+    print(f"\n[COLD VERDICT] {cold_verdict}")
+    print(f"  {cold_reason}")
+    print(f"  cold_eq_warm        = {cold_eq_warm}")
+    print(f"  cold_eq_warm_control= {cold_eq_warm_control}")
+    print(f"  cold_eq_cold_control= {cold_eq_cold_control}")
+    print(f"  cold_says_banana    = {cold_says_banana}")
+
+    # Merge into out JSON (load warm result, add cold sections).
+    out_path = Path(args.out)
+    if out_path.exists():
+        result = json.loads(out_path.read_text())
+    else:
+        result = {}
+    result["ts_cold_utc"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    result["cold_control"] = {
+        "conversation_id": setup_conv_id,
+        "continuation_ids": [],
+        "output_text": cc_text,
+        "output_ids": cc_ids,
+        "token_count": control_cold.get("token_count"),
+        "latency_ms": control_cold["client_latency_ms"],
+        "snapshot_info_on_fresh_server": snap_info,
+    }
+    result["cold_restore_continue"] = {
+        "conversation_id": setup_conv_id,
+        "continuation_ids_len": len(continuation_ids),
+        "output_text": rcc_text,
+        "output_ids": rcc_ids,
+        "token_count": rc_cold.get("token_count"),
+        "latency_ms": rc_cold["client_latency_ms"],
+    }
+    result["cold_verdict"] = cold_verdict
+    result["cold_verdict_reason"] = cold_reason
+    result["cold_eq_warm"] = cold_eq_warm
+    result["cold_eq_warm_control"] = cold_eq_warm_control
+    result["cold_eq_cold_control"] = cold_eq_cold_control
+    result["cold_says_banana"] = cold_says_banana
+    out_path.write_text(json.dumps(result, indent=2, default=str))
+    print(f"\n[OUT] {out_path}  (merged warm+cold)")
+    return 0 if cold_verdict in ("CORRECT", "CORRECT_DIVERGENT") else 2
+
+
+def main() -> int:
+    args = parse_args()
+    url = f"http://{args.host}:{args.port}"
+    print(f"[setup] loading tokenizer from {args.model_path}")
+    tok = AutoTokenizer.from_pretrained(args.model_path)
+    model_info = requests.get(f"{url}/get_model_info", timeout=10).json()
+    model_name = model_info["model_path"]
+    print(f"[setup] server reports model_path={model_name}  mode={args.mode}")
+    if args.mode == "warm":
+        return run_warm(args, tok, model_name, url)
+    return run_cold(args, tok, model_name, url)
 
 
 if __name__ == "__main__":
