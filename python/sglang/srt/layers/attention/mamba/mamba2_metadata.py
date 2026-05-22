@@ -205,6 +205,15 @@ class Mamba2Metadata(ForwardMetadata):
         assert context_lens_tensor is not None
         # precompute flag to avoid device syncs later
         has_initial_states = context_lens_tensor > 0
+        # --- BEGIN ENGRAM KHA-390: include slots hydrated from /restore_snapshot ---
+        # A restored request has extend_prefix_lens==0 (no radix-cache token prefix),
+        # so context_lens_tensor > 0 is False even though the Mamba pool slot was
+        # populated by _maybe_hydrate_from_pending_restore.  OR in the restored mask
+        # so the chunk-scan receives the restored SSM state as initial_state.
+        restored_mask = getattr(forward_batch, "mamba_restored_state_mask", None)
+        if restored_mask is not None:
+            has_initial_states = has_initial_states | restored_mask[:num_prefills]
+        # --- END ENGRAM KHA-390 ---
         prep_initial_states = torch.any(has_initial_states[:num_prefills]).item()
 
         query_start_loc = forward_metadata.query_start_loc[: num_prefills + 1]

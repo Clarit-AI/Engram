@@ -306,6 +306,12 @@ class ForwardBatch(ForwardBatchDeepSeekMHAMixin):
     mamba_cow_src_indices: Optional[torch.Tensor] = None
     mamba_cow_dst_indices: Optional[torch.Tensor] = None
     mamba_clear_indices: Optional[torch.Tensor] = None
+    # --- BEGIN ENGRAM KHA-390: per-extend-req flag for slots hydrated from restore ---
+    # Shape [num_prefills], True for requests whose Mamba pool slot was populated by
+    # _maybe_hydrate_from_pending_restore.  Used in prepare_mixed to OR into
+    # has_initial_states so the chunk-scan receives the restored state as initial_state.
+    mamba_restored_state_mask: Optional[torch.Tensor] = None
+    # --- END ENGRAM KHA-390 ---
 
     # Optional seq_lens on cpu
     seq_lens_cpu: Optional[torch.Tensor] = None
@@ -640,6 +646,15 @@ class ForwardBatch(ForwardBatchDeepSeekMHAMixin):
             ret.extend_prefix_lens_cpu = extend_prefix_lens
             ret.extend_seq_lens_cpu = extend_seq_lens
             ret.extend_logprob_start_lens_cpu = extend_logprob_start_lens
+            # --- BEGIN ENGRAM KHA-390 ---
+            restored_flags = [
+                getattr(req, "mamba_has_restored_state", False) for req in batch.reqs
+            ]
+            if any(restored_flags):
+                ret.mamba_restored_state_mask = torch.tensor(
+                    restored_flags, dtype=torch.bool
+                ).to(device, non_blocking=True)
+            # --- END ENGRAM KHA-390 ---
 
         if model_runner.use_ngram_embedding:
             ret._init_ngram_embedding_info(batch, device)
