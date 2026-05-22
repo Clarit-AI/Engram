@@ -485,3 +485,150 @@ the warm-vs-cold radix-state hypothesis collapses if the radix tree is
 disabled (with `--disable-radix-cache`, both warm and cold re-prefill the
 full history; the prior correctness-arm `--disable-radix-cache` run
 showed this directly in `/tmp/kha397/server-warm.log` line 105).
+
+## Addendum 3 — pure-Mamba cost on Codestral Mamba 7B
+
+**Date:** 2026-05-22
+**Server:** Codestral Mamba 7B (`/workspace/models/mamba-codestral-7b`,
+`Mamba2ForCausalLM`, 64 layers, pure Mamba2 — **no attention KV**) on H100 80 GB
+**Branch / HEAD:** `docs/kha-397-prefill-validation` (extends Addendum 2)
+**Flags:** `--enable-snapshot-persistence --snapshot-dir /workspace/snapshots-codestral --mamba-scheduler-strategy no_buffer --disable-cuda-graph --disable-piecewise-cuda-graph --context-length 8192 --trust-remote-code`, env: `TORCHDYNAMO_DISABLE=1 SGLANG_ENABLE_SPEC_V2=false SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1`
+**Raw JSON:** `s3://engram/benchmarks/kha-397-codestral-cost-merged.json`
+**Harness:** `scripts/validation/kha397_prefill_cost.py --raw-mode` +
+`scripts/validation/kha397_run_cost_suite.sh` (parametrised orchestrator)
+
+### Question
+
+Addendum 2 showed cold restore on Granite 4.0-H (hybrid) re-prefills the full
+history. The natural follow-up: **is this penalty hybrid-specific (i.e.
+attention-KV rebuild on cold start) or a property of cold restore itself?**
+If pure-Mamba — which has no attention KV to reconstruct — also re-prefills
+the full history cold, the penalty is not KV-rebuild-driven; it's the cold
+radix that costs the tokens.
+
+### Why this required harness changes
+
+Codestral Mamba is a base model with **no chat template** in its tokenizer
+config — `apply_chat_template` returns `None`. The cost harness (designed
+against Granite's instruct tokenizer) therefore needed a `--raw-mode` path
+that bypasses chat templating and uses SGLang's native `/generate` endpoint
+with plain text (a thin `User: ... Assistant:` scaffold). The new flag is
+additive; the Granite chat-template path is untouched. Server launch also
+needed `--disable-cuda-graph --disable-piecewise-cuda-graph` (CAI-14
+Codestral workaround) and `--context-length 8192` with
+`SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1` (Codestral's HF config caps
+`context_length` at 2048, but Mamba has no positional embeddings so the
+override is safe). All three were stop-and-report blockers on the first
+launch attempts and are documented here as the reproducible recipe.
+
+### Method
+
+Same design as Addendum 2: three conditions × two history lengths × five
+iterations × median, on a Codestral-loaded server.
+
+- **BASELINE** — cold-start chat `[system + P + M]` with `max_new_tokens=1`,
+  unique salt per iter to defeat radix accumulation. Extend ≈ full input.
+- **WARM RC** — restore-and-generate on an already-running server whose
+  radix tree still has the post-`R` prefix. Extend should drop to just `|M|`.
+- **COLD RC** — restore-and-generate on a freshly relaunched server
+  (empty radix). Extend tests whether the cold path benefits from the
+  restored SSM state at all, or re-prefills history+continuation.
+
+### Results
+
+| Length (actual) | Condition | Extend (med) | Cached (med) | TTFT (med) | Snap size (med) |
+| --- | --- | --: | --: | --: | --: |
+| L=512 (527 tok)  | BASELINE | 541  | –    | 1511 ms | – |
+| L=512            | WARM RC  | **21**  | 527  | 1222 ms | 272.4 MB |
+| L=512            | COLD RC  | **548** | **0**| 1320 ms | – |
+| L=4096 (4223 tok)| BASELINE | 4236 | –    | 1458 ms | – |
+| L=4096           | WARM RC  | **21**  | 4223 | 1224 ms | 272.4 MB |
+| L=4096           | COLD RC  | **4244**| **0**| 1531 ms | – |
+
+`|M|` (continuation token count) is 21 in raw-mode for both lengths (Codestral
+mistral-style tokenizer; cf. Granite's 40 — different vocabularies). The
+21-token WARM RC extend confirms only `M` was prefilled; the 527/4223 cached
+counts confirm the radix tree absorbed the entire history. Cold extend
+matches `history + |M|` at both lengths (548 ≈ 527+21, 4244 ≈ 4223+21).
+
+### Verdicts
+
+- **Cold restore re-prefills the full history on pure Mamba: YES.** Same
+  pattern as Granite hybrid. The cold cost penalty is **not** an
+  attention-KV rebuild artefact — it's a property of cold restore + empty
+  radix tree, independent of model architecture. Pure Mamba does *not*
+  restore cleanly cold; the SSM state lands in the pool but the
+  next-`/generate` request that consumes it goes through the same prefill
+  scheduler path that recomputes the entire history when the radix has no
+  matching prefix.
+- **WARM RC saves prefill linearly with history.** At L=512 warm saves
+  506 tokens (527−21); at L=4096 warm saves 4202 tokens (4223−21). The
+  benefit scales 1:1 with history length, as expected from the radix cache.
+- **Cold cost penalty also scales linearly with history.** Cold extend at
+  L=4096 is 4244 vs L=512's 548 — a ~7.7× ratio matching the ~8× length
+  ratio. Cold pays back exactly what warm saves.
+- **TTFT penalty for cold over warm is ~100–300 ms across both lengths.**
+  L=512: cold 1320 − warm 1222 = 98 ms; L=4096: cold 1531 − warm 1224
+  = 307 ms. TTFT is dominated by the no-CUDA-graph overhead on this rig and
+  is **not directly comparable** to Granite's TTFT numbers (Granite ran
+  with CUDA graphs enabled); the prefill-token count is the
+  hardware-independent metric for the cost question.
+- **Snapshot size invariant w.r.t. history length: ~272 MB at both 527 and
+  4223 token histories.** Confirms snapshots store SSM state, not the input
+  tokens. Codestral's snapshot is ~5× larger than Granite's 57 MB at the
+  same length, consistent with Codestral having 64 pure-Mamba layers vs
+  Granite's 36 hybrid layers (only a subset of Granite's layers carry SSM
+  state; Codestral every layer carries one).
+- **Side finding (Codestral specifically):** the *first* baseline request
+  at a novel input length on a freshly-loaded Codestral takes ~71 s of
+  wall-clock prefill (one-off kernel warm-up under `--disable-cuda-graph`);
+  subsequent iterations of that same length converge to ~1.5 s. The n=5
+  median is unaffected because iter 1 is one sample of five. Worth knowing
+  if you ever bench Codestral with n=1.
+
+### Combined verdict (Granite + Codestral)
+
+| Question | Granite 4.0-H (hybrid) | Codestral Mamba 7B (pure) |
+| --- | --- | --- |
+| Cold restore re-prefills full history? | yes | **yes** |
+| Penalty scales linearly with history? | yes (+590 at L=512, +4048 at L=4096) | **yes** (+527 at L=512, +4223 at L=4096) |
+| Warm restore reduces prefill to ~`|M|`? | yes | **yes** |
+| Snapshot size driven by SSM state, not history? | yes (~57 MB) | **yes** (~272 MB; bigger by layer-count ratio) |
+| Cold restore preserves Engram's token-reduction benefit? | no | **no — same answer on pure Mamba** |
+
+**Decision the brief was set up to make:** the cold-cost penalty observed on
+Granite was **not** hybrid-specific. The cause is the cold radix tree, not
+attention-KV rebuild. Engineering implications:
+- Warming the radix tree (with the snapshot's prefix tokens, e.g. via a
+  zero-decode prefill call before the first user `/restore_snapshot`)
+  would in principle recover the savings — pure or hybrid.
+- Cold restore as currently implemented delivers SSM-state continuity but
+  not token-budget reduction. The continuity *is* what `/restore_snapshot`
+  was built for, and the correctness arm confirmed it works; the
+  token-reduction benefit is a separate property that depends on the radix
+  cache.
+
+### Qwen3-Coder-Next
+
+Weights downloaded this round: `/workspace/models/qwen3-coder-next-fp8`
+(`Qwen/Qwen3-Coder-Next-FP8`, 79.6 B params, `qwen3_next` architecture,
+40 shards / 75 GB). Cost AND correctness arms remain UNTESTED — both
+harnesses are model-path-parametrised; will run unchanged against
+Qwen3-Coder-Next when needed.
+
+### Reproduction — Codestral cost arm
+
+```bash
+# All four envs/flags are required and are documented above
+MODEL=/workspace/models/mamba-codestral-7b \
+SNAPSHOT_DIR=/workspace/snapshots-codestral \
+OUT_DIR=/tmp/kha397-cost-codestral \
+LOG_DIR=/tmp/kha397-cost-codestral/logs \
+PORT=30003 \
+ITERATIONS=5 \
+LENGTHS="512 4096" \
+EXTRA_LAUNCH_ARGS="--disable-cuda-graph --disable-piecewise-cuda-graph --context-length 8192" \
+EXTRA_LAUNCH_ENV="TORCHDYNAMO_DISABLE=1 SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN=1" \
+PY_EXTRA="--raw-mode" \
+bash scripts/validation/kha397_run_cost_suite.sh
+```

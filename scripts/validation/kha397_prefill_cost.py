@@ -56,6 +56,15 @@ M_CONTENT = "Now reply with only the word: BANANA"
 # Short ack so R is deterministic and tiny across all iterations.
 SHORT_R_PROMPT_SUFFIX = " Just say 'OK'."
 
+# Raw-mode delimiters — used only when --raw-mode is set, for tokenizers
+# without a chat template (e.g. base-model Codestral Mamba). The exact
+# choice of separator doesn't matter for the cost question (which is
+# about server-side prefill behaviour), only that P and M are
+# concatenated deterministically and tokenize to a sensible length.
+RAW_SYSTEM_PREFIX = "System: "
+RAW_USER_PREFIX = "\n\nUser: "
+RAW_ASSISTANT_PROMPT = "\n\nAssistant:"
+
 # Regex for "Prefill batch, #new-seq: K, #new-token: N, ..."
 PREFILL_RE = re.compile(
     r"Prefill batch.*?#new-seq:\s*(\d+).*?#new-token:\s*(\d+).*?#cached-token:\s*(\d+)"
@@ -100,7 +109,20 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         default="/tmp/kha397-cost",
     )
+    p.add_argument(
+        "--snapshot-dir",
+        default="/workspace/snapshots",
+        help="Directory the server writes conversation_<id> snapshots to "
+             "(for du -sb size measurement).",
+    )
     p.add_argument("--request-timeout", type=float, default=180.0)
+    p.add_argument(
+        "--raw-mode",
+        action="store_true",
+        help="Skip apply_chat_template — use raw text via /generate. "
+             "Required for tokenizers without a chat template (e.g. base "
+             "Codestral Mamba).",
+    )
     return p.parse_args()
 
 
@@ -173,28 +195,46 @@ _PARAGRAPH = (
 )
 
 
-def build_padded_p(salt: str, target_tokens: int, tok: AutoTokenizer) -> str:
-    """Return a user-content string whose chat-formatted tokenization
-    approaches target_tokens. We pad with copies of _PARAGRAPH until the
-    target is met, then add the SHORT_R_PROMPT_SUFFIX at the end so R
-    will be deterministic.
+def build_padded_p(salt: str, target_tokens: int, tok: AutoTokenizer,
+                   raw_mode: bool = False) -> tuple[str, int]:
+    """Return a user-content string whose formatted tokenization
+    approaches target_tokens. Pads with copies of _PARAGRAPH until the
+    target is met, then adds SHORT_R_PROMPT_SUFFIX so R is deterministic.
+
+    In raw_mode (no chat template), the user-content alone is what gets
+    sent; in chat-template mode, system+user is wrapped with the
+    tokenizer's chat template.
     """
     body = f"[salt={salt}] Please ignore this filler text. "
     while True:
         candidate = body + SHORT_R_PROMPT_SUFFIX
-        messages = [
-            {"role": "system", "content": SYSTEM_MSG},
-            {"role": "user", "content": candidate},
-        ]
-        formatted = tok.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True)
-        ids = tok.encode(formatted, add_special_tokens=False)
+        if raw_mode:
+            full = (RAW_SYSTEM_PREFIX + SYSTEM_MSG +
+                    RAW_USER_PREFIX + candidate + RAW_ASSISTANT_PROMPT)
+            ids = tok.encode(full, add_special_tokens=True)
+        else:
+            messages = [
+                {"role": "system", "content": SYSTEM_MSG},
+                {"role": "user", "content": candidate},
+            ]
+            formatted = tok.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True)
+            ids = tok.encode(formatted, add_special_tokens=False)
         if len(ids) >= target_tokens:
             return candidate, len(ids)
         body += _PARAGRAPH
 
 
-def encode_continuation(tok: AutoTokenizer, user_content: str) -> list[int]:
+def encode_continuation(tok: AutoTokenizer, user_content: str,
+                        raw_mode: bool = False) -> list[int]:
+    if raw_mode:
+        # Mirror the raw_mode user-turn shape used during the initial
+        # chat: the continuation is "what the user would have said next",
+        # so we wrap with the same User:/Assistant: scaffold and
+        # ask the tokenizer to add no special tokens (the BOS is already
+        # at position 0 from the original prefill).
+        full = (RAW_USER_PREFIX + user_content + RAW_ASSISTANT_PROMPT)
+        return tok.encode(full, add_special_tokens=False)
     formatted = tok.apply_chat_template(
         [{"role": "user", "content": user_content}],
         tokenize=False, add_generation_prompt=True,
@@ -223,6 +263,37 @@ def chat(url, model, messages, rid, max_tokens, timeout):
         "latency_ms": elapsed,
         "prompt_tokens": usage.get("prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
+    }
+
+
+def generate_raw(url, text, rid, conv_id, max_tokens, timeout):
+    """Raw-mode equivalent of chat(): uses SGLang's native /generate
+    endpoint with a plain-text input (no chat template applied). Returns
+    the same shape as chat() so the warm-suite code path is identical.
+    """
+    payload = {
+        "text": text,
+        "sampling_params": {
+            "temperature": 0,
+            "max_new_tokens": max_tokens,
+        },
+        "stream": False,
+        "rid": rid,
+        "conversation_id": conv_id,
+    }
+    t0 = time.perf_counter()
+    r = requests.post(f"{url}/generate", json=payload, timeout=timeout)
+    elapsed = (time.perf_counter() - t0) * 1000
+    r.raise_for_status()
+    body = r.json()
+    if isinstance(body, list):
+        body = body[0]
+    meta = body.get("meta_info", {}) or {}
+    return {
+        "text": body.get("text", ""),
+        "latency_ms": elapsed,
+        "prompt_tokens": meta.get("prompt_tokens"),
+        "completion_tokens": meta.get("completion_tokens"),
     }
 
 
@@ -278,32 +349,40 @@ def run_warm_suite(args, tok, model_name, url) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = args.server_log
+    raw = args.raw_mode
 
     print(f"[warm-suite] target_history_tokens={args.history_tokens} "
-          f"iters={args.iterations}")
+          f"iters={args.iterations} raw_mode={raw}")
     warm_records: list[dict[str, Any]] = []
     baseline_records: list[dict[str, Any]] = []
 
     # Pre-compute the M continuation tokens (shared across iters).
-    continuation_ids = encode_continuation(tok, M_CONTENT)
+    continuation_ids = encode_continuation(tok, M_CONTENT, raw_mode=raw)
     print(f"[warm-suite] M continuation_ids len={len(continuation_ids)}")
 
     for i in range(1, args.iterations + 1):
         salt = uuid.uuid4().hex[:8]
-        p_text, expected_len = build_padded_p(salt, args.history_tokens, tok)
-        messages = [
-            {"role": "system", "content": SYSTEM_MSG},
-            {"role": "user", "content": p_text},
-        ]
+        p_text, expected_len = build_padded_p(
+            salt, args.history_tokens, tok, raw_mode=raw)
         conv_id = f"kha397-cost-warm-{salt}"
 
         # ---- Setup: chat to establish R + save snapshot
         off = log_offset(log_path)
-        setup = chat(url, model_name, messages, conv_id,
-                     max_tokens=4, timeout=args.request_timeout)
+        if raw:
+            raw_text = (RAW_SYSTEM_PREFIX + SYSTEM_MSG +
+                        RAW_USER_PREFIX + p_text + RAW_ASSISTANT_PROMPT)
+            setup = generate_raw(url, raw_text, conv_id, conv_id,
+                                 max_tokens=4, timeout=args.request_timeout)
+        else:
+            messages = [
+                {"role": "system", "content": SYSTEM_MSG},
+                {"role": "user", "content": p_text},
+            ]
+            setup = chat(url, model_name, messages, conv_id,
+                         max_tokens=4, timeout=args.request_timeout)
         setup_prefill = scrape_extend_tokens(log_path, off)
         snap = save_snap(url, conv_id, args.request_timeout)
-        snap_size = snapshot_size_bytes("/workspace/snapshots", conv_id)
+        snap_size = snapshot_size_bytes(args.snapshot_dir, conv_id)
         if not snap.get("success"):
             print(f"  [iter {i}] save_snap FAIL: {snap}")
             continue
@@ -343,15 +422,23 @@ def run_warm_suite(args, tok, model_name, url) -> int:
     print(f"\n[warm-suite] running {args.iterations} baseline chats")
     for i in range(1, args.iterations + 1):
         salt = uuid.uuid4().hex[:8]
-        p_text, _ = build_padded_p(salt, args.history_tokens, tok)
+        p_text, _ = build_padded_p(
+            salt, args.history_tokens, tok, raw_mode=raw)
         baseline_user = p_text + "\n\n" + M_CONTENT
-        messages = [
-            {"role": "system", "content": SYSTEM_MSG},
-            {"role": "user", "content": baseline_user},
-        ]
+        rid = f"kha397-cost-baseline-{salt}"
         off = log_offset(log_path)
-        b = chat(url, model_name, messages, f"kha397-cost-baseline-{salt}",
-                 max_tokens=1, timeout=args.request_timeout)
+        if raw:
+            raw_text = (RAW_SYSTEM_PREFIX + SYSTEM_MSG +
+                        RAW_USER_PREFIX + baseline_user + RAW_ASSISTANT_PROMPT)
+            b = generate_raw(url, raw_text, rid, rid,
+                             max_tokens=1, timeout=args.request_timeout)
+        else:
+            messages = [
+                {"role": "system", "content": SYSTEM_MSG},
+                {"role": "user", "content": baseline_user},
+            ]
+            b = chat(url, model_name, messages, rid,
+                     max_tokens=1, timeout=args.request_timeout)
         bp = scrape_extend_tokens(log_path, off)
         rec = {
             "iter": i, "salt": salt,
@@ -411,7 +498,8 @@ def run_cold_one(args, tok, model_name, url) -> int:
         print(f"[FAIL] snapshot {conv_id} not visible on fresh server")
         return 1
 
-    continuation_ids = encode_continuation(tok, M_CONTENT)
+    continuation_ids = encode_continuation(
+        tok, M_CONTENT, raw_mode=args.raw_mode)
     off = log_offset(log_path)
     t0 = time.perf_counter()
     r_cold = restore(url, conv_id, continuation_ids,
