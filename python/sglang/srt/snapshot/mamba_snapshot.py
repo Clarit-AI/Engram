@@ -54,6 +54,8 @@ class MambaSnapshotMetadata:
     branch_name: Optional[str] = None
     parent_snapshot: Optional[str] = None
     fill_ids: Optional[List[int]] = None
+    # KHA-398 probe: path to companion KV safetensors file (throwaway)
+    kv_snapshot_path: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert metadata to dictionary for JSON serialization."""
@@ -842,6 +844,69 @@ class MambaSnapshotManager:
             f"temporal shape {temporal_states.shape} "
             f"(moved to {mamba_pool.device})"
         )
+
+
+    # ------------------------------------------------------------------ #
+    # KHA-398 probe: per-layer KV snapshot helpers (throwaway)            #
+    # ------------------------------------------------------------------ #
+
+    def _kv_snapshot_path(
+        self,
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> Path:
+        conv_dir = self._get_conversation_dir(conversation_id)
+        if branch_name:
+            safe_branch = self._sanitize_path_component(branch_name, "branch_name")
+            branch_dir = conv_dir / "branches"
+            branch_dir.mkdir(parents=True, exist_ok=True)
+            return branch_dir / f"{safe_branch}_kv_state.safetensors"
+        return conv_dir / f"turn_{turn_number}_kv_state.safetensors"
+
+    def save_kv_snapshot(
+        self,
+        kv_tensors: List[Tuple[torch.Tensor, torch.Tensor]],
+        conversation_id: str,
+        turn_number: Optional[int] = None,
+        branch_name: Optional[str] = None,
+    ) -> Path:
+        """Save per-layer KV tensors alongside the SSM snapshot (KHA-398 probe)."""
+        kv_path = self._kv_snapshot_path(conversation_id, turn_number, branch_name)
+        state_dict: dict = {}
+        for i, (k, v) in enumerate(kv_tensors):
+            state_dict[f"k_layer_{i}"] = k
+            state_dict[f"v_layer_{i}"] = v
+        tmp = kv_path.with_suffix(".safetensors.tmp")
+        save_file(state_dict, tmp)
+        tmp.rename(kv_path)
+        logger.info(
+            "KV snapshot saved: %s (%.2f MB, %d layers)",
+            kv_path,
+            kv_path.stat().st_size / 1024 / 1024,
+            len(kv_tensors),
+        )
+        return kv_path
+
+    def load_kv_snapshot(
+        self, kv_path: "str | Path"
+    ) -> Optional[List[Tuple[torch.Tensor, torch.Tensor]]]:
+        """Load per-layer KV tensors from a companion KV safetensors file."""
+        kv_path = Path(kv_path)
+        if not kv_path.exists():
+            logger.warning("KV snapshot not found: %s", kv_path)
+            return None
+        try:
+            state_dict = load_file(kv_path)
+        except Exception as exc:
+            logger.error("Failed to load KV snapshot %s: %s", kv_path, exc)
+            return None
+        kv_tensors: List[Tuple[torch.Tensor, torch.Tensor]] = []
+        i = 0
+        while f"k_layer_{i}" in state_dict:
+            kv_tensors.append((state_dict[f"k_layer_{i}"], state_dict[f"v_layer_{i}"]))
+            i += 1
+        return kv_tensors if kv_tensors else None
 
 
 MambaSnapshot = MambaSnapshotManager

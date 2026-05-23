@@ -35,7 +35,8 @@ post-extraction (semantics-preserving).
 import logging
 import time
 import uuid
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 import torch
 
@@ -43,6 +44,9 @@ from sglang.srt.managers.scheduler_pending_restore import (
     PENDING_RESTORE_REGISTRY_MAX,
     PendingRestoreEntry,
 )
+
+# KHA-398 probe: hardcoded KV capture cap (throwaway; no config plumbing)
+_KV_PROBE_CAP = 4096
 
 logger = logging.getLogger("sglang.srt.managers.scheduler")
 
@@ -129,6 +133,7 @@ def _stage_pending_restore(
     conv_states: List[torch.Tensor],
     temporal_states: torch.Tensor,
     fill_ids: Optional[List[int]],
+    kv_tensors: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
 ) -> None:
     """Stash a loaded snapshot in the pending-restore registry.
 
@@ -175,6 +180,7 @@ def _stage_pending_restore(
         fill_ids=list(fill_ids) if fill_ids is not None else None,
         conversation_id=conversation_id,
         timestamp=time.time(),
+        kv_tensors=kv_tensors,
     )
     scheduler.pending_restore_registry[canonical] = entry
 
@@ -360,6 +366,9 @@ def _maybe_hydrate_from_pending_restore(scheduler, req) -> Optional[bool]:
         scheduler.state_health_monitor.reset_baseline(entry.conversation_id)
         scheduler._health_check_counter[entry.conversation_id] = 0
 
+    # KHA-398 probe: inject KV tensors if captured at save time
+    _inject_kv_from_pending_restore(scheduler, req, entry)
+
     logger.info(
         "pending-restore registry hit: hydrated rid=%s "
         "(canonical=%s, conv_id=%s, mamba_pool_idx=%d)",
@@ -369,6 +378,121 @@ def _maybe_hydrate_from_pending_restore(scheduler, req) -> Optional[bool]:
         new_pool_idx_scalar,
     )
     return True
+
+
+def _inject_kv_from_pending_restore(scheduler, req, entry: "PendingRestoreEntry") -> None:
+    """KHA-398 probe: inject saved KV tensors into TokenToKVPool and radix cache.
+
+    Allocates fresh KV slots for entry.fill_ids tokens, copies the captured
+    K/V tensors into them, writes the slot indices into req_to_token_pool, and
+    inserts a radix-tree node so the next match_prefix returns a full cache hit
+    on fill_ids — meaning the scheduler extends ONLY the new question tokens
+    without re-prefilling the prior context through attention.
+
+    Also prepends fill_ids to req.origin_input_ids so attention positional
+    encodings are correct (fill_ids at positions 0…fill_len-1, question at
+    fill_len…fill_len+question_len-1).
+    """
+    if entry.kv_tensors is None or not entry.fill_ids:
+        return
+
+    kv_alloc = getattr(scheduler, "token_to_kv_pool_allocator", None)
+    if kv_alloc is None:
+        logger.debug("KV probe: token_to_kv_pool_allocator absent; skipping KV injection")
+        return
+    tree_cache = getattr(scheduler, "tree_cache", None)
+    if tree_cache is None or getattr(tree_cache, "disable", True):
+        logger.debug("KV probe: tree_cache absent or disabled; skipping KV injection")
+        return
+
+    kvcache = kv_alloc.get_kvcache()
+    fill_ids = entry.fill_ids
+    seq_len = len(fill_ids)
+
+    # Guard: don't exceed context limit after prepending fill_ids
+    max_len = getattr(scheduler, "max_req_input_len", None)
+    if max_len is not None:
+        question_len = len(req.origin_input_ids) if req.origin_input_ids else 0
+        if seq_len + question_len >= max_len:
+            logger.warning(
+                "KV probe: fill_ids (%d) + question (%d) >= max_req_input_len (%d); "
+                "skipping KV injection",
+                seq_len, question_len, max_len,
+            )
+            return
+
+    # Allocate KV pool slots for fill_ids
+    kv_slot_indices = kv_alloc.alloc(seq_len)
+    if kv_slot_indices is None:
+        logger.warning(
+            "KV probe: no free KV slots for %d tokens; skipping KV injection", seq_len
+        )
+        return
+
+    device = kvcache.device
+    try:
+        # Copy K/V tensors into allocated slots
+        for layer_rel, (k_cpu, v_cpu) in enumerate(entry.kv_tensors):
+            abs_layer = kvcache.start_layer + layer_rel
+            kvcache._get_key_buffer(abs_layer)[kv_slot_indices] = k_cpu.to(
+                device, non_blocking=True
+            )
+            kvcache._get_value_buffer(abs_layer)[kv_slot_indices] = v_cpu.to(
+                device, non_blocking=True
+            )
+
+        # Write slot indices into req_to_token_pool so attention can find them
+        req_pool_idx = int(req.req_pool_idx)
+        scheduler.req_to_token_pool.req_to_token[req_pool_idx, :seq_len] = (
+            kv_slot_indices
+        )
+
+        # Insert fill_ids → kv_slot_indices into the radix cache so match_prefix
+        # returns a full hit and the scheduler skips attention re-prefill.
+        from sglang.srt.mem_cache.base_prefix_cache import InsertParams
+        from sglang.srt.mem_cache.radix_cache import RadixKey
+
+        mamba_val = (
+            req.mamba_pool_idx.unsqueeze(-1).clone()
+            if req.mamba_pool_idx.dim() == 0
+            else req.mamba_pool_idx.clone()
+        )
+        tree_cache.insert(
+            InsertParams(
+                key=RadixKey(
+                    torch.tensor(fill_ids, dtype=torch.int64, device=device),
+                    None,
+                ),
+                value=kv_slot_indices.to(dtype=torch.int64, copy=True),
+                mamba_value=mamba_val,
+            )
+        )
+
+        # Prepend fill_ids to origin_input_ids so attention positional encodings
+        # are correct (fill_ids at 0…fill_len-1, question at fill_len onward).
+        req.origin_input_ids = list(fill_ids) + list(req.origin_input_ids)
+
+        req.cache_protected_len = seq_len
+        logger.info(
+            "KV probe: injected %d-token KV for rid=%s (layers=%d, slots=%d:%d)",
+            seq_len,
+            req.rid,
+            len(entry.kv_tensors),
+            int(kv_slot_indices[0]),
+            int(kv_slot_indices[-1]),
+        )
+
+    except Exception as exc:
+        logger.error(
+            "KV probe: KV injection failed for rid=%s: %s; freeing slots",
+            req.rid,
+            exc,
+            exc_info=True,
+        )
+        try:
+            kv_alloc.free(kv_slot_indices)
+        except Exception:
+            pass
 
 
 def handle_save_snapshot(scheduler, recv_req):
@@ -494,7 +618,33 @@ def handle_save_snapshot(scheduler, recv_req):
             ),
         )
 
-        # Save snapshot
+        # KHA-398 probe: extract attention KV tensors (hardcoded _KV_PROBE_CAP cap)
+        kv_alloc = getattr(scheduler, "token_to_kv_pool_allocator", None)
+        if kv_alloc is not None and metadata.fill_ids:
+            try:
+                kvcache = kv_alloc.get_kvcache()
+                seq_len = min(len(metadata.fill_ids), _KV_PROBE_CAP)
+                kv_indices = scheduler.req_to_token_pool.req_to_token[
+                    req.req_pool_idx, :seq_len
+                ]
+                kv_tensors_to_save: List[Tuple[torch.Tensor, torch.Tensor]] = []
+                for layer_rel in range(kvcache.layer_num):
+                    abs_layer = kvcache.start_layer + layer_rel
+                    k = kvcache._get_key_buffer(abs_layer)[kv_indices].clone().cpu()
+                    v = kvcache._get_value_buffer(abs_layer)[kv_indices].clone().cpu()
+                    kv_tensors_to_save.append((k, v))
+                if kv_tensors_to_save:
+                    kv_path = scheduler.snapshot_manager.save_kv_snapshot(
+                        kv_tensors_to_save,
+                        effective_conv_id,
+                        metadata.turn_number,
+                        metadata.branch_name,
+                    )
+                    metadata.kv_snapshot_path = str(kv_path)
+            except Exception as kv_exc:
+                logger.warning("KV probe: KV capture failed (non-fatal): %s", kv_exc)
+
+        # Save snapshot (metadata may now include kv_snapshot_path)
         scheduler.snapshot_manager.save_snapshot(conv_states, temporal_states, metadata)
 
         logger.info(
@@ -895,12 +1045,31 @@ def handle_restore_snapshot(scheduler, recv_req):
                 else getattr(metadata_p, "token_count", None)
             )
 
+            # KHA-398 probe: load KV tensors from companion file if present
+            kv_tensors_p = None
+            kv_path_str = (
+                metadata_p.get("kv_snapshot_path")
+                if isinstance(metadata_p, dict)
+                else getattr(metadata_p, "kv_snapshot_path", None)
+            )
+            if kv_path_str:
+                try:
+                    kv_tensors_p = scheduler.snapshot_manager.load_kv_snapshot(
+                        Path(kv_path_str)
+                    )
+                except Exception as kv_exc:
+                    logger.warning(
+                        "KV probe: failed to load KV snapshot %s: %s",
+                        kv_path_str, kv_exc,
+                    )
+
             scheduler._stage_pending_restore(
                 rid=recv_req.rid,
                 conversation_id=effective_conv_id,
                 conv_states=conv_states_p,
                 temporal_states=temporal_states_p,
                 fill_ids=fill_ids_p,
+                kv_tensors=kv_tensors_p,
             )
 
             logger.info(

@@ -25,8 +25,8 @@ Extracted from ``scheduler.py`` as part of the scheduler-decomposition port
 type + capacity constant live here.
 """
 
-from dataclasses import dataclass
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 import torch
 
@@ -49,3 +49,5 @@ class PendingRestoreEntry:
     fill_ids: Optional[List[int]]
     conversation_id: str
     timestamp: float
+    # KHA-398 probe: per-layer (K, V) tensors loaded from disk (CPU), or None
+    kv_tensors: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None
