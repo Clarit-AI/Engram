@@ -4,9 +4,10 @@ KHA-390 regression — Mamba SSM consumption ablation.
 After /restore_snapshot succeeds, a subsequent plain /generate must consume the
 restored SSM state: different SSM seeds must produce distinct output.
 
-Currently FAILING (KHA-390): all tamper conditions produce byte-identical output,
-proving the restored state is not consumed by the next prefill forward pass.  Both
-tests are xfail(strict=False) so CI is not blocked until the fix lands.
+Fix confirmed on-main (ecb999e65): [none] and [gaussian] tamper conditions produce
+output distinct from the no-restore baseline; distinguishes_conditions passes.
+The [zeros] case is a known mathematical edge case: h0=0 recurrence equals starting
+fresh, so zeroed restore == no-restore is expected behaviour, not the original bug.
 
 Helpers and constants are lifted from scripts/kha-387-ssm-ablation.py, which
 proved the bug empirically on pure-Mamba2 Codestral.
@@ -265,16 +266,24 @@ def launch_codestral_server(tmp_path_factory: pytest.TempPathFactory) -> _Server
 
 @pytest.mark.gpu
 @pytest.mark.snapshot
-@pytest.mark.xfail(
-    reason=(
-        "KHA-390: restored Mamba SSM state is not consumed by the next prefill "
-        "forward pass — tampered and un-tampered conditions produce byte-identical "
-        "output.  xfail(strict=False) so CI is not blocked; flip to required when "
-        "the fix lands."
-    ),
-    strict=False,
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "none",
+        pytest.param(
+            "zeros",
+            marks=pytest.mark.xfail(
+                reason=(
+                    "zeroed restored state == no restored state; the h0=0 recurrence "
+                    "equals starting fresh, so restore_zeros legitimately equals the "
+                    "no-restore baseline (KHA-390) — expected math, not the bug"
+                ),
+                strict=True,
+            ),
+        ),
+        "gaussian",
+    ],
 )
-@pytest.mark.parametrize("tamper", ["none", "zeros", "gaussian"])
 def test_restore_consumption_changes_output(
     launch_codestral_server: _ServerHandle, tamper: str
 ) -> None:
@@ -305,14 +314,6 @@ def test_restore_consumption_changes_output(
 
 @pytest.mark.gpu
 @pytest.mark.snapshot
-@pytest.mark.xfail(
-    reason=(
-        "KHA-390: all SSM conditions (none/zeros/gaussian) produce byte-identical "
-        "output, so tamper conditions cannot be distinguished.  Confirms the restored "
-        "state never reaches the forward pass.  Fix pending."
-    ),
-    strict=False,
-)
 def test_restore_consumption_distinguishes_conditions(
     launch_codestral_server: _ServerHandle,
 ) -> None:
