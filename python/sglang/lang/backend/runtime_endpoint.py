@@ -3,6 +3,7 @@ import atexit
 import json
 import multiprocessing
 import time
+import uuid
 import warnings
 from typing import Dict, List, Optional, Union
 
@@ -79,9 +80,15 @@ class RuntimeEndpoint(BaseBackend):
         return self.chat_template
 
     def cache_prefix(self, prefix_str: str):
+        rid = f"runtime-cache-prefix-{uuid.uuid4().hex}"
         res = http_request(
             self.base_url + "/generate",
-            json={"text": prefix_str, "sampling_params": {"max_new_tokens": 0}},
+            json={
+                "text": prefix_str,
+                "sampling_params": {"max_new_tokens": 0},
+                "rid": rid,
+                "conversation_id": rid,
+            },
             api_key=self.api_key,
             verify=self.verify,
         )
@@ -105,6 +112,7 @@ class RuntimeEndpoint(BaseBackend):
 
     def commit_lazy_operations(self, s: StreamExecutor):
         data = {"text": s.text_, "sampling_params": {"max_new_tokens": 0}}
+        self._add_runtime_identity(s, data)
         self._add_images(s, data)
         res = http_request(
             self.base_url + "/generate",
@@ -116,6 +124,7 @@ class RuntimeEndpoint(BaseBackend):
 
     def fill_image(self, s: StreamExecutor):
         data = {"text": s.text_, "sampling_params": {"max_new_tokens": 0}}
+        self._add_runtime_identity(s, data)
         self._add_images(s, data)
         res = http_request(
             self.base_url + "/generate",
@@ -171,6 +180,7 @@ class RuntimeEndpoint(BaseBackend):
                 **sampling_params.to_srt_kwargs(),
             },
         }
+        self._add_runtime_identity(s, data)
 
         for item in [
             "return_logprob",
@@ -211,6 +221,7 @@ class RuntimeEndpoint(BaseBackend):
                 **sampling_params.to_srt_kwargs(),
             },
         }
+        self._add_runtime_identity(s, data)
 
         for item in [
             "return_logprob",
@@ -325,6 +336,7 @@ class RuntimeEndpoint(BaseBackend):
         self._assert_success(res)
 
     def _generate_http_request(self, s: StreamExecutor, data):
+        self._add_runtime_identity(s, data)
         self._add_images(s, data)
         res = http_request(
             self.base_url + "/generate",
@@ -339,6 +351,10 @@ class RuntimeEndpoint(BaseBackend):
         if s.images_:
             assert len(s.images_) == 1, "Only support one image."
             data["image_data"] = s.images_[0][1]
+
+    def _add_runtime_identity(self, s: StreamExecutor, data):
+        data.setdefault("rid", s.sid)
+        data.setdefault("conversation_id", s.sid)
 
     # --- BEGIN ENGRAM: snapshot HTTP client methods ---
     def save_snapshot(
