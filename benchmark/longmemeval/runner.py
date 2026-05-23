@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from .judge import BaseJudge, MockJudge
+from .judge import BaseJudge, LLMJudge, MockJudge
 from .results import QuestionResult, RunSummary, to_jsonl
 
 
