@@ -86,7 +86,9 @@ def _wait_for_health(server_url: str, max_wait_s: int = 600) -> None:
         except requests.RequestException:
             pass
         time.sleep(5)
-    raise RuntimeError(f"Server at {server_url} did not become healthy in {max_wait_s}s")
+    raise RuntimeError(
+        f"Server at {server_url} did not become healthy in {max_wait_s}s"
+    )
 
 
 # ── snapshot path helpers (lifted from scripts/kha-387-ssm-ablation.py) ─────
@@ -167,7 +169,9 @@ def _seed_snapshot(
         "turn_number": 1,
     }
     code, body = _http_post(f"{server_url}/save_snapshot", save_payload)
-    assert code == 200 and body.get("success"), f"/save_snapshot failed HTTP {code}: {body}"
+    assert code == 200 and body.get(
+        "success"
+    ), f"/save_snapshot failed HTTP {code}: {body}"
 
     state_path = _turn_state_path(snap_root, conv_id, 1)
     assert state_path.exists(), f"Expected safetensors at {state_path} after save"
@@ -191,7 +195,9 @@ def _restore(server_url: str, conv_id: str, rid_tail: str) -> None:
         "turn_number": 1,
     }
     code, body = _http_post(f"{server_url}/restore_snapshot", payload)
-    assert code == 200 and body.get("success"), f"/restore_snapshot failed HTTP {code}: {body}"
+    assert code == 200 and body.get(
+        "success"
+    ), f"/restore_snapshot failed HTTP {code}: {body}"
 
 
 def _continuation_ids(
@@ -200,7 +206,9 @@ def _continuation_ids(
     """Run TAIL_PROMPT and return the first 32 output token IDs as a tuple."""
     code, body = _emit(server_url, served_name, TAIL_PROMPT, rid_tail, conv_id)
     assert code == 200, f"tail /generate failed HTTP {code}: {body}"
-    ids = (body.get("meta_info") or {}).get("output_ids") or body.get("output_ids") or []
+    ids = (
+        (body.get("meta_info") or {}).get("output_ids") or body.get("output_ids") or []
+    )
     if not isinstance(ids, list):
         ids = []
     return tuple(ids[:32])
@@ -233,25 +241,38 @@ def launch_codestral_server(tmp_path_factory: pytest.TempPathFactory) -> _Server
     env["SGLANG_ENABLE_SPEC_V2"] = "false"
 
     cmd = [
-        sys.executable, "-m", "sglang.launch_server",
-        "--model-path", DEFAULT_MODEL,
-        "--host", "0.0.0.0",
-        "--port", str(port),
+        sys.executable,
+        "-m",
+        "sglang.launch_server",
+        "--model-path",
+        DEFAULT_MODEL,
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(port),
         "--trust-remote-code",
-        "--served-model-name", DEFAULT_SERVED_NAME,
+        "--served-model-name",
+        DEFAULT_SERVED_NAME,
         "--enable-snapshot-persistence",
-        "--snapshot-dir", str(snap_root),
-        "--snapshot-trigger-policy", "every_turn",
-        "--mamba-scheduler-strategy", "no_buffer",
+        "--snapshot-dir",
+        str(snap_root),
+        "--snapshot-trigger-policy",
+        "every_turn",
+        "--mamba-scheduler-strategy",
+        "no_buffer",
         "--disable-radix-cache",
         "--disable-cuda-graph",
         "--disable-piecewise-cuda-graph",
     ]
 
-    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(
+        cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
     try:
         _wait_for_health(server_url, max_wait_s=HEALTH_TIMEOUT_S)
-        yield _ServerHandle(server_url=server_url, served_name=DEFAULT_SERVED_NAME, snap_root=snap_root)
+        yield _ServerHandle(
+            server_url=server_url, served_name=DEFAULT_SERVED_NAME, snap_root=snap_root
+        )
     finally:
         proc.terminate()
         try:
@@ -294,17 +315,25 @@ def test_restore_consumption_changes_output(
     srv = launch_codestral_server
 
     # Baseline: seed + save, continuation WITHOUT restore.
-    conv_base, _, _state_base = _seed_snapshot(srv.server_url, srv.served_name, srv.snap_root)
+    conv_base, _, _state_base = _seed_snapshot(
+        srv.server_url, srv.served_name, srv.snap_root
+    )
     rid_base_tail = f"{conv_base}-tail"
-    baseline_ids = _continuation_ids(srv.server_url, srv.served_name, conv_base, rid_base_tail)
+    baseline_ids = _continuation_ids(
+        srv.server_url, srv.served_name, conv_base, rid_base_tail
+    )
 
     # Restored path: fresh seed + save, optional tamper, restore, then continuation.
-    conv_r, _, state_path_r = _seed_snapshot(srv.server_url, srv.served_name, srv.snap_root)
+    conv_r, _, state_path_r = _seed_snapshot(
+        srv.server_url, srv.served_name, srv.snap_root
+    )
     if tamper != "none":
         _tamper_snapshot_on_disk(state_path_r, tamper)
     rid_r_tail = f"{conv_r}-tail"
     _restore(srv.server_url, conv_r, rid_r_tail)
-    restored_ids = _continuation_ids(srv.server_url, srv.served_name, conv_r, rid_r_tail)
+    restored_ids = _continuation_ids(
+        srv.server_url, srv.served_name, conv_r, rid_r_tail
+    )
 
     assert restored_ids != baseline_ids, (
         f"tamper={tamper!r}: restored output is byte-identical to no-restore baseline — "
@@ -326,12 +355,16 @@ def test_restore_consumption_distinguishes_conditions(
 
     outputs: Dict[str, Tuple[int, ...]] = {}
     for tamper in ("none", "zeros", "gaussian"):
-        conv_id, _, state_path = _seed_snapshot(srv.server_url, srv.served_name, srv.snap_root)
+        conv_id, _, state_path = _seed_snapshot(
+            srv.server_url, srv.served_name, srv.snap_root
+        )
         if tamper != "none":
             _tamper_snapshot_on_disk(state_path, tamper)
         rid_tail = f"{conv_id}-tail"
         _restore(srv.server_url, conv_id, rid_tail)
-        outputs[tamper] = _continuation_ids(srv.server_url, srv.served_name, conv_id, rid_tail)
+        outputs[tamper] = _continuation_ids(
+            srv.server_url, srv.served_name, conv_id, rid_tail
+        )
 
     assert len(set(outputs.values())) == 3, (
         f"All three tamper conditions produced non-distinct output (KHA-390). "
