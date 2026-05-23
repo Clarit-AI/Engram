@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from .judge import ExactMatchScorer, MockJudge
+from .judge import MockJudge, SetF1Scorer
 from .results import QuestionResult, RunSummary
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class Question:
     question_id: str
     graph_text: str  # Textual description of the graph
     question: str    # Natural-language question to answer
-    answer: str      # Ground-truth answer
+    answer: list     # Ground-truth answer node list
     num_hops: int
     num_nodes: int
 
@@ -140,7 +140,7 @@ class GraphWalksRunner:
         self.model_url = model_url
         self.snapshot_dir = Path(snapshot_dir)
         self.model = model
-        self.scorer = scorer if scorer is not None else ExactMatchScorer()
+        self.scorer = scorer if scorer is not None else SetF1Scorer()
         self.http_client = http_client
 
     # ------------------------------------------------------------------
@@ -151,7 +151,10 @@ class GraphWalksRunner:
         """Run full-context baseline for every question."""
         results: List[QuestionResult] = []
         for q in questions:
-            prompt = f"{q.graph_text}\n\n{q.question}"
+            prompt = (
+                f"{q.graph_text}\n\n{q.question}\n\n"
+                "End your response with exactly: Final Answer: [node1, node2, ...]"
+            )
             input_tokens = _count_tokens(prompt)
 
             answer, ttft = _post_completion(
@@ -228,12 +231,15 @@ class GraphWalksRunner:
             is_warm = self._snapshot_exists(q.question_id)
             restore_mode: Literal["warm", "cold"] = "warm" if is_warm else "cold"
 
+            answer_instruction = (
+                "\n\nEnd your response with exactly: Final Answer: [node1, node2, ...]"
+            )
             if is_warm:
                 # Warm: only send the question — graph context is in the snapshot.
-                prompt = q.question
+                prompt = q.question + answer_instruction
             else:
                 # Cold: send full context, then persist a stub snapshot.
-                prompt = f"{q.graph_text}\n\n{q.question}"
+                prompt = f"{q.graph_text}\n\n{q.question}" + answer_instruction
                 self._save_stub_snapshot(q.question_id, q.graph_text)
 
             input_tokens = _count_tokens(prompt)
@@ -417,7 +423,7 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    scorer = MockJudge() if args.dry_run else ExactMatchScorer()
+    scorer = MockJudge() if args.dry_run else SetF1Scorer()
 
     if args.dry_run:
         from .download import generate_synthetic_question  # noqa: PLC0415

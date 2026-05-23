@@ -103,7 +103,7 @@ def generate_synthetic_question(
         "question_id": question_id,
         "graph_text": graph_text,
         "question": question,
-        "answer": answer_node,
+        "answer": [answer_node],
         "num_hops": num_hops,
         "num_nodes": num_nodes,
     }

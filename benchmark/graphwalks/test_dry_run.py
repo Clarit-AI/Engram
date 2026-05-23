@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from benchmark.graphwalks.download import generate_synthetic_question
-from benchmark.graphwalks.judge import ExactMatchScorer, MockJudge
+from benchmark.graphwalks.judge import MockJudge, SetF1Scorer, parse_answer
 from benchmark.graphwalks.results import QuestionResult, RunSummary
 from benchmark.graphwalks.runner import GraphWalksRunner, Question
 
@@ -47,7 +47,7 @@ def _make_question(d: Dict[str, Any]) -> Question:
 QUESTIONS = [_make_question(d) for d in SYNTHETIC_QUESTIONS]
 
 
-def _mock_response(content: str = "node B") -> Dict:
+def _mock_response(content: str = "Final Answer: [B]") -> Dict:
     """Build a minimal OpenAI-compatible chat completion response dict."""
     return {
         "choices": [
@@ -65,7 +65,7 @@ def _mock_response(content: str = "node B") -> Dict:
 def mock_http_client():
     """An HTTP client stub that returns a canned completion response."""
     client = MagicMock()
-    client.post.return_value = _mock_response("node B")
+    client.post.return_value = _mock_response("Final Answer: [B]")
     return client
 
 
@@ -249,10 +249,13 @@ class TestSyntheticGeneration:
             q = generate_synthetic_question(num_nodes=6, num_hops=2, seed=seed)
             graph_text = q["graph_text"]
             answer = q["answer"]
+            # answer is now a list; check the single node
+            assert isinstance(answer, list) and len(answer) == 1
+            node = answer[0]
             # The answer should appear in the graph description
-            assert answer in graph_text, f"Answer '{answer}' not in graph: {graph_text}"
+            assert node in graph_text, f"Answer '{node}' not in graph: {graph_text}"
             # The answer must be a valid uppercase letter
-            assert answer in string.ascii_uppercase
+            assert node in string.ascii_uppercase
 
     def test_generate_synthetic_question_reproducible(self):
         q1 = generate_synthetic_question(num_nodes=5, num_hops=2, seed=42)
@@ -265,28 +268,102 @@ class TestSyntheticGeneration:
         # Different seeds should (generally) produce different question IDs.
         assert q0["question_id"] != q1["question_id"]
 
-    def test_exact_match_scorer_match(self):
-        scorer = ExactMatchScorer()
-        assert scorer.score("Node B", "node b") == 1.0
+    # ------------------------------------------------------------------
+    # parse_answer tests
+    # ------------------------------------------------------------------
 
-    def test_exact_match_scorer_no_match(self):
-        scorer = ExactMatchScorer()
-        assert scorer.score("Node C", "Node B") == 0.0
+    def test_parse_answer_correct_format(self):
+        assert parse_answer("some text\nFinal Answer: [A, B, C]") == ["A", "B", "C"]
 
-    def test_exact_match_scorer_normalized(self):
-        scorer = ExactMatchScorer()
-        # Punctuation and case should not matter.
-        assert scorer.score("B!", "B") == 1.0
-        assert scorer.score("  b  ", "B") == 1.0
+    def test_parse_answer_single_node(self):
+        assert parse_answer("Final Answer: [X]") == ["X"]
+
+    def test_parse_answer_missing_format(self):
+        assert parse_answer("The answer is B") == []
+
+    def test_parse_answer_partial_format_no_brackets(self):
+        assert parse_answer("Final Answer: B") == []
+
+    def test_parse_answer_empty_list(self):
+        assert parse_answer("Final Answer: []") == []
+
+    def test_parse_answer_whitespace_in_nodes(self):
+        assert parse_answer("Final Answer: [ A , B ]") == ["A", "B"]
+
+    def test_parse_answer_uses_last_line(self):
+        # Only the last line matters; a Final Answer on an earlier line is ignored
+        result = parse_answer("Final Answer: [X]\nSome other line\nFinal Answer: [Y]")
+        assert result == ["Y"]
+
+    def test_parse_answer_no_final_answer_keyword(self):
+        assert parse_answer("") == []
+
+    # ------------------------------------------------------------------
+    # SetF1Scorer tests
+    # ------------------------------------------------------------------
+
+    def test_set_f1_perfect_match(self):
+        scorer = SetF1Scorer()
+        assert scorer.score("Final Answer: [A, B, C]", ["A", "B", "C"]) == 1.0
+
+    def test_set_f1_partial_match(self):
+        scorer = SetF1Scorer()
+        # predicted: {A, B}, truth: {A, B, C}
+        # precision = 2/2 = 1.0, recall = 2/3, f1 = 2*(1*2/3)/(1+2/3) = 4/5 = 0.8
+        score = scorer.score("Final Answer: [A, B]", ["A", "B", "C"])
+        assert abs(score - 0.8) < 1e-9
+
+    def test_set_f1_no_match(self):
+        scorer = SetF1Scorer()
+        assert scorer.score("Final Answer: [X]", ["A", "B"]) == 0.0
+
+    def test_set_f1_empty_prediction(self):
+        scorer = SetF1Scorer()
+        # No Final Answer format → empty set → score 0
+        assert scorer.score("The answer is B", ["B"]) == 0.0
+
+    def test_set_f1_empty_reference(self):
+        scorer = SetF1Scorer()
+        # Both empty → 1.0 (vacuously correct)
+        assert scorer.score("Final Answer: []", []) == 1.0
+
+    def test_set_f1_nonempty_prediction_empty_reference(self):
+        scorer = SetF1Scorer()
+        # When ground truth is empty, the official HF scorer returns 1.0 (vacuously
+        # correct: recall+precision==0 and n_golden==0).
+        assert scorer.score("Final Answer: [A]", []) == 1.0
+
+    # ------------------------------------------------------------------
+    # MockJudge tests
+    # ------------------------------------------------------------------
 
     def test_mock_judge_non_empty(self):
         judge = MockJudge()
-        assert judge.score("some answer", "reference") == 1.0
+        assert judge.score("some answer", ["reference"]) == 1.0
 
     def test_mock_judge_empty(self):
         judge = MockJudge()
-        assert judge.score("", "reference") == 0.0
-        assert judge.score("   ", "reference") == 0.0
+        assert judge.score("", ["reference"]) == 0.0
+        assert judge.score("   ", ["reference"]) == 0.0
+
+    # ------------------------------------------------------------------
+    # Synthetic question answer format test
+    # ------------------------------------------------------------------
+
+    def test_synthetic_answer_is_list(self):
+        """Synthetic questions must produce list answers for SetF1Scorer."""
+        q = generate_synthetic_question(num_nodes=5, num_hops=2, seed=0)
+        assert isinstance(q["answer"], list), "answer must be a list[str]"
+        assert len(q["answer"]) >= 1
+        assert all(isinstance(n, str) for n in q["answer"])
+
+    def test_synthetic_answer_in_final_answer_format(self):
+        """A response formatted as Final Answer: [...] should score > 0 for synthetic q."""
+        scorer = SetF1Scorer()
+        q = generate_synthetic_question(num_nodes=5, num_hops=2, seed=0)
+        answer_node = q["answer"][0]
+        response = f"Final Answer: [{answer_node}]"
+        assert scorer.score(response, q["answer"]) == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +377,7 @@ class TestRunnerDryRun:
     def _make_runner(
         self,
         tmp_snapshot_dir: Path,
-        answer: str = "node B",
+        answer: str = "Final Answer: [B]",
         scorer=None,
     ) -> GraphWalksRunner:
         client = MagicMock()
