@@ -1291,6 +1291,7 @@ class Req(ReqDllmMixin):
         self.extend_logprob_start_len = 0
         self.inflight_middle_chunks = 0
         self.mamba_pool_idx = None
+        self.mamba_has_restored_state = False  # --- BEGIN ENGRAM KHA-390 ---
         self.mamba_ping_pong_track_buffer = None
         self.mamba_next_track_idx = None
         self.mamba_last_track_seqlen = None
