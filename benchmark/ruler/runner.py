@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-from .judge import ExactMatchScorer
+from .judge import StringMatchAllScorer, get_scorer
 from .results import RestoreMode, RunSummary, TaskResult
 from .tasks import (
     RULER_TASKS,
@@ -143,7 +143,9 @@ class RULERRunner:
         self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else Path("/tmp/ruler_snapshots")
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         self._http_client = http_client or _real_http_client
-        self.scorer = scorer if scorer is not None else ExactMatchScorer()
+        # If no scorer is injected, use task-aware get_scorer() per call.
+        # An injected scorer overrides per-task selection (useful for testing).
+        self._scorer_override = scorer
         self.max_new_tokens = max_new_tokens
 
     # ------------------------------------------------------------------ #
@@ -173,7 +175,7 @@ class RULERRunner:
 
             answer, latency = self._call(prompt)
             output_tokens = _count_tokens(answer)
-            score = self._score(answer, task.answer)
+            score = self._score(answer, task.answer, task.task_name)
 
             result = TaskResult(
                 task_id=task.task_id or task.task_name,
@@ -227,7 +229,7 @@ class RULERRunner:
 
             answer, latency = self._call(prompt)
             output_tokens = _count_tokens(answer)
-            score = self._score(answer, task.answer)
+            score = self._score(answer, task.answer, task.task_name)
 
             # If cold, save snapshot so subsequent runs are warm
             if restore_mode == "cold":
@@ -273,13 +275,13 @@ class RULERRunner:
             baseline_input_tokens = _count_tokens(baseline_prompt)
             baseline_answer, baseline_latency = self._call(baseline_prompt)
             baseline_output_tokens = _count_tokens(baseline_answer)
-            baseline_score = self._score(baseline_answer, task.answer)
+            baseline_score = self._score(baseline_answer, task.answer, task.task_name)
 
             # --- Engram ---
             restore_mode, engram_prompt, engram_input_tokens = self._engram_prompt(task)
             engram_answer, engram_latency = self._call(engram_prompt)
             engram_output_tokens = _count_tokens(engram_answer)
-            engram_score = self._score(engram_answer, task.answer)
+            engram_score = self._score(engram_answer, task.answer, task.task_name)
 
             if restore_mode == "cold":
                 self._save_snapshot(task)
@@ -359,8 +361,9 @@ class RULERRunner:
         """Invoke the HTTP client, returning (answer_text, latency_s)."""
         return self._http_client(self.model_url, prompt, self.model_name)
 
-    def _score(self, answer: str, reference) -> float:
-        return self.scorer.score(answer, reference)
+    def _score(self, answer: str, reference, task_name: str = "") -> float:
+        scorer = self._scorer_override if self._scorer_override is not None else get_scorer(task_name)
+        return scorer.score(answer, reference)
 
 
 # ---------------------------------------------------------------------------

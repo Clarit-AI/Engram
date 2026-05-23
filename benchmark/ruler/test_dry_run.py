@@ -14,7 +14,7 @@ from typing import Tuple
 
 import pytest
 
-from .judge import ExactMatchScorer, MockJudge
+from .judge import MockJudge, StringMatchAllScorer, StringMatchPartScorer, get_scorer
 from .results import RunSummary, TaskResult
 from .runner import RULERRunner, _count_tokens
 from .tasks import (
@@ -274,21 +274,87 @@ class TestSyntheticGeneration:
         with pytest.raises(ValueError, match="Unknown task"):
             generate_synthetic_task("not_a_real_task", 4096)
 
-    def test_exact_match_scorer(self):
-        """ExactMatchScorer returns 1.0 for correct containment, 0.0 otherwise."""
-        scorer = ExactMatchScorer()
+    def test_string_match_all_scorer_single_reference(self):
+        """StringMatchAllScorer: single ref found → 1.0, not found → 0.0."""
+        scorer = StringMatchAllScorer()
 
-        # String reference
         assert scorer.score("The answer is ABCD1234", "ABCD1234") == 1.0
         assert scorer.score("ABCD1234", "ABCD1234") == 1.0
         assert scorer.score("wrong answer", "ABCD1234") == 0.0
 
-        # List reference — any match passes
+    def test_string_match_all_scorer_case_insensitive(self):
+        """StringMatchAllScorer is case-insensitive."""
+        scorer = StringMatchAllScorer()
+        assert scorer.score("paris is the capital", "Paris") == 1.0
+        assert scorer.score("PARIS", "paris") == 1.0
+
+    def test_string_match_all_scorer_recall_based(self):
+        """StringMatchAllScorer returns the fraction of refs found (recall)."""
+        scorer = StringMatchAllScorer()
+
+        # All 3 refs present → 1.0
+        assert scorer.score("apple banana cherry", ["apple", "banana", "cherry"]) == 1.0
+        # 2 of 3 refs present → 2/3
+        assert abs(scorer.score("apple banana", ["apple", "banana", "cherry"]) - 2 / 3) < 1e-9
+        # 0 of 3 refs present → 0.0
+        assert scorer.score("mango grape", ["apple", "banana", "cherry"]) == 0.0
+
+    def test_string_match_all_scorer_returns_fraction_not_percent(self):
+        """StringMatchAllScorer returns [0.0, 1.0], not [0, 100]."""
+        scorer = StringMatchAllScorer()
+        result = scorer.score("apple banana", ["apple", "banana"])
+        assert 0.0 <= result <= 1.0
+
+    def test_string_match_part_scorer_any_match(self):
+        """StringMatchPartScorer: 1.0 if any ref found, 0.0 if none."""
+        scorer = StringMatchPartScorer()
+
+        # Any one match is sufficient
         assert scorer.score("Paris", ["London", "Paris", "Tokyo"]) == 1.0
+        assert scorer.score("London is great", ["London", "Paris", "Tokyo"]) == 1.0
+        # No match → 0.0
         assert scorer.score("Sydney", ["London", "Paris", "Tokyo"]) == 0.0
 
-        # Case insensitivity
-        assert scorer.score("paris", "Paris") == 1.0
+    def test_string_match_part_scorer_case_insensitive(self):
+        """StringMatchPartScorer is case-insensitive."""
+        scorer = StringMatchPartScorer()
+        assert scorer.score("the answer is paris", "Paris") == 1.0
+        assert scorer.score("PARIS", "paris") == 1.0
+
+    def test_string_match_part_scorer_single_reference(self):
+        """StringMatchPartScorer works with a single string reference."""
+        scorer = StringMatchPartScorer()
+        assert scorer.score("The capital is Berlin", "Berlin") == 1.0
+        assert scorer.score("The capital is Rome", "Berlin") == 0.0
+
+    def test_string_match_part_scorer_returns_fraction_not_percent(self):
+        """StringMatchPartScorer returns [0.0, 1.0], not [0, 100]."""
+        scorer = StringMatchPartScorer()
+        result = scorer.score("apple", ["apple", "banana"])
+        assert 0.0 <= result <= 1.0
+
+    def test_get_scorer_qa_tasks_use_part(self):
+        """get_scorer returns StringMatchPartScorer for qa_1 and qa_2."""
+        assert isinstance(get_scorer("qa_1"), StringMatchPartScorer)
+        assert isinstance(get_scorer("qa_2"), StringMatchPartScorer)
+
+    def test_get_scorer_non_qa_tasks_use_all(self):
+        """get_scorer returns StringMatchAllScorer for all non-QA RULER tasks."""
+        non_qa_tasks = [
+            "niah_single_1", "niah_single_2", "niah_single_3",
+            "niah_multikey_1", "niah_multikey_2", "niah_multikey_3",
+            "niah_multivalue", "niah_multiquery",
+            "vt", "cwe", "fwe",
+        ]
+        for task_name in non_qa_tasks:
+            scorer = get_scorer(task_name)
+            assert isinstance(scorer, StringMatchAllScorer), (
+                f"Expected StringMatchAllScorer for {task_name}, got {type(scorer).__name__}"
+            )
+
+    def test_get_scorer_unknown_task_defaults_to_all(self):
+        """get_scorer falls back to StringMatchAllScorer for unknown task names."""
+        assert isinstance(get_scorer("unknown_task"), StringMatchAllScorer)
 
     def test_mock_judge(self):
         """MockJudge returns 1.0 for non-empty, 0.0 for empty."""
@@ -476,7 +542,7 @@ class TestRunnerDryRun:
         answer = task.answer if isinstance(task.answer, str) else task.answer[0]
         client = _make_mock_http_client(answer=answer)
 
-        scorer = ExactMatchScorer()
+        scorer = StringMatchAllScorer()
         runner = RULERRunner(
             model_url="http://mock:30000",
             model_name="mock",

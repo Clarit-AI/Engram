@@ -1,145 +1,137 @@
 """
-Scoring / judging module for RULER.
+RULER scoring — purely programmatic, no LLM judge.
+Verified against hsiehjackson/RULER/scripts/eval/synthetic/constants.py.
 
-RULER is synthetic with exact ground truth, so the primary scorer is
-ExactMatchScorer.  GPT4oJudge is provided for tasks where exact match
-is too strict (e.g. paraphrase answers in qa_1 / qa_2).  MockJudge is
-used in dry-run / CI environments.
+RULER is a synthetic benchmark with exact ground truth. Scoring is done by
+substring matching, not by an LLM judge. Two scoring functions are used:
+
+- string_match_all: recall-based. For each (prediction, references) pair,
+  computes the fraction of reference strings found as substrings in the
+  prediction. Used for NIAH variants, VT, CWE, FWE.
+
+- string_match_part: any-match. For each pair, returns 1.0 if any reference
+  is found as a substring in the prediction, else 0.0. Used for QA_1
+  (SQuAD) and QA_2 (HotPotQA).
+
+No OPENAI_API_KEY is required for RULER scoring.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Union
 
 
-class ExactMatchScorer:
-    """Exact-match scorer for RULER tasks.
+class StringMatchAllScorer:
+    """Recall-based substring scorer for RULER.
 
-    Returns 1.0 if the answer string contains any of the reference strings
-    (case-insensitive substring match), else 0.0.
+    For a single (prediction, references) pair: computes the fraction of
+    reference strings that appear as substrings in the prediction
+    (case-insensitive). This matches `string_match_all` in the official
+    hsiehjackson/RULER harness.
 
-    RULER answers are typically short identifiers (needle strings, word
-    lists, variable values), so substring containment is the appropriate
-    check rather than full-string equality.
+    Returns a value in [0.0, 1.0] (NOT 0–100).
+
+    Used for: NIAH variants, VT, CWE, FWE.
     """
 
     def score(
         self,
-        answer: str,
-        reference: Union[str, list],
+        prediction: str,
+        references: Union[str, list],
     ) -> float:
-        """Score an answer against one or more references.
+        """Score a prediction against a list of reference strings.
 
         Args:
-            answer: The model-generated answer string.
-            reference: A single reference string or a list of reference strings.
-                       Scoring passes (1.0) if the answer contains ANY reference.
+            prediction: The model-generated response string.
+            references: A single reference string or a list of valid
+                        reference strings. ALL must be found for score=1.0.
 
         Returns:
-            1.0 if matched, 0.0 otherwise.
+            Fraction of references found as substrings in the prediction,
+            in [0.0, 1.0].
         """
-        if isinstance(reference, str):
-            references = [reference]
+        if isinstance(references, str):
+            ref_list = [references]
         else:
-            references = list(reference)
+            ref_list = list(references)
 
-        answer_lower = answer.strip().lower()
-        for ref in references:
-            if ref.strip().lower() in answer_lower:
-                return 1.0
-        return 0.0
+        if not ref_list:
+            return 0.0
+
+        pred_lower = prediction.lower()
+        hits = sum(1.0 if r.lower() in pred_lower else 0.0 for r in ref_list)
+        return hits / len(ref_list)
 
 
-class GPT4oJudge:
-    """LLM-based judge backed by the OpenAI API.
+class StringMatchPartScorer:
+    """Any-match substring scorer for RULER QA tasks.
 
-    Reads OPENAI_API_KEY from the environment.  The model is controlled
-    by the JUDGE_MODEL env var (default: gpt-4o).
+    For a single (prediction, references) pair: returns 1.0 if ANY reference
+    string appears as a substring in the prediction (case-insensitive),
+    else 0.0. This matches `string_match_part` in the official
+    hsiehjackson/RULER harness.
 
-    Raises RuntimeError on construction if OPENAI_API_KEY is absent.
+    Returns a value in [0.0, 1.0] (NOT 0–100).
+
+    Used for: qa_1 (SQuAD), qa_2 (HotPotQA).
     """
-
-    def __init__(self) -> None:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY environment variable is not set. "
-                "Export it before using GPT4oJudge."
-            )
-        self._api_key = api_key
-        self._model = os.environ.get("JUDGE_MODEL", "gpt-4o")
-        # Import lazily so the module can be imported without openai installed
-        try:
-            import openai  # noqa: F401
-        except ImportError as exc:
-            raise RuntimeError(
-                "openai package is required for GPT4oJudge. "
-                "Install it with: pip install openai"
-            ) from exc
 
     def score(
         self,
-        answer: str,
-        reference: Union[str, list],
-        context: str = "",
+        prediction: str,
+        references: Union[str, list],
     ) -> float:
-        """Score an answer using GPT-4o as a judge.
+        """Score a prediction against a list of reference strings.
 
         Args:
-            answer: Model-generated answer.
-            reference: Ground-truth reference(s).
-            context: Optional context/question for the judge prompt.
+            prediction: The model-generated response string.
+            references: A single reference string or a list of valid
+                        reference strings. ANY match yields score=1.0.
 
         Returns:
-            Score between 0.0 and 1.0.
+            1.0 if any reference is found as a substring in the prediction,
+            else 0.0.
         """
-        import openai
-
-        client = openai.OpenAI(api_key=self._api_key)
-
-        if isinstance(reference, list):
-            ref_text = "\n".join(f"- {r}" for r in reference)
+        if isinstance(references, str):
+            ref_list = [references]
         else:
-            ref_text = reference
+            ref_list = list(references)
 
-        system_prompt = (
-            "You are an evaluator for a reading-comprehension benchmark. "
-            "Given a model answer and the ground-truth reference(s), respond "
-            "with exactly one of: CORRECT or INCORRECT."
-        )
-        user_prompt = (
-            f"Reference answer(s):\n{ref_text}\n\n"
-            f"Model answer:\n{answer}\n\n"
-            "Is the model answer correct? Reply CORRECT or INCORRECT only."
-        )
-        if context:
-            user_prompt = f"Context/Question:\n{context}\n\n" + user_prompt
+        if not ref_list:
+            return 0.0
 
-        response = client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=5,
-            temperature=0.0,
-        )
-        verdict = response.choices[0].message.content.strip().upper()
-        return 1.0 if "CORRECT" in verdict else 0.0
+        pred_lower = prediction.lower()
+        return max(1.0 if r.lower() in pred_lower else 0.0 for r in ref_list)
+
+
+# QA tasks that use string_match_part (any-match)
+_QA_TASKS = {"qa_1", "qa_2"}
+
+
+def get_scorer(task_name: str):
+    """Return the correct scorer for the given RULER task name.
+
+    Args:
+        task_name: RULER task name (e.g. "niah_single_1", "qa_1").
+
+    Returns:
+        StringMatchPartScorer for qa_1/qa_2; StringMatchAllScorer otherwise.
+    """
+    if task_name in _QA_TASKS:
+        return StringMatchPartScorer()
+    return StringMatchAllScorer()
 
 
 class MockJudge:
     """Deterministic mock judge for CI / dry-run environments.
 
-    Returns 1.0 for any non-empty answer, 0.0 for empty answers.
-    Does not call any external API.
+    Returns 1.0 for any non-empty prediction, 0.0 for empty predictions.
+    Does not call any external API. Compatible with the scorer interface.
     """
 
     def score(
         self,
-        answer: str,
-        reference: Union[str, list],
-        context: str = "",
+        prediction: str,
+        references: Union[str, list],
     ) -> float:
-        return 1.0 if answer.strip() else 0.0
+        return 1.0 if prediction.strip() else 0.0
