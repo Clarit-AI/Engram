@@ -40,8 +40,14 @@ import logging
 import time
 from collections import OrderedDict
 from pathlib import Path
+from typing import List, Tuple
+
+import torch
 
 logger = logging.getLogger("sglang.srt.managers.scheduler")
+
+# KHA-398 probe: max tokens to capture per save (throwaway cap)
+_KV_PROBE_CAP = 4096
 
 
 def init_snapshot_system(scheduler):
@@ -311,6 +317,36 @@ def init_snapshot_system(scheduler):
                 else None
             ),
         )
+
+        # KHA-398 probe: capture attention KV while Req is still live
+        kv_alloc = getattr(scheduler, "token_to_kv_pool_allocator", None)
+        if kv_alloc is not None and metadata.fill_ids:
+            try:
+                kvcache = kv_alloc.get_kvcache()
+                seq_len = min(len(metadata.fill_ids), _KV_PROBE_CAP)
+                kv_indices = scheduler.req_to_token_pool.req_to_token[
+                    req.req_pool_idx, :seq_len
+                ]
+                kv_tensors_to_save: List[Tuple[torch.Tensor, torch.Tensor]] = []
+                for layer_rel in range(kvcache.layer_num):
+                    abs_layer = kvcache.start_layer + layer_rel
+                    k = kvcache._get_key_buffer(abs_layer)[kv_indices].clone().cpu()
+                    v = kvcache._get_value_buffer(abs_layer)[kv_indices].clone().cpu()
+                    kv_tensors_to_save.append((k, v))
+                if kv_tensors_to_save:
+                    kv_path = scheduler.snapshot_manager.save_kv_snapshot(
+                        kv_tensors_to_save,
+                        conversation_id,
+                        metadata.turn_number,
+                        metadata.branch_name,
+                    )
+                    metadata.kv_snapshot_path = str(kv_path)
+                    logger.info(
+                        "KV probe: KV captured (%d layers, %d tokens) -> %s",
+                        len(kv_tensors_to_save), seq_len, kv_path,
+                    )
+            except Exception as kv_exc:
+                logger.warning("KV probe: KV capture failed (non-fatal): %s", kv_exc)
 
         # Save snapshot (use tier manager if available, else direct to disk)
         try:

@@ -534,6 +534,7 @@ def handle_save_snapshot(scheduler, recv_req):
                 )
                 if warm_result is not None:
                     conv_states_w, temporal_states_w, meta_dict = warm_result
+                    kv_path = meta_dict.get("kv_snapshot_path")
                     snap_meta = MambaSnapshotMetadata(
                         conversation_id=effective_conv_id,
                         turn_number=recv_req.turn_number
@@ -550,10 +551,20 @@ def handle_save_snapshot(scheduler, recv_req):
                             if meta_dict.get("fill_ids") is not None
                             else None
                         ),
+                        kv_snapshot_path=kv_path,
                     )
                     scheduler.snapshot_manager.save_snapshot(
                         conv_states_w, temporal_states_w, snap_meta
                     )
+                    if kv_path:
+                        logger.info(
+                            f"KV probe: warm-tier save carries KV path: {kv_path}"
+                        )
+                    else:
+                        logger.info(
+                            "KV probe: warm-tier save WITHOUT KV "
+                            "(no kv_snapshot_path in meta_dict)"
+                        )
                     logger.info(
                         f"Manual snapshot saved from WARM tier: conversation={effective_conv_id}, "
                         f"snapshot_id={effective_snapshot_id}"

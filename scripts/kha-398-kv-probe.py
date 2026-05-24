@@ -293,13 +293,12 @@ def step1_planted_fact_probe(
     # Wait briefly for snapshot to settle
     time.sleep(0.5)
 
-    # Turn 2: fresh restore + question-only
-    conv_id2 = f"kha398-warm-{uuid.uuid4().hex[:8]}"
-    restored = restore_snapshot(kv_url, conv_id2, PROBE_BRANCH)
+    # Turn 2: restore snapshot into same conversation (branch-keyed lookup)
+    restored = restore_snapshot(kv_url, conv_id, PROBE_BRANCH)
     if not restored:
         return {"step": 1, "pass": False, "error": "restore_snapshot failed"}
 
-    r2 = chat(kv_url, model, PROBE_QUESTION, conv_id=conv_id2, max_tokens=64)
+    r2 = chat(kv_url, model, PROBE_QUESTION, conv_id=conv_id, max_tokens=64)
     answer = r2.get("text", "")
     passed = PROBE_SENTINEL in answer
 
@@ -385,9 +384,8 @@ def _run_arm_restore(
 
     time.sleep(0.3)
 
-    # Restore snapshot into a fresh conversation
-    conv_warm = f"kha398-warm-{uuid.uuid4().hex[:8]}"
-    restored = restore_snapshot(base_url, conv_warm, branch)
+    # Restore snapshot into same conversation (branch-keyed lookup)
+    restored = restore_snapshot(base_url, conv_id, branch)
     if not restored:
         logger.warning("Arm %s: restore_snapshot failed; skipping", arm_label)
         return {"arm": arm_label, "error": True, "f1": 0.0, "input_tokens": 0}
@@ -395,7 +393,7 @@ def _run_arm_restore(
     # Warm pass: question only
     r_warm = chat(
         base_url, model, f"Question: {question}",
-        conv_id=conv_warm, max_tokens=MAX_ANSWER_TOKENS,
+        conv_id=conv_id, max_tokens=MAX_ANSWER_TOKENS,
     )
     f1 = score_answer(r_warm["text"], ref_answer)
     logger.info(
