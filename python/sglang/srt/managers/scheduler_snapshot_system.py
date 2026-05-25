@@ -324,6 +324,11 @@ def init_snapshot_system(scheduler):
                 )
 
                 if success:
+                    request_id = getattr(req, "rid", None)
+                    if request_id and request_id != conversation_id:
+                        scheduler.tier_manager.host_pool.alias_state(
+                            request_id, conversation_id
+                        )
                     scheduler.snapshot_policy.mark_snapshot_taken(conversation_id)
                     logger.debug(
                         f"Snapshot saved to WARM tier: conversation={conversation_id}, "
