@@ -50,6 +50,24 @@ Skills live in `.claude/skills/` and are invoked via the `Skill` tool.
   work (6-item report-back) and upstream merge work (9-item report-back). See
   `.claude/skills/engram-brief-contract/SKILL.md`.
 
+## Slash Commands
+
+Explicit-invocation shortcuts live in `.claude/commands/` and fire only when you
+type `/<name>` (never auto-triggered). They wrap the runbook lifecycle:
+
+- **`/engram-hooks-on`** / **`/engram-hooks-off [--restore-husky]`** — toggle the
+  Engram git hooks (`core.hooksPath`).
+- **`/engram-feature <type>/<slug> [--worktree]`** — start a branch (or worktree)
+  off latest `origin/main`.
+- **`/engram-status`** — branch, distance from `origin/main`, hook state, base
+  SHA, and open PR.
+- **`/engram-pr <title>`** — open a PR with the canonical body template; type
+  inferred from the branch prefix.
+- **`/engram-gate`** — run the pre-push gate (ruff `F401`/`F821` +
+  `pytest test/srt/cpu/`) on demand.
+- **`/engram-runbook`** / **`/engram-merge-runbook`** — fetch and display the
+  Linear runbooks inline.
+
 ## Protected Paths
 
 Protected-path policy lives in `.engram/policy/protected-paths.json`.
