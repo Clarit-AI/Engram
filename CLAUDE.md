@@ -41,6 +41,15 @@ The `pre-push` hook blocks direct pushes to `main` and runs ruff + CPU-only
 tests before any push. `start-feature.sh` creates properly-based branches.
 See `.engram/hooks/README.md` for full usage.
 
+## Agent Skills
+
+Skills live in `.claude/skills/` and are invoked via the `Skill` tool.
+
+- **`engram-brief-contract`** — Enforces the canonical 5-part brief format and
+  report-back contracts from the Linear runbooks. Applies universally to feature
+  work (6-item report-back) and upstream merge work (9-item report-back). See
+  `.claude/skills/engram-brief-contract/SKILL.md`.
+
 ## Protected Paths
 
 Protected-path policy lives in `.engram/policy/protected-paths.json`.

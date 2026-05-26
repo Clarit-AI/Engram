@@ -51,6 +51,16 @@ historical reference only.
 - Project skill files under `.claude/skills/` are intended to help agents work
   inside this repository
 
+## Agent Skills
+
+Skills live in `.claude/skills/`. Invoke them via the `Skill` tool.
+
+- **`engram-brief-contract`** (`.claude/skills/engram-brief-contract/SKILL.md`)
+  — Enforces the canonical 5-part brief format and report-back contracts from
+  the Linear runbooks. Applies to feature/issue work (6-item report-back) and
+  upstream merge work (9-item report-back). Triggers when an agent receives a
+  structured brief or when the user references the runbook contract.
+
 ## Git Hooks
 
 Mechanical enforcement is provided by the hooks in `.engram/hooks/`. Activate
