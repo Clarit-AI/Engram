@@ -29,6 +29,18 @@ If `.claude/local-notes.md` exists, it may contain local maintainer preferences
 or environment details. Treat it as local-only context, not public project
 policy.
 
+## Git Hooks
+
+Git hooks live in `.engram/hooks/` and activate with one command per checkout:
+
+```bash
+git config core.hooksPath .engram/hooks
+```
+
+The `pre-push` hook blocks direct pushes to `main` and runs ruff + CPU-only
+tests before any push. `start-feature.sh` creates properly-based branches.
+See `.engram/hooks/README.md` for full usage.
+
 ## Protected Paths
 
 Protected-path policy lives in `.engram/policy/protected-paths.json`.

@@ -51,6 +51,22 @@ historical reference only.
 - Project skill files under `.claude/skills/` are intended to help agents work
   inside this repository
 
+## Git Hooks
+
+Mechanical enforcement is provided by the hooks in `.engram/hooks/`. Activate
+once per checkout:
+
+```bash
+git config core.hooksPath .engram/hooks
+```
+
+- **`pre-push`** — blocks direct pushes to `main`; runs ruff lint and
+  `pytest test/srt/cpu/` before every push.
+- **`start-feature.sh`** — creates a branch off `origin/main` with slug
+  validation and clobber protection. Usage: `.engram/hooks/start-feature.sh feat/my-feature`
+
+See `.engram/hooks/README.md` for full details and the `--no-verify` escape hatch.
+
 ## Protected Path Policy
 
 - The source of truth for protected files is
