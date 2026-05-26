@@ -61,6 +61,29 @@ Skills live in `.claude/skills/`. Invoke them via the `Skill` tool.
   upstream merge work (9-item report-back). Triggers when an agent receives a
   structured brief or when the user references the runbook contract.
 
+## Slash Commands
+
+Explicit-invocation shortcuts live in `.claude/commands/` and fire only when you
+type `/<name>` — they never auto-trigger. They wrap the Linear runbook lifecycle
+into deterministic commands:
+
+- **`/engram-hooks-on`** — activate the Engram git hooks (`core.hooksPath` →
+  `.engram/hooks`); reports any prior value it overrode.
+- **`/engram-hooks-off [--restore-husky]`** — unset `core.hooksPath`, or restore
+  `.husky` with the flag.
+- **`/engram-feature <type>/<slug> [--worktree]`** — branch off latest
+  `origin/main` via `start-feature.sh`, or create an isolated worktree.
+- **`/engram-status`** — branch, ahead/behind vs `origin/main`, hook state,
+  base SHA, and any open PR, as a key/value block.
+- **`/engram-pr <title>`** — push if needed and open a PR against
+  `Clarit-AI/Engram` with the canonical body template (type inferred from branch).
+- **`/engram-gate`** — run the same lint + CPU-test gate as the pre-push hook
+  (ruff `F401`/`F821` + `pytest test/srt/cpu/`), on demand.
+- **`/engram-runbook`** — fetch and display the Feature & Issue Runbook from
+  Linear.
+- **`/engram-merge-runbook`** — fetch and display the Upstream Merge Runbook from
+  Linear.
+
 ## Git Hooks
 
 Mechanical enforcement is provided by the hooks in `.engram/hooks/`. Activate
