@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# pre-push: blocks direct pushes to main; runs lint + CPU-only tests before push.
+# Activate: git config core.hooksPath .engram/hooks
+# Escape hatch: git push --no-verify  (logs a warning to stderr)
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# ── Gate 1: block direct push to main ───────────────────────────────────────
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    if [[ "$remote_ref" == "refs/heads/main" ]]; then
+        echo >&2 ""
+        echo >&2 "ERROR: Direct push to main is blocked. Open a PR instead."
+        echo >&2 "       See engineering/engram/FEATURE_RUNBOOK.md or merges/ENGRAM_MERGE_RUNBOOK.md."
+        echo >&2 ""
+        exit 1
+    fi
+done
+
+# ── Gate 2: lint (ruff F401/F821) ───────────────────────────────────────────
+echo "pre-push: running ruff lint check..."
+if ! python -m ruff check --select=F401,F821 python/ test/ benchmark/ examples/ 2>&1; then
+    echo >&2 ""
+    echo >&2 "GATE FAILED: ruff lint. Fix the errors above, then push again."
+    echo >&2 "             (git push --no-verify to bypass — use sparingly)"
+    echo >&2 ""
+    exit 1
+fi
+echo "pre-push: ruff passed."
+
+# ── Gate 3: CPU-only tests ───────────────────────────────────────────────────
+# test/srt/cpu/ is the canonical CPU-runnable kernel test suite (sourced from
+# pr-test-xeon.yml and suite_xeon in test/srt/run_suite.py).
+# Do NOT call pre-commit; its venv shebang may point to a deleted path (KHA-400).
+echo "pre-push: running CPU-only tests (test/srt/cpu/)..."
+if ! python -m pytest -q test/srt/cpu/ 2>&1; then
+    echo >&2 ""
+    echo >&2 "GATE FAILED: pytest test/srt/cpu/. Fix the failures above, then push again."
+    echo >&2 "             (git push --no-verify to bypass — use sparingly)"
+    echo >&2 ""
+    exit 1
+fi
+echo "pre-push: CPU tests passed."
+
+echo "pre-push: all gates passed. Pushing..."
+exit 0
