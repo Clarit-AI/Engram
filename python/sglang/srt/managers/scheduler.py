@@ -3187,6 +3187,8 @@ class Scheduler(
             # Skip if request doesn't have mamba_pool_idx
             if not hasattr(req, "mamba_pool_idx") or req.mamba_pool_idx is None:
                 continue
+            if getattr(req, "req_pool_idx", None) is None:
+                continue
 
             # Calculate turn number (approximate based on output length)
             turn_number = len(req.output_ids) if hasattr(req, "output_ids") else 0

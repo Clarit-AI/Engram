@@ -395,9 +395,6 @@ def handle_save_snapshot(scheduler, recv_req):
 
     try:
         effective_conv_id = recv_req.conversation_id or recv_req.rid
-        effective_snapshot_id = (
-            recv_req.snapshot_id or f"{effective_conv_id}-t{recv_req.turn_number or 0}"
-        )
 
         # Find the request by rid
         req = scheduler._find_request_by_rid(recv_req.rid)
@@ -413,10 +410,21 @@ def handle_save_snapshot(scheduler, recv_req):
                 )
                 if warm_result is not None:
                     conv_states_w, temporal_states_w, meta_dict = warm_result
+                    warm_conversation_id = (
+                        recv_req.conversation_id
+                        or meta_dict.get("conversation_id")
+                        or effective_conv_id
+                    )
+                    warm_turn_number = recv_req.turn_number or meta_dict.get(
+                        "turn_number", 0
+                    )
+                    warm_snapshot_id = (
+                        recv_req.snapshot_id
+                        or f"{warm_conversation_id}-t{warm_turn_number or 0}"
+                    )
                     snap_meta = MambaSnapshotMetadata(
-                        conversation_id=effective_conv_id,
-                        turn_number=recv_req.turn_number
-                        or meta_dict.get("turn_number", 0),
+                        conversation_id=warm_conversation_id,
+                        turn_number=warm_turn_number,
                         branch_name=recv_req.branch_name,
                         timestamp=time.time(),
                         token_count=int(meta_dict.get("token_count", 0)),
@@ -434,12 +442,13 @@ def handle_save_snapshot(scheduler, recv_req):
                         conv_states_w, temporal_states_w, snap_meta
                     )
                     logger.info(
-                        f"Manual snapshot saved from WARM tier: conversation={effective_conv_id}, "
-                        f"snapshot_id={effective_snapshot_id}"
+                        "Manual snapshot saved from WARM tier: "
+                        f"conversation={warm_conversation_id}, "
+                        f"snapshot_id={warm_snapshot_id}",
                     )
                     return SaveSnapshotReqOutput(
                         success=True,
-                        snapshot_id=effective_snapshot_id,
+                        snapshot_id=warm_snapshot_id,
                         message="Snapshot saved successfully (from WARM tier)",
                     )
             return SaveSnapshotReqOutput(
@@ -471,13 +480,22 @@ def handle_save_snapshot(scheduler, recv_req):
         )
 
         # Build metadata
+        live_conversation_id = (
+            recv_req.conversation_id
+            or getattr(req, "conversation_id", None)
+            or recv_req.rid
+        )
+        live_snapshot_id = (
+            recv_req.snapshot_id
+            or f"{live_conversation_id}-t{recv_req.turn_number or 0}"
+        )
         layer_config = {
             "num_layers": mamba_pool.num_mamba_layers,
             "model_type": "hybrid" if hasattr(req, "mamba_pool_idx") else "mamba",
         }
 
         metadata = MambaSnapshotMetadata(
-            conversation_id=effective_conv_id,
+            conversation_id=live_conversation_id,
             turn_number=recv_req.turn_number,
             branch_name=recv_req.branch_name,
             timestamp=time.time(),
@@ -501,13 +519,13 @@ def handle_save_snapshot(scheduler, recv_req):
         scheduler.snapshot_manager.save_snapshot(conv_states, temporal_states, metadata)
 
         logger.info(
-            f"Manual snapshot saved: conversation={effective_conv_id}, "
-            f"snapshot_id={effective_snapshot_id}, turn={recv_req.turn_number}"
+            f"Manual snapshot saved: conversation={live_conversation_id}, "
+            f"snapshot_id={live_snapshot_id}, turn={recv_req.turn_number}"
         )
 
         return SaveSnapshotReqOutput(
             success=True,
-            snapshot_id=effective_snapshot_id,
+            snapshot_id=live_snapshot_id,
             message="Snapshot saved successfully",
         )
 
