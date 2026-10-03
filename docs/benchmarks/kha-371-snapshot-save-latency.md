@@ -54,4 +54,4 @@ is effectively server-side save time.
   point and are recovered from the raw log; the JSON artifact for Codestral
   was not written.
 - All percentile values use the nearest-rank method on sorted samples.
-- Raw log: `s3://engram/benchmarks/kha-371-snapshot-latency-h100.log`.
+- Raw log: `s3://engram-dev-sync/benchmarks/kha-371-snapshot-latency-h100.log`.
