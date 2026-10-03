@@ -135,12 +135,37 @@ The per-commit structure of Phases A–F enables clean rollback if a later phase
 
 After each Phase (A, B, C, D, E, F) lands, post a status comment on the port PR with:
 
-- Commits landed in the phase (SHA + one-line subject each)
+- Commits landed in the phase (SHA + one-line subject each, captured via `git rev-parse` per the verification protocol below)
 - Any deviations from this plan
 - Open questions resolved during execution + how
 - Block balance after the phase
 
 Enables overseer review without re-reading the full diff at each checkpoint.
+
+### Verification protocol (rtk-safe)
+
+`rtk` (the token-optimized CLI proxy active in this environment) caches porcelain `git log` output and can serve a STALE SHA for HEAD. Plumbing commands pass through raw (diagnostic-confirmed 2026-05-20). Therefore:
+
+**HARD RULE: `git log` is BANNED for any verification or decision-gating check during the port.** "Prefer plumbing" relies on remembering every time — across 13–16 commits and six phases, that's a slip waiting to happen. State inspection uses plumbing ONLY:
+
+| Need | Use |
+|---|---|
+| Current HEAD | `git rev-parse HEAD` |
+| Confirm a commit's contents | `git cat-file -p HEAD` (or `-p <sha>`) |
+| Current branch ref | `git symbolic-ref HEAD` |
+| Tag / ref resolution | `git show-ref --tags` ; `git rev-parse <ref>` |
+| Commit count in a range | `git rev-list --count <range>` |
+| File contents at a ref | `git show <ref>:<path>` |
+
+For human-readable history ONLY (never to gate a decision): `rtk proxy git log ...` bypasses the cache.
+
+**Per-phase backstop (memory-independent):**
+
+- At each phase boundary, capture HEAD via `git rev-parse HEAD`. Record the SHA in the PR comment AND `s3://engram/coordination/SESSION_STATE.md`.
+- Before the next phase starts, re-confirm `git rev-parse HEAD` equals the last recorded SHA. Mismatch = STOP and escalate (real divergence in the worktree, not a display artifact).
+- Block-balance checks use `grep` on files directly (not `git`) — unaffected by rtk, keep as-is.
+
+This protocol is not optional. The rtk caching issue is tracked separately as an out-of-band tooling bug; for the port window we work around it with this discipline.
 
 ## 7. Resolved decisions and remaining open questions
 
