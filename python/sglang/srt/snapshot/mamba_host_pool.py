@@ -105,6 +105,7 @@ class MambaHostPool:
 
         # Storage: OrderedDict maintains LRU order
         self._pool: OrderedDict[str, HostPoolEntry] = OrderedDict()
+        self._aliases: dict[str, str] = {}
 
         # Thread safety
         self._lock = threading.RLock()
@@ -182,6 +183,7 @@ class MambaHostPool:
             # Add entry (at end for LRU)
             self._pool[conversation_id] = entry
             self._current_memory_bytes += entry_size
+            self._aliases.pop(conversation_id, None)
 
             logger.debug(
                 f"Saved state to host pool: {conversation_id}, "
@@ -189,6 +191,30 @@ class MambaHostPool:
                 f"total_memory={self._current_memory_bytes / 1024 / 1024:.2f}MB"
             )
 
+            return True
+
+    def resolve_key(self, conversation_id: str) -> str:
+        """Resolve a host-pool alias to its canonical conversation id."""
+        with self._lock:
+            return self._aliases.get(conversation_id, conversation_id)
+
+    def alias_state(self, alias_id: str, conversation_id: str) -> bool:
+        """Make an existing WARM state addressable by an additional id."""
+        with self._lock:
+            canonical_id = self._aliases.get(conversation_id, conversation_id)
+            if alias_id == canonical_id:
+                return canonical_id in self._pool
+            if canonical_id not in self._pool:
+                return False
+            if alias_id in self._pool:
+                logger.warning(
+                    "Cannot alias host-pool state: alias %s already has canonical state",
+                    alias_id,
+                )
+                return False
+
+            self._aliases[alias_id] = canonical_id
+            logger.debug("Aliased host-pool state: %s -> %s", alias_id, canonical_id)
             return True
 
     def get_state(
@@ -209,19 +235,20 @@ class MambaHostPool:
             Tuple of (conv_states, temporal_states, metadata) or None if not found
         """
         with self._lock:
-            if conversation_id not in self._pool:
+            canonical_id = self._aliases.get(conversation_id, conversation_id)
+            if canonical_id not in self._pool:
                 self._misses += 1
                 logger.debug(f"Host pool miss: {conversation_id}")
                 return None
 
-            entry = self._pool.pop(conversation_id)
+            entry = self._pool.pop(canonical_id)
 
             # Update access metadata
             entry.last_access_time = time.time()
             entry.access_count += 1
 
             # Move to end (most recently used)
-            self._pool[conversation_id] = entry
+            self._pool[canonical_id] = entry
 
             # Update metrics
             self._hits += 1
@@ -271,7 +298,7 @@ class MambaHostPool:
     def has_state(self, conversation_id: str) -> bool:
         """Check if conversation state exists in host pool."""
         with self._lock:
-            return conversation_id in self._pool
+            return self._aliases.get(conversation_id, conversation_id) in self._pool
 
     def remove_state(self, conversation_id: str) -> bool:
         """
@@ -284,11 +311,20 @@ class MambaHostPool:
             True if removed, False if not found
         """
         with self._lock:
+            if conversation_id in self._aliases:
+                self._aliases.pop(conversation_id, None)
+                return True
+
             if conversation_id not in self._pool:
                 return False
 
             entry = self._pool.pop(conversation_id)
             self._current_memory_bytes -= entry.memory_bytes()
+            self._aliases = {
+                alias: canonical
+                for alias, canonical in self._aliases.items()
+                if canonical != conversation_id
+            }
 
             logger.debug(
                 f"Removed state from host pool: {conversation_id}, "
@@ -311,6 +347,11 @@ class MambaHostPool:
         conversation_id, entry = self._pool.popitem(last=False)
         self._current_memory_bytes -= entry.memory_bytes()
         self._evictions += 1
+        self._aliases = {
+            alias: canonical
+            for alias, canonical in self._aliases.items()
+            if canonical != conversation_id
+        }
 
         logger.info(
             f"Evicted from host pool (LRU): {conversation_id}, "
@@ -328,7 +369,8 @@ class MambaHostPool:
     def get_conversation_metadata(self, conversation_id: str) -> Optional[dict]:
         """Get metadata for a conversation without accessing state."""
         with self._lock:
-            entry = self._pool.get(conversation_id)
+            canonical_id = self._aliases.get(conversation_id, conversation_id)
+            entry = self._pool.get(canonical_id)
             if entry:
                 return {
                     "conversation_id": entry.conversation_id,
@@ -369,6 +411,7 @@ class MambaHostPool:
         """Clear all entries from host pool."""
         with self._lock:
             self._pool.clear()
+            self._aliases.clear()
             self._current_memory_bytes = 0
             logger.info("Host pool cleared")
 
