@@ -180,7 +180,7 @@ For human-readable history or summaries ONLY (never to gate a decision or propag
 
 **Per-phase backstop (memory-independent):**
 
-- At each phase boundary, capture HEAD via `git rev-parse HEAD`. Record the SHA in the PR comment AND `s3://engram/coordination/SESSION_STATE.md`.
+- At each phase boundary, capture HEAD via `git rev-parse HEAD`. Record the SHA in the PR comment AND `s3://engram-dev-sync/coordination/SESSION_STATE.md`.
 - Before the next phase starts, re-confirm `git rev-parse HEAD` equals the last recorded SHA. Mismatch = STOP and escalate (real divergence in the worktree, not a display artifact).
 - Block-balance checks use `grep` on files directly (not `git`) — unaffected by rtk, keep as-is.
 

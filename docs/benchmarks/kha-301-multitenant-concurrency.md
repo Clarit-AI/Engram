@@ -5,7 +5,7 @@
 **Server:** Nemotron Elastic 30B (`/workspace/models/nemotron-elastic-30b/`) on H100 80 GB
 **Flags:** `--disable-radix-cache --enable-snapshot-persistence --mamba-scheduler-strategy no_buffer --trust-remote-code`, `SGLANG_ENABLE_SPEC_V2=false`
 **Harness:** `scripts/validation/multitenant_concurrency.py`
-**Raw JSON:** `s3://engram/benchmarks/kha-301-n3-h100.json`, `s3://engram/benchmarks/kha-301-n5-h100.json`
+**Raw JSON:** `s3://engram-dev-sync/benchmarks/kha-301-n3-h100.json`, `s3://engram-dev-sync/benchmarks/kha-301-n5-h100.json`
 
 ## Goal
 
