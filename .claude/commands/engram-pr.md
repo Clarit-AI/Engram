@@ -13,8 +13,9 @@ Open a pull request for the current branch against `Clarit-AI/Engram`. The
 conventional-commit type prefix (`feat` / `fix` / `chore`) is inferred from the
 branch name and prepended to the supplied title. If the branch has no upstream
 yet, push it first. The PR body uses the canonical template: Summary,
-Acceptance Criteria (three empty checkboxes), and Reference (both Linear
-runbooks).
+Acceptance Criteria (three empty checkboxes), and Reference (the Feature &
+Issue Runbook). Every `gh` call names the repo, because `gh` can resolve its
+default to the upstream SGLang repo in a fork checkout.
 </objective>
 
 <process>
@@ -60,7 +61,6 @@ BODY="$(cat <<'EOF'
 ## Reference
 
 - Feature & Issue Runbook: https://linear.app/khaentertainment/document/engram-feature-and-issue-runbook-d8916813a279
-- Upstream Merge Runbook: https://linear.app/khaentertainment/document/engram-upstream-merge-runbook-a2451e78eecc
 EOF
 )"
 
@@ -71,7 +71,7 @@ gh pr create \
 
 echo ""
 echo "PR URL:"
-gh pr view --json url --jq '.url'
+gh pr view "${BRANCH}" --repo Clarit-AI/Engram --json url --jq '.url'
 ```
 
 Report the resulting PR URL back to the user.

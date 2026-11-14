@@ -34,7 +34,7 @@ fi
 
 HOOKS="$(git config --get core.hooksPath || echo '<unset>')"
 BASE="$(git merge-base --short HEAD origin/main 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || echo '<none>')"
-PR="$(gh pr view --json url,state,title --jq '"\(.state)  \(.url)  — \(.title)"' 2>/dev/null || echo 'none')"
+PR="$(gh pr view "${BRANCH}" --repo Clarit-AI/Engram --json url,state,title --jq '"\(.state)  \(.url)  — \(.title)"' 2>/dev/null || echo 'none')"
 
 printf '%-22s %s\n' "Branch:"            "${BRANCH}"
 printf '%-22s %s\n' "Ahead of main:"     "${AHEAD}"
