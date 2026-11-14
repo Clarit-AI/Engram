@@ -6,7 +6,7 @@
 ### AI models that remember
 
 [![Built on SGLang](https://img.shields.io/badge/built%20on-SGLang-blue)](https://github.com/sgl-project/sglang)
-[![License](https://img.shields.io/github/license/sgl-project/sglang.svg)](LICENSE) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Clarit-AI/Engram) ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Clarit-AI/Engram?logo=CodeRabbit&logoColor=%23FFFFFF&color=%23FF570A)
+[![License](https://img.shields.io/github/license/sgl-project/sglang.svg)](LICENSE) [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Clarit-AI/Engram) ![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/Clarit-AI/Engram?logo=CodeRabbit&logoColor=%23FFFFFF&color=%23FF570A) [![Built with Showrunner](https://svg.khaentertainment.com/badge.svg?gold=0&project=Clarit-AI/Engram)](https://svg.khaentertainment.com/go?project=Clarit-AI/Engram)
 
 
 
