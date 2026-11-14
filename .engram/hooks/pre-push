@@ -1,43 +1,79 @@
 #!/usr/bin/env bash
-# pre-push: blocks direct pushes to main; runs lint + CPU-only tests before push.
+# pre-push: refuses pushes to upstream and direct pushes to main, then runs
+# lint + CPU-only tests before push.
 # Activate: git config core.hooksPath .engram/hooks
-# Escape hatch: git push --no-verify  (logs a warning to stderr)
+# ENGRAM_SKIP_GATE=1 skips the lint and test gates only; the two refusals stay.
+# git push --no-verify skips this hook entirely, refusals included.
 set -euo pipefail
+
+REMOTE_NAME="${1-}"
+REMOTE_URL="${2-}"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# ── Gate 1: block direct push to main ───────────────────────────────────────
+# ── Gate 1: never push to upstream ──────────────────────────────────────────
+# Engram pins to SGLang release tags and does not push to sgl-project/sglang.
+# Matched on the URL as well as the name, so a renamed remote is still caught.
+url_lc="$(printf '%s' "$REMOTE_URL" | tr '[:upper:]' '[:lower:]')"
+if [[ "$REMOTE_NAME" == "upstream" || "$url_lc" =~ github\.com[:/]sgl-project/sglang(\.git)?/?$ ]]; then
+    echo >&2 ""
+    echo >&2 "ERROR: Push to upstream is blocked (remote '${REMOTE_NAME}', ${REMOTE_URL})."
+    echo >&2 "       Engram does not push to sgl-project/sglang. Push to origin and open a PR"
+    echo >&2 "       against Clarit-AI/Engram instead."
+    echo >&2 ""
+    exit 1
+fi
+
+# ── Gate 2: block direct push to main ───────────────────────────────────────
 while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
     if [[ "$remote_ref" == "refs/heads/main" ]]; then
         echo >&2 ""
         echo >&2 "ERROR: Direct push to main is blocked. Open a PR instead."
-        echo >&2 "       See engineering/engram/FEATURE_RUNBOOK.md or merges/ENGRAM_MERGE_RUNBOOK.md."
+        echo >&2 "       See the Feature & Issue Runbook (/engram-runbook)."
         echo >&2 ""
         exit 1
     fi
 done
 
-# ── Gate 2: lint (ruff F401/F821) ───────────────────────────────────────────
+# ── Gates 3 and 4 need ruff, pytest and an installed sglang ─────────────────
+if [[ "${ENGRAM_SKIP_GATE:-}" == "1" ]]; then
+    echo >&2 "pre-push: WARNING: ENGRAM_SKIP_GATE=1, lint and CPU tests were NOT run."
+    exit 0
+fi
+
+PY="${ENGRAM_PYTHON:-python}"
+for mod in ruff pytest; do
+    if ! "$PY" -c "import ${mod}" >/dev/null 2>&1; then
+        echo >&2 ""
+        echo >&2 "GATE CANNOT RUN: '${PY}' has no ${mod}. Nothing was checked."
+        echo >&2 "             Point ENGRAM_PYTHON at an environment with ruff, pytest and sglang,"
+        echo >&2 "             or set ENGRAM_SKIP_GATE=1 to push without the lint and test gates."
+        echo >&2 ""
+        exit 1
+    fi
+done
+
+# ── Gate 3: lint (ruff F401/F821) ───────────────────────────────────────────
 echo "pre-push: running ruff lint check..."
-if ! python -m ruff check --select=F401,F821 python/ test/ benchmark/ examples/ 2>&1; then
+if ! "$PY" -m ruff check --select=F401,F821 python/ test/ benchmark/ examples/ 2>&1; then
     echo >&2 ""
     echo >&2 "GATE FAILED: ruff lint. Fix the errors above, then push again."
-    echo >&2 "             (git push --no-verify to bypass — use sparingly)"
+    echo >&2 "             (ENGRAM_SKIP_GATE=1 skips this gate and keeps the refusals)"
     echo >&2 ""
     exit 1
 fi
 echo "pre-push: ruff passed."
 
-# ── Gate 3: CPU-only tests ───────────────────────────────────────────────────
+# ── Gate 4: CPU-only tests ───────────────────────────────────────────────────
 # test/srt/cpu/ is the canonical CPU-runnable kernel test suite (sourced from
 # pr-test-xeon.yml and suite_xeon in test/srt/run_suite.py).
 # Do NOT call pre-commit; its venv shebang may point to a deleted path (KHA-400).
 echo "pre-push: running CPU-only tests (test/srt/cpu/)..."
-if ! python -m pytest -q test/srt/cpu/ 2>&1; then
+if ! "$PY" -m pytest -q test/srt/cpu/ 2>&1; then
     echo >&2 ""
     echo >&2 "GATE FAILED: pytest test/srt/cpu/. Fix the failures above, then push again."
-    echo >&2 "             (git push --no-verify to bypass — use sparingly)"
+    echo >&2 "             (ENGRAM_SKIP_GATE=1 skips this gate and keeps the refusals)"
     echo >&2 ""
     exit 1
 fi

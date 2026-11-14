@@ -390,7 +390,7 @@ def handle_save_snapshot(scheduler, recv_req):
         return SaveSnapshotReqOutput(
             success=False,
             snapshot_id=None,
-            message="Snapshot system not enabled. Start server with --enable-mamba-snapshots",
+            message="Snapshot system not enabled. Start server with --enable-snapshot-persistence",
         )
 
     try:
@@ -630,7 +630,7 @@ def handle_restore_snapshot(scheduler, recv_req):
     if scheduler.snapshot_manager is None:
         return RestoreSnapshotReqOutput(
             success=False,
-            message="Snapshot system not enabled. Start server with --enable-mamba-snapshots",
+            message="Snapshot system not enabled. Start server with --enable-snapshot-persistence",
         )
 
     # Derive effective_conv_id once for both paths
@@ -1061,7 +1061,7 @@ def handle_delete_snapshot(scheduler, recv_req):
     if scheduler.snapshot_manager is None:
         return DeleteSnapshotReqOutput(
             success=False,
-            message="Snapshot system not enabled. Start server with --enable-mamba-snapshots",
+            message="Snapshot system not enabled. Start server with --enable-snapshot-persistence",
         )
 
     try:

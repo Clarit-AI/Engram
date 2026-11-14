@@ -1,16 +1,16 @@
-# Automated upstream sync for clarit-ai/engram
+# Upstream sync for clarit-ai/engram
 # Fetches sgl-project/sglang:main, attempts merge, and creates a PR.
 #
 # SAFE commits (no protected fork-path touches) → PR labeled "auto-sync"
 # RISKY commits (protected fork-path touches or conflicts) → PR labeled "needs-review"
 #
-# Runs every Monday and Thursday at 06:00 UTC, or manually via workflow_dispatch.
+# Runs only when started by hand via workflow_dispatch. The Monday and Thursday
+# schedule was removed in November 2026: Engram pins to SGLang release tags and
+# no longer merges upstream/main on a timer. Do not add a schedule back.
 
 name: Upstream Sync
 
 on:
-  schedule:
-    - cron: "0 6 * * 1,4"   # Mon + Thu 06:00 UTC
   workflow_dispatch:
     inputs:
       dry_run:
