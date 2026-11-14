@@ -200,13 +200,15 @@ def cmd_check_local_edits(args: argparse.Namespace) -> int:
         ref for ref in (args.upstream_ref, args.fork_ref) if not git_ref_exists(ref)
     ]
     if missing_refs:
+        # The static list needs no git ref, so it still applies. Only the
+        # comparison against upstream is skipped.
         print(
-            "Protected-path policy: skipping (missing git ref(s) "
+            "Protected-path policy: static list only (missing git ref(s) "
             + ", ".join(missing_refs)
             + "). Cannot distinguish fork-owned files without "
             + f"{args.upstream_ref}...{args.fork_ref}."
         )
-        return 0
+        fork_owned_files = set()
     else:
         try:
             fork_owned_files = set(
