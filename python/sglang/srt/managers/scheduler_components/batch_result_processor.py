@@ -180,6 +180,39 @@ class SchedulerBatchResultProcessor:
                     elem = elem.copy()
                 req.customized_info[k].append(elem)
 
+    def _snapshot_finished_req_before_release(self, req: Req):
+        """Persist Mamba state while finished request pool slots are still live."""
+        if (
+            self.snapshot_hook_manager is None
+            or getattr(req, "mamba_pool_idx", None) is None
+        ):
+            return
+
+        if getattr(req, "req_pool_idx", None) is None:
+            logger.warning(
+                "Skipping finished-request snapshot for rid=%s: req_pool_idx is already released",
+                getattr(req, "rid", None),
+            )
+            return
+
+        mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
+        if mamba_pool is None:
+            return
+
+        fill_ids = getattr(req, "fill_ids", None)
+        turn_number = (
+            len(fill_ids)
+            if fill_ids is not None and hasattr(fill_ids, "__len__")
+            else len(req.output_ids)
+        )
+        self.snapshot_hook_manager.trigger_post_forward(
+            req=req,
+            mamba_pool=mamba_pool,
+            req_pool=self.req_to_token_pool,
+            turn_number=turn_number,
+            additional_context=None,
+        )
+
     def process_batch_result_prefill(
         self,
         batch: ScheduleBatch,
@@ -235,6 +268,7 @@ class SchedulerBatchResultProcessor:
                     if req.finished():
                         self._maybe_collect_routed_experts(req)
                         self._maybe_collect_indexer_topk(req)
+                        self._snapshot_finished_req_before_release(req)
                         release_kv_cache(req, self.tree_cache)
                         req.time_stats.set_completion_time()
                     elif not batch.decoding_reqs or req not in batch.decoding_reqs:
@@ -319,6 +353,7 @@ class SchedulerBatchResultProcessor:
                     req.update_finish_state()
 
                     if req.finished():
+                        self._snapshot_finished_req_before_release(req)
                         release_kv_cache(req, self.tree_cache)
                         req.time_stats.set_completion_time()
                     else:
@@ -788,26 +823,7 @@ class SchedulerBatchResultProcessor:
             # _trigger_snapshot_hooks (called later) fires after free_mamba_cache
             # has already set mamba_pool_idx = None, so it misses finished reqs.
             # We snapshot here while the state is still live in the pool.
-            if (
-                self.snapshot_hook_manager is not None
-                and hasattr(req, "mamba_pool_idx")
-                and req.mamba_pool_idx is not None
-            ):
-                _mamba_pool = getattr(self.req_to_token_pool, "mamba_pool", None)
-                if _mamba_pool is not None:
-                    _fill_ids = getattr(req, "fill_ids", None)
-                    _turn_number = (
-                        len(_fill_ids)
-                        if _fill_ids is not None and hasattr(_fill_ids, "__len__")
-                        else len(req.output_ids)
-                    )
-                    self.snapshot_hook_manager.trigger_post_forward(
-                        req=req,
-                        mamba_pool=_mamba_pool,
-                        req_pool=self.req_to_token_pool,
-                        turn_number=_turn_number,
-                        additional_context=None,
-                    )
+            self._snapshot_finished_req_before_release(req)
             # --- END ENGRAM ---
 
             if self.server_args.disaggregation_decode_enable_offload_kvcache:
